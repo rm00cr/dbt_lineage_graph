@@ -31,7 +31,7 @@ import {
   copyToClipboard,
   formatBytes,
   formatCount,
-  stageColor,
+  useStageColor,
 } from './visual'
 
 interface ModelOverlayProps {
@@ -51,6 +51,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
   const tab = useExplorerStore((s) => s.overlayTab)
   const setTab = useExplorerStore((s) => s.setOverlayTab)
   const [copied, setCopied] = useState(false)
+  const stageColor = useStageColor()
 
   if (!activeId) return null
 
@@ -280,6 +281,8 @@ function DependencySection({
   emptyText: string
   onPick: (id: string) => void
 }) {
+  const stageColor = useStageColor()
+
   return (
     <div className="section">
       <div className="section__title">

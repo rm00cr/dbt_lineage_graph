@@ -24,8 +24,9 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GraphNode } from '../api/types'
 import { NODE_HEIGHT, NODE_WIDTH, layoutGraph } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
+import { useTheme } from '../theme/useTheme'
 import { ModelNode, type ModelNodeType } from './nodes/ModelNode'
-import { STAGE_LABELS, stageColor } from './visual'
+import { STAGE_LABELS, useStageColor } from './visual'
 
 const NODE_TYPES = { model: ModelNode }
 const PULSE_MS = 1900
@@ -48,6 +49,8 @@ export function GraphCanvas() {
   const closeOverlay = useExplorerStore((s) => s.closeOverlay)
 
   const { setCenter, fitView } = useReactFlow()
+  const theme = useTheme((s) => s.resolved)
+  const stageColor = useStageColor()
 
   const [dragged, setDragged] = useState<Map<string, XYPosition>>(new Map())
   const [pulseId, setPulseId] = useState<string | null>(null)
@@ -121,6 +124,9 @@ export function GraphCanvas() {
       }))
   }, [graph, visibleIds, dragged, layout, selectedIds, highlightedIds, focusMode, activeId, pulseId])
 
+  const accentColor = theme === 'light' ? '#4f46e5' : '#6366f1'
+  const edgeColor = theme === 'light' ? 'rgba(71,85,105,0.5)' : 'rgba(148,163,184,0.4)'
+
   const edges = useMemo(() => {
     if (!graph) return []
     const dimming = focusMode !== 'off' && highlightedEdgeIds.size > 0
@@ -145,11 +151,11 @@ export function GraphCanvas() {
             type: MarkerType.ArrowClosed,
             width: 16,
             height: 16,
-            color: highlighted ? '#6366f1' : 'rgba(148,163,184,0.4)',
+            color: highlighted ? accentColor : edgeColor,
           },
         }
       })
-  }, [graph, visibleIds, highlightedEdgeIds, focusMode])
+  }, [graph, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor])
 
   // ------------------------------------------------------------------ interaction
   const onNodesChange = useCallback(
@@ -222,14 +228,19 @@ export function GraphCanvas() {
         fitViewOptions={{ padding: 0.18 }}
         defaultEdgeOptions={{ type: 'default' }}
       >
-        <Background variant={BackgroundVariant.Dots} gap={26} size={1.4} color="rgba(148,163,184,0.16)" />
+        <Background
+          variant={BackgroundVariant.Dots}
+          gap={26}
+          size={1.4}
+          color={theme === 'light' ? 'rgba(79,70,229,0.22)' : 'rgba(148,163,184,0.16)'}
+        />
         <Controls position="bottom-right" showInteractive={false} />
         {showMiniMap && (
           <MiniMap
             position="top-right"
             pannable
             zoomable
-            maskColor="rgba(8, 11, 18, 0.72)"
+            maskColor={theme === 'light' ? 'rgba(226, 232, 240, 0.62)' : 'rgba(8, 11, 18, 0.72)'}
             nodeColor={(node) => stageColor((node.data as { node: GraphNode }).node.stage)}
             nodeStrokeWidth={0}
             style={{ width: 190, height: 130 }}

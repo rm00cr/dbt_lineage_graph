@@ -13,7 +13,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import type { GraphNode, SearchHit } from '../api/types'
 import { useExplorerStore } from '../store/useExplorerStore'
-import { STAGE_LABELS, stageColor } from './visual'
+import { STAGE_LABELS, useStageColor } from './visual'
 
 type Mode = 'models' | 'columns'
 
@@ -41,6 +41,7 @@ export function SearchBar() {
   const [columnHits, setColumnHits] = useState<SearchHit[]>([])
   const [loading, setLoading] = useState(false)
   const [columnError, setColumnError] = useState<string | null>(null)
+  const stageColor = useStageColor()
 
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)

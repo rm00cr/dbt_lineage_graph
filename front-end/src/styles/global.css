@@ -3,12 +3,19 @@
    Dark, high-contrast, glassy. Stage colour is the primary visual language.
    ========================================================================== */
 
+/*
+ * Two themes. `:root` carries the dark palette, `[data-theme='light']` overrides it.
+ * src/theme/useTheme.ts stamps the resolved theme on <html>, so nothing here needs a
+ * media query and the toggle wins over the system setting.
+ */
 :root {
   --bg: #080b12;
   --bg-elevated: #0d1220;
   --bg-panel: rgba(16, 22, 36, 0.86);
   --bg-panel-solid: #101624;
   --bg-input: rgba(255, 255, 255, 0.04);
+  --bg-topbar: rgba(10, 14, 24, 0.82);
+  --node-bg: linear-gradient(180deg, rgba(23, 31, 48, 0.97), rgba(14, 19, 32, 0.97));
 
   --border: rgba(148, 163, 184, 0.16);
   --border-strong: rgba(148, 163, 184, 0.3);
@@ -19,6 +26,9 @@
 
   --accent: #6366f1;
   --accent-soft: rgba(99, 102, 241, 0.18);
+  --accent-chip-bg: rgba(99, 102, 241, 0.26);
+  --accent-chip-text: #c7d2fe;
+  --accent-ring: rgba(99, 102, 241, 0.55);
 
   --stage-src: #22d3ee;
   --stage-int: #a78bfa;
@@ -29,18 +39,97 @@
   --warn: #fbbf24;
   --danger: #f87171;
 
+  --hover: rgba(255, 255, 255, 0.08);
+  --hover-strong: #1a2235;
+  --chip-bg: rgba(255, 255, 255, 0.055);
+  --row-hover: rgba(255, 255, 255, 0.03);
+  --scroll-thumb: rgba(148, 163, 184, 0.22);
+  --scroll-thumb-hover: rgba(148, 163, 184, 0.4);
+
+  --code-bg: #070a11;
+  --code-lineno: #3f4a60;
+
+  --edge: rgba(148, 163, 184, 0.34);
+  --edge-dim: rgba(148, 163, 184, 0.1);
+  --node-active-ring: rgba(255, 255, 255, 0.85);
+  --node-active-border: #ffffff;
+  --dim-opacity: 0.2;
+
+  --glow-1: rgba(99, 102, 241, 0.16);
+  --glow-2: rgba(34, 211, 238, 0.1);
+  --glow-3: rgba(251, 146, 60, 0.05);
+
   --radius-sm: 8px;
   --radius: 12px;
   --radius-lg: 18px;
 
   --shadow-panel: 0 24px 60px rgba(0, 0, 0, 0.55);
   --shadow-node: 0 6px 20px rgba(0, 0, 0, 0.42);
+  --shadow-overlay: -24px 0 60px rgba(0, 0, 0, 0.5);
 
   --font: 'Inter', 'Segoe UI', system-ui, -apple-system, sans-serif;
   --mono: 'JetBrains Mono', 'Fira Code', ui-monospace, 'SF Mono', Menlo, monospace;
 
   --topbar-h: 62px;
   color-scheme: dark;
+}
+
+:root[data-theme='light'] {
+  --bg: #f3f5fb;
+  --bg-elevated: #ffffff;
+  --bg-panel: rgba(255, 255, 255, 0.88);
+  --bg-panel-solid: #ffffff;
+  --bg-input: rgba(15, 23, 42, 0.04);
+  --bg-topbar: rgba(255, 255, 255, 0.88);
+  --node-bg: linear-gradient(180deg, #ffffff, #f7f9fd);
+
+  --border: rgba(15, 23, 42, 0.11);
+  --border-strong: rgba(15, 23, 42, 0.2);
+
+  --text: #16203a;
+  --text-muted: #55617a;
+  --text-faint: #8490a6;
+
+  --accent: #4f46e5;
+  --accent-soft: rgba(79, 70, 229, 0.11);
+  --accent-chip-bg: rgba(79, 70, 229, 0.14);
+  --accent-chip-text: #4338ca;
+  --accent-ring: rgba(79, 70, 229, 0.45);
+
+  --stage-src: #0e7490;
+  --stage-int: #6d28d9;
+  --stage-out: #c2410c;
+  --stage-other: #64748b;
+
+  --ok: #047857;
+  --warn: #b45309;
+  --danger: #dc2626;
+
+  --hover: rgba(15, 23, 42, 0.06);
+  --hover-strong: #eef1f8;
+  --chip-bg: rgba(15, 23, 42, 0.045);
+  --row-hover: rgba(15, 23, 42, 0.025);
+  --scroll-thumb: rgba(15, 23, 42, 0.18);
+  --scroll-thumb-hover: rgba(15, 23, 42, 0.3);
+
+  --code-bg: #fbfcfe;
+  --code-lineno: #a8b2c4;
+
+  --edge: rgba(71, 85, 105, 0.42);
+  --edge-dim: rgba(71, 85, 105, 0.13);
+  --node-active-ring: rgba(22, 32, 58, 0.75);
+  --node-active-border: #16203a;
+  --dim-opacity: 0.26;
+
+  --glow-1: rgba(99, 102, 241, 0.2);
+  --glow-2: rgba(16, 185, 129, 0.14);
+  --glow-3: rgba(251, 146, 60, 0.12);
+
+  --shadow-panel: 0 18px 44px rgba(15, 23, 42, 0.13);
+  --shadow-node: 0 4px 14px rgba(15, 23, 42, 0.09);
+  --shadow-overlay: -22px 0 48px rgba(15, 23, 42, 0.12);
+
+  color-scheme: light;
 }
 
 * {
@@ -60,6 +149,27 @@ body {
   color: var(--text);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
+  transition:
+    background-color 0.25s ease,
+    color 0.25s ease;
+}
+
+.app,
+.topbar,
+.toolbar__row,
+.legend,
+.overlay,
+.node,
+.search__field,
+.kv,
+.dep,
+.code,
+.shortcut-hint {
+  transition:
+    background 0.25s ease,
+    background-color 0.25s ease,
+    border-color 0.25s ease,
+    color 0.25s ease;
 }
 
 button {
@@ -80,13 +190,13 @@ input {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: rgba(148, 163, 184, 0.22);
+  background: var(--scroll-thumb);
   border-radius: 99px;
   border: 2px solid transparent;
   background-clip: content-box;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(148, 163, 184, 0.4);
+  background: var(--scroll-thumb-hover);
   background-clip: content-box;
 }
 
@@ -98,8 +208,9 @@ input {
   height: 100%;
   position: relative;
   background:
-    radial-gradient(1200px 600px at 12% -10%, rgba(99, 102, 241, 0.16), transparent 60%),
-    radial-gradient(900px 500px at 88% 110%, rgba(34, 211, 238, 0.1), transparent 55%),
+    radial-gradient(1100px 620px at 8% -12%, var(--glow-1), transparent 62%),
+    radial-gradient(900px 520px at 92% 112%, var(--glow-2), transparent 58%),
+    radial-gradient(760px 420px at 70% -6%, var(--glow-3), transparent 60%),
     var(--bg);
 }
 
@@ -118,7 +229,7 @@ input {
   align-items: center;
   gap: 18px;
   padding: 0 18px;
-  background: rgba(10, 14, 24, 0.82);
+  background: var(--bg-topbar);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
   z-index: 20;
@@ -218,7 +329,7 @@ input {
 }
 
 .btn:hover {
-  background: rgba(255, 255, 255, 0.08);
+  background: var(--hover);
   color: var(--text);
   border-color: var(--border-strong);
 }
@@ -228,9 +339,9 @@ input {
 }
 
 .btn--active {
-  background: var(--accent-soft);
-  border-color: rgba(99, 102, 241, 0.55);
-  color: #c7d2fe;
+  background: var(--accent-chip-bg);
+  border-color: var(--accent-ring);
+  color: var(--accent-chip-text);
 }
 
 .btn--icon {
@@ -251,7 +362,7 @@ input {
 }
 
 .btn--primary:hover {
-  background: #4f46e5;
+  background: color-mix(in srgb, var(--accent) 86%, black);
   color: #fff;
 }
 
@@ -264,6 +375,42 @@ input {
 .btn:disabled {
   opacity: 0.45;
   cursor: not-allowed;
+}
+
+/* ===================================== theme toggle ======================= */
+
+.theme-toggle {
+  display: flex;
+  gap: 2px;
+  padding: 3px;
+  border-radius: 9px;
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  flex: 0 0 auto;
+}
+
+.theme-toggle button {
+  display: grid;
+  place-items: center;
+  width: 28px;
+  height: 26px;
+  border: none;
+  border-radius: 6px;
+  background: transparent;
+  color: var(--text-faint);
+  transition:
+    background 0.15s ease,
+    color 0.15s ease;
+}
+
+.theme-toggle button:hover {
+  color: var(--text);
+  background: var(--hover);
+}
+
+.theme-toggle button[data-active='true'] {
+  background: var(--accent-chip-bg);
+  color: var(--accent-chip-text);
 }
 
 /* ===================================== toolbar ============================ */
@@ -321,8 +468,8 @@ input {
 }
 
 .selector-field:focus-within {
-  border-color: rgba(99, 102, 241, 0.6);
-  background: rgba(99, 102, 241, 0.08);
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
 }
 
 .selector-field input {
@@ -373,8 +520,8 @@ input {
 }
 
 .search__field:focus-within {
-  border-color: rgba(99, 102, 241, 0.65);
-  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.15);
+  border-color: var(--accent-ring);
+  box-shadow: 0 0 0 3px var(--accent-soft);
 }
 
 .search__field input {
@@ -398,13 +545,13 @@ input {
   border: 1px solid var(--border);
   border-radius: 5px;
   padding: 1px 5px;
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--chip-bg);
 }
 
 .search__mode {
   display: flex;
   gap: 2px;
-  background: rgba(255, 255, 255, 0.04);
+  background: var(--chip-bg);
   border-radius: 7px;
   padding: 2px;
 }
@@ -421,8 +568,8 @@ input {
 }
 
 .search__mode button[data-active='true'] {
-  background: rgba(99, 102, 241, 0.26);
-  color: #c7d2fe;
+  background: var(--accent-chip-bg);
+  color: var(--accent-chip-text);
 }
 
 .search__results {
@@ -471,7 +618,7 @@ input {
 
 .result:hover,
 .result[data-active='true'] {
-  background: rgba(99, 102, 241, 0.14);
+  background: var(--accent-soft);
 }
 
 .result__dot {
@@ -528,7 +675,7 @@ input {
 }
 
 .react-flow__edge-path {
-  stroke: rgba(148, 163, 184, 0.34);
+  stroke: var(--edge);
   stroke-width: 1.6;
   transition:
     stroke 0.2s ease,
@@ -543,12 +690,12 @@ input {
 }
 
 .edge--dim .react-flow__edge-path {
-  stroke: rgba(148, 163, 184, 0.1);
+  stroke: var(--edge-dim);
 }
 
 .edge--cross .react-flow__edge-path {
   stroke-dasharray: 7 5;
-  stroke: rgba(251, 146, 60, 0.55);
+  stroke: color-mix(in srgb, var(--stage-out) 60%, transparent);
 }
 
 .edge--cross.edge--highlight .react-flow__edge-path {
@@ -583,7 +730,7 @@ input {
 }
 
 .react-flow__controls-button:hover {
-  background: #1a2235;
+  background: var(--hover-strong);
   fill: var(--text);
 }
 
@@ -592,12 +739,12 @@ input {
   border: 1px solid var(--border);
   overflow: hidden;
   box-shadow: var(--shadow-panel);
-  background: rgba(10, 14, 24, 0.9) !important;
+  background: var(--bg-panel) !important;
 }
 
 .react-flow__selection {
-  background: rgba(99, 102, 241, 0.12);
-  border: 1px solid rgba(99, 102, 241, 0.75);
+  background: var(--accent-soft);
+  border: 1px solid var(--accent);
   border-radius: 6px;
 }
 
@@ -621,7 +768,7 @@ input {
   display: flex;
   overflow: hidden;
   border-radius: 14px;
-  background: linear-gradient(180deg, rgba(23, 31, 48, 0.97), rgba(14, 19, 32, 0.97));
+  background: var(--node-bg);
   border: 1px solid var(--border);
   box-shadow: var(--shadow-node);
   transition:
@@ -699,7 +846,7 @@ input {
   letter-spacing: 0.02em;
   padding: 2.5px 7px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.055);
+  background: var(--chip-bg);
   border: 1px solid var(--border);
   color: var(--text-muted);
   white-space: nowrap;
@@ -732,14 +879,14 @@ input {
 }
 
 .node[data-active='true'] {
-  border-color: #fff;
+  border-color: var(--node-active-border);
   box-shadow:
-    0 0 0 2px rgba(255, 255, 255, 0.85),
+    0 0 0 2px var(--node-active-ring),
     0 12px 34px color-mix(in srgb, var(--stage-color) 34%, transparent);
 }
 
 .node[data-dimmed='true'] {
-  opacity: 0.2;
+  opacity: var(--dim-opacity);
   filter: saturate(0.25);
 }
 
@@ -883,7 +1030,7 @@ input {
   flex-direction: column;
   background: var(--bg-panel-solid);
   border-left: 1px solid var(--border-strong);
-  box-shadow: -24px 0 60px rgba(0, 0, 0, 0.5);
+  box-shadow: var(--shadow-overlay);
   animation: slide-in 0.26s cubic-bezier(0.22, 1, 0.36, 1);
 }
 
@@ -987,7 +1134,7 @@ input {
   font-variant-numeric: tabular-nums;
   padding: 1px 6px;
   border-radius: 99px;
-  background: rgba(255, 255, 255, 0.07);
+  background: var(--chip-bg);
   color: var(--text-muted);
 }
 
@@ -1068,8 +1215,8 @@ input {
 }
 
 .dep:hover {
-  background: rgba(99, 102, 241, 0.13);
-  border-color: rgba(99, 102, 241, 0.45);
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
   transform: translateX(2px);
 }
 
@@ -1105,7 +1252,7 @@ input {
   border-radius: var(--radius);
   border: 1px solid var(--border);
   overflow: hidden;
-  background: #070a11;
+  background: var(--code-bg);
 }
 
 .code__bar {
@@ -1114,13 +1261,13 @@ input {
   gap: 8px;
   padding: 7px 9px;
   border-bottom: 1px solid var(--border);
-  background: rgba(255, 255, 255, 0.025);
+  background: var(--chip-bg);
 }
 
 .code__toggle {
   display: flex;
   gap: 2px;
-  background: rgba(255, 255, 255, 0.05);
+  background: var(--chip-bg);
   border-radius: 7px;
   padding: 2px;
 }
@@ -1136,8 +1283,8 @@ input {
 }
 
 .code__toggle button[data-active='true'] {
-  background: rgba(99, 102, 241, 0.26);
-  color: #c7d2fe;
+  background: var(--accent-chip-bg);
+  color: var(--accent-chip-text);
 }
 
 .code__lines {
@@ -1157,14 +1304,14 @@ input {
 }
 
 .code__line:hover {
-  background: rgba(255, 255, 255, 0.035);
+  background: var(--row-hover);
 }
 
 .code__lineno {
   flex: 0 0 46px;
   text-align: right;
   padding-right: 14px;
-  color: #3f4a60;
+  color: var(--code-lineno);
   user-select: none;
   font-variant-numeric: tabular-nums;
 }
@@ -1218,7 +1365,7 @@ input {
 }
 
 .table tbody tr:hover {
-  background: rgba(255, 255, 255, 0.03);
+  background: var(--row-hover);
 }
 
 .table__name {
@@ -1240,7 +1387,7 @@ input {
 }
 
 mark {
-  background: rgba(251, 191, 36, 0.3);
+  background: color-mix(in srgb, var(--warn) 24%, transparent);
   color: var(--warn);
   border-radius: 3px;
   padding: 0 2px;
@@ -1259,9 +1406,9 @@ mark {
   gap: 9px;
   padding: 8px 14px;
   border-radius: 99px;
-  background: rgba(251, 146, 60, 0.14);
-  border: 1px solid rgba(251, 146, 60, 0.45);
-  color: #fdba74;
+  background: color-mix(in srgb, var(--warn) 16%, var(--bg-panel-solid));
+  border: 1px solid color-mix(in srgb, var(--warn) 45%, transparent);
+  color: var(--warn);
   font-size: 12.5px;
   font-weight: 550;
   box-shadow: var(--shadow-panel);
@@ -1282,7 +1429,7 @@ mark {
   width: 30px;
   height: 30px;
   border-radius: 99px;
-  border: 2.5px solid rgba(148, 163, 184, 0.2);
+  border: 2.5px solid var(--border-strong);
   border-top-color: var(--accent);
   animation: spin 0.75s linear infinite;
   margin: 0 auto 12px;
@@ -1302,9 +1449,9 @@ mark {
   z-index: 40;
   padding: 9px 16px;
   border-radius: 99px;
-  background: rgba(52, 211, 153, 0.16);
-  border: 1px solid rgba(52, 211, 153, 0.45);
-  color: #6ee7b7;
+  background: color-mix(in srgb, var(--ok) 16%, var(--bg-panel-solid));
+  border: 1px solid color-mix(in srgb, var(--ok) 45%, transparent);
+  color: var(--ok);
   font-size: 12.5px;
   font-weight: 600;
   animation: pop-in 0.16s ease-out;

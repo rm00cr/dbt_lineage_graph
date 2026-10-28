@@ -7,7 +7,7 @@ import { Handle, type Node, type NodeProps, Position, useStore } from '@xyflow/r
 import { memo } from 'react'
 
 import type { GraphNode } from '../../api/types'
-import { MATERIALIZATION_ICONS, stageColor } from '../visual'
+import { MATERIALIZATION_ICONS, useStageColor } from '../visual'
 
 export type ModelNodeData = {
   node: GraphNode
@@ -22,6 +22,7 @@ const COMPACT_ZOOM = 0.55
 
 function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
   const compact = useStore((state) => state.transform[2] < COMPACT_ZOOM)
+  const stageColor = useStageColor()
   const { node, dimmed, active, searchHit } = data
   const Icon = MATERIALIZATION_ICONS[node.materialization] ?? MATERIALIZATION_ICONS.other
 

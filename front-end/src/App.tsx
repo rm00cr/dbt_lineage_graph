@@ -6,10 +6,12 @@ import { GraphCanvas } from './components/GraphCanvas'
 import { Legend } from './components/Legend'
 import { ModelOverlay } from './components/ModelOverlay'
 import { SearchBar } from './components/SearchBar'
+import { ThemeToggle } from './components/ThemeToggle'
 import { Toolbar } from './components/Toolbar'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useUrlSync } from './hooks/useUrlSync'
 import { useExplorerStore } from './store/useExplorerStore'
+import { useSystemThemeListener } from './theme/useTheme'
 
 export default function App() {
   return (
@@ -30,6 +32,7 @@ function Explorer() {
   const [toast, setToast] = useState<string | null>(null)
   useKeyboardShortcuts()
   useUrlSync()
+  useSystemThemeListener()
 
   useEffect(() => {
     void init()
@@ -57,6 +60,8 @@ function Explorer() {
 
         <SearchBar />
         <span className="topbar__spacer" />
+
+        <ThemeToggle />
 
         <div className="topbar__stats">
           <div className="stat-chip">

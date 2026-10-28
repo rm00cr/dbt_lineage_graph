@@ -36,6 +36,7 @@ src/
 │   └── useExplorerStore.ts   the single shared store (graph, selection, focus, overlay)
 ├── components/
 │   ├── GraphCanvas.tsx       React Flow canvas, focus mode, area select, mini-map, lanes
+│   ├── ThemeToggle.tsx       light / system / dark switch
 │   ├── nodes/ModelNode.tsx   custom node: stage colour, materialization badge, big label
 │   ├── Toolbar.tsx           layout / focus / filters / `+model+` selector
 │   ├── SearchBar.tsx         fuzzy model search + column search
@@ -47,7 +48,9 @@ src/
 ├── hooks/
 │   ├── useKeyboardShortcuts.ts
 │   └── useUrlSync.ts         shareable `?model=…&tab=…&layout=…&focus=…&select=…`
-└── styles/global.css         design tokens and all component styles
+├── theme/
+│   └── useTheme.ts           light / dark / system, stamped on <html data-theme>
+└── styles/global.css         design tokens (both palettes) and all component styles
 ```
 
 ## Conventions worth keeping
@@ -60,8 +63,17 @@ src/
 - **Contract first.** Changing a payload means changing `api/types.ts`, `app/schemas.py`
   and `contract.md` in the same commit.
 
-## Styling
+## Styling and theming
 
 Plain CSS with custom properties in `styles/global.css` — no UI framework, no build step
 beyond Vite. Stage colour is exposed as `--stage-color` on node and panel roots, so a
 component only needs that one variable to match the canvas.
+
+Two palettes live in that file: `:root` holds the dark one, `:root[data-theme='light']`
+overrides it. `theme/useTheme.ts` resolves light / dark / system and stamps the result on
+`<html data-theme>`, so a new colour only ever needs to be added as a token in those two
+blocks — never as a literal in a rule.
+
+Colours that cannot come from CSS (React Flow's mini-map, the background dots, Prism's
+syntax theme, inline stage dots) read the resolved theme from the store instead; use
+`useStageColor()` rather than importing a fixed palette.

@@ -50,7 +50,7 @@ The Vite dev server proxies `/api` to `127.0.0.1:8000`, so there is no CORS setu
 
 ```bash
 cd back-end  && uv run pytest && uv run ruff check .   # 23 tests
-cd front-end && npm test                               # 28 tests
+cd front-end && npm test                               # 32 tests
 ```
 
 ---
@@ -71,6 +71,7 @@ cd front-end && npm test                               # 28 tests
 | Mini-map | `M` |
 | Zoom to fit | `Z` |
 | Share a view | the URL carries `?model=…&tab=…&layout=…&focus=…&select=…` |
+| Switch theme | sun / monitor / moon in the top bar — light, follow the system, dark (remembered per browser) |
 
 ---
 
@@ -96,6 +97,11 @@ cd front-end && npm test                               # 28 tests
 - 2.4 Cross-pipeline edges are rendered (dashed orange) and the loader already takes a *list*
   of dbt projects — only the config and a UI grouping are missing.
 - 2.3 Column-level lineage: **not started** (stretch goal, needs sqlglot).
+
+**Look and feel** — light and dark themes, defaulting to the operating system setting and
+overridable from the top bar. Both palettes are defined as CSS custom properties in
+`front-end/src/styles/global.css`; stage colours have a per-theme variant so they keep
+their contrast on a white canvas (`front-end/src/components/visual.tsx`).
 
 **Prio 3 — 3.1, 3.2, 3.3, 3.4, 3.6 done**
 

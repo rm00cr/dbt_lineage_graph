@@ -23,7 +23,7 @@ import {
 import { useState } from 'react'
 
 import { useExplorerStore } from '../store/useExplorerStore'
-import { STAGE_LABELS, copyToClipboard, stageColor } from './visual'
+import { STAGE_LABELS, copyToClipboard, useStageColor } from './visual'
 
 const FOCUS_LABEL = { off: 'Focus off', dim: 'Focus: dim', isolate: 'Focus: isolate' } as const
 const FOCUS_ICON = { off: EyeOff, dim: Eye, isolate: Crosshair } as const
@@ -57,6 +57,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const refresh = useExplorerStore((s) => s.refresh)
 
   const [showFilters, setShowFilters] = useState(false)
+  const stageColor = useStageColor()
   const { fitView } = useReactFlow()
 
   const FocusIcon = FOCUS_ICON[focusMode]

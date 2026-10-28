@@ -7,6 +7,7 @@ import { Check, Copy, Download } from 'lucide-react'
 import { Highlight, themes } from 'prism-react-renderer'
 import { useState } from 'react'
 
+import { useTheme } from '../theme/useTheme'
 import { copyToClipboard } from './visual'
 
 interface CodeViewerProps {
@@ -20,6 +21,7 @@ type Variant = 'compiled' | 'raw'
 export function CodeViewer({ compiled, raw, fileName }: CodeViewerProps) {
   const [variant, setVariant] = useState<Variant>(compiled ? 'compiled' : 'raw')
   const [copied, setCopied] = useState(false)
+  const theme = useTheme((s) => s.resolved)
 
   const code = (variant === 'compiled' ? compiled : raw) ?? ''
 
@@ -72,7 +74,11 @@ export function CodeViewer({ compiled, raw, fileName }: CodeViewerProps) {
         </button>
       </div>
 
-      <Highlight code={code.trimEnd()} language="sql" theme={themes.vsDark}>
+      <Highlight
+        code={code.trimEnd()}
+        language="sql"
+        theme={theme === 'light' ? themes.oneLight : themes.vsDark}
+      >
         {({ tokens, getLineProps, getTokenProps }) => (
           <pre className="code__lines">
             {tokens.map((line, lineIndex) => {

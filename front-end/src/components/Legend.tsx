@@ -1,13 +1,14 @@
 /** Legend: the visual language of the canvas (stage colours + materialization icons). */
 
 import { useExplorerStore } from '../store/useExplorerStore'
-import { MATERIALIZATION_ICONS, STAGE_COLORS, STAGE_LABELS } from './visual'
+import { MATERIALIZATION_ICONS, STAGE_LABELS, useStageColor } from './visual'
 
 const MATERIALIZATIONS = ['table', 'view', 'incremental', 'ephemeral', 'source'] as const
 
 export function Legend() {
   const graph = useExplorerStore((s) => s.graph)
-  const stages = (graph?.stats.stages ?? ['src', 'int', 'out']) as (keyof typeof STAGE_COLORS)[]
+  const stageColor = useStageColor()
+  const stages = (graph?.stats.stages ?? ['src', 'int', 'out']) as ('src' | 'int' | 'out')[]
 
   return (
     <div className="legend">
@@ -17,7 +18,7 @@ export function Legend() {
           <span className="legend__item" key={stage}>
             <span
               className="legend__swatch"
-              style={{ background: STAGE_COLORS[stage], color: STAGE_COLORS[stage] }}
+              style={{ background: stageColor(stage), color: stageColor(stage) }}
             />
             {STAGE_LABELS[stage]}
           </span>
@@ -46,7 +47,7 @@ export function Legend() {
               y1="4"
               x2="26"
               y2="4"
-              stroke="rgba(251,146,60,0.75)"
+              stroke={stageColor('out')}
               strokeWidth="2"
               strokeDasharray="7 5"
             />

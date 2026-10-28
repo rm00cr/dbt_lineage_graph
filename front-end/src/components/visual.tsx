@@ -10,13 +10,28 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-import type { Materialization, Stage } from '../api/types'
+import { useCallback } from 'react'
 
-export const STAGE_COLORS: Record<Stage, string> = {
-  src: '#22d3ee',
-  int: '#a78bfa',
-  out: '#fb923c',
-  other: '#94a3b8',
+import type { Materialization, Stage } from '../api/types'
+import { type ThemeName, useTheme } from '../theme/useTheme'
+
+/**
+ * Stage colours per theme. The light variants are darker so they keep their contrast on a
+ * white canvas; the dark ones glow on the near-black one.
+ */
+export const STAGE_PALETTES: Record<ThemeName, Record<Stage, string>> = {
+  dark: {
+    src: '#22d3ee',
+    int: '#a78bfa',
+    out: '#fb923c',
+    other: '#94a3b8',
+  },
+  light: {
+    src: '#0e7490',
+    int: '#6d28d9',
+    out: '#c2410c',
+    other: '#64748b',
+  },
 }
 
 export const STAGE_LABELS: Record<Stage, string> = {
@@ -44,8 +59,15 @@ export const MATERIALIZATION_LABELS: Record<Materialization, string> = {
   other: 'other',
 }
 
-export function stageColor(stage: Stage): string {
-  return STAGE_COLORS[stage] ?? STAGE_COLORS.other
+export function stageColor(stage: Stage, theme: ThemeName): string {
+  const palette = STAGE_PALETTES[theme] ?? STAGE_PALETTES.dark
+  return palette[stage] ?? palette.other
+}
+
+/** Stage colour resolver bound to the active theme — re-renders when the theme flips. */
+export function useStageColor(): (stage: Stage) => string {
+  const theme = useTheme((s) => s.resolved)
+  return useCallback((stage: Stage) => stageColor(stage, theme), [theme])
 }
 
 export function formatCount(value: number | null | undefined): string {
