@@ -1,0 +1,26 @@
+# Python / uv
+.venv/
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.ruff_cache/
+uv.lock.bak
+
+# Node
+node_modules/
+dist/
+.vite/
+*.local
+
+# Env
+.env
+.env.*
+!.env.example
+
+# Editors / OS
+.DS_Store
+.idea/
+.vscode/
+
+# TS build info
+*.tsbuildinfo

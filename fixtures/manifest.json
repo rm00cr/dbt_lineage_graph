@@ -1,0 +1,2680 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json",
+    "dbt_version": "1.8.7",
+    "generated_at": "2026-10-27T21:14:09.482173Z",
+    "invocation_id": "9f1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
+    "project_name": "pnc_analytics",
+    "project_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+    "adapter_type": "bigquery",
+    "env": {}
+  },
+  "nodes": {
+    "model.pnc_analytics.src_mfp_contracts": {
+      "unique_id": "model.pnc_analytics.src_mfp_contracts",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "src_mfp_contracts",
+      "alias": "src_mfp_contracts",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_staging",
+      "path": "bestand_mfp/staging/src_mfp_contracts.sql",
+      "original_file_path": "models/bestand_mfp/staging/src_mfp_contracts.sql",
+      "description": "Cleaned contract versions: renamed columns, typed, technical records removed.",
+      "tags": [
+        "mfp",
+        "staging"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "view",
+        "schema": "staging",
+        "tags": [
+          "mfp",
+          "staging"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.pnc_analytics.raw_mfp.contracts"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "raw_mfp",
+          "contracts"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    contract_id,\n    partner_id,\n    product_code,\n    valid_from,\n    nullif(valid_to, date '9999-12-31')          as valid_to,\n    case status_code\n        when 'A' then 'active'\n        when 'C' then 'cancelled'\n        when 'S' then 'suspended'\n        else 'unknown'\n    end                                          as contract_status,\n    annual_premium                               as annual_premium_chf,\n    load_ts                                      as _loaded_at\nfrom {{ source('raw_mfp', 'contracts') }}\nwhere contract_id is not null",
+      "compiled_code": "select\n    contract_id,\n    partner_id,\n    product_code,\n    valid_from,\n    nullif(valid_to, date '9999-12-31')          as valid_to,\n    case status_code\n        when 'A' then 'active'\n        when 'C' then 'cancelled'\n        when 'S' then 'suspended'\n        else 'unknown'\n    end                                          as contract_status,\n    annual_premium                               as annual_premium_chf,\n    load_ts                                      as _loaded_at\nfrom `pnc-raw-prd`.raw_mfp.contracts\nwhere contract_id is not null\n",
+      "columns": {
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Technical contract key.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Policy holder reference.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "description": "Start of the contract version.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_to": {
+          "name": "valid_to",
+          "description": "End of the contract version, null if open.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_status": {
+          "name": "contract_status",
+          "description": "Harmonised status: active | cancelled | suspended.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Gross annual premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "_loaded_at": {
+          "name": "_loaded_at",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "000000000000000000000000000000000000000000000000489d712617ee0998"
+      }
+    },
+    "model.pnc_analytics.src_mfp_partners": {
+      "unique_id": "model.pnc_analytics.src_mfp_partners",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "src_mfp_partners",
+      "alias": "src_mfp_partners",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_staging",
+      "path": "bestand_mfp/staging/src_mfp_partners.sql",
+      "original_file_path": "models/bestand_mfp/staging/src_mfp_partners.sql",
+      "description": "Cleaned partner master data incl. derived age band.",
+      "tags": [
+        "mfp",
+        "staging"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "view",
+        "schema": "staging",
+        "tags": [
+          "mfp",
+          "staging"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.pnc_analytics.raw_mfp.partners"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "raw_mfp",
+          "partners"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    partner_id,\n    case partner_type when 'P' then 'person' when 'C' then 'company' end as partner_type,\n    birth_date,\n    date_diff(current_date(), birth_date, year)                          as age_years,\n    postal_code,\n    canton,\n    lower(language_code)                                                 as language_code,\n    load_ts                                                              as _loaded_at\nfrom {{ source('raw_mfp', 'partners') }}",
+      "compiled_code": "select\n    partner_id,\n    case partner_type when 'P' then 'person' when 'C' then 'company' end as partner_type,\n    birth_date,\n    date_diff(current_date(), birth_date, year)                          as age_years,\n    postal_code,\n    canton,\n    lower(language_code)                                                 as language_code,\n    load_ts                                                              as _loaded_at\nfrom `pnc-raw-prd`.raw_mfp.partners\n",
+      "columns": {
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Technical partner key.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_type": {
+          "name": "partner_type",
+          "description": "person | company.",
+          "meta": {},
+          "tags": []
+        },
+        "birth_date": {
+          "name": "birth_date",
+          "description": "Birth date for natural persons.",
+          "meta": {},
+          "tags": []
+        },
+        "age_years": {
+          "name": "age_years",
+          "description": "Age in completed years.",
+          "meta": {},
+          "tags": []
+        },
+        "postal_code": {
+          "name": "postal_code",
+          "description": "Postal code of the main address.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "language_code": {
+          "name": "language_code",
+          "description": "Correspondence language, lower case.",
+          "meta": {},
+          "tags": []
+        },
+        "_loaded_at": {
+          "name": "_loaded_at",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000002ae7d5dc62b8cdb7"
+      }
+    },
+    "model.pnc_analytics.src_mfp_coverages": {
+      "unique_id": "model.pnc_analytics.src_mfp_coverages",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "src_mfp_coverages",
+      "alias": "src_mfp_coverages",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_staging",
+      "path": "bestand_mfp/staging/src_mfp_coverages.sql",
+      "original_file_path": "models/bestand_mfp/staging/src_mfp_coverages.sql",
+      "description": "Cleaned coverage lines per contract.",
+      "tags": [
+        "mfp",
+        "staging"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "view",
+        "schema": "staging",
+        "tags": [
+          "mfp",
+          "staging"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.pnc_analytics.raw_mfp.coverages"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "raw_mfp",
+          "coverages"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    coverage_id,\n    contract_id,\n    risk_code,\n    sum_insured   as sum_insured_chf,\n    deductible    as deductible_chf,\n    tariff_code,\n    valid_from,\n    load_ts       as _loaded_at\nfrom {{ source('raw_mfp', 'coverages') }}\nwhere sum_insured > 0",
+      "compiled_code": "select\n    coverage_id,\n    contract_id,\n    risk_code,\n    sum_insured   as sum_insured_chf,\n    deductible    as deductible_chf,\n    tariff_code,\n    valid_from,\n    load_ts       as _loaded_at\nfrom `pnc-raw-prd`.raw_mfp.coverages\nwhere sum_insured > 0\n",
+      "columns": {
+        "coverage_id": {
+          "name": "coverage_id",
+          "description": "Technical coverage key.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Parent contract.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Covered risk.",
+          "meta": {},
+          "tags": []
+        },
+        "sum_insured_chf": {
+          "name": "sum_insured_chf",
+          "description": "Sum insured in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "deductible_chf": {
+          "name": "deductible_chf",
+          "description": "Deductible in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "tariff_code": {
+          "name": "tariff_code",
+          "description": "Applied tariff.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "description": "Start of the coverage version.",
+          "meta": {},
+          "tags": []
+        },
+        "_loaded_at": {
+          "name": "_loaded_at",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000004ee210e022a18711"
+      }
+    },
+    "model.pnc_analytics.src_mfp_tariffs": {
+      "unique_id": "model.pnc_analytics.src_mfp_tariffs",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "src_mfp_tariffs",
+      "alias": "src_mfp_tariffs",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_staging",
+      "path": "bestand_mfp/staging/src_mfp_tariffs.sql",
+      "original_file_path": "models/bestand_mfp/staging/src_mfp_tariffs.sql",
+      "description": "Tariff reference data, deduplicated on (tariff_code, risk_code, valid_from).",
+      "tags": [
+        "mfp",
+        "staging",
+        "reference"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "view",
+        "schema": "staging",
+        "tags": [
+          "mfp",
+          "staging",
+          "reference"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "weekly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "weekly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.pnc_analytics.raw_mfp.tariffs"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "raw_mfp",
+          "tariffs"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect distinct\n    tariff_code,\n    risk_code,\n    region_factor,\n    base_rate,\n    valid_from\nfrom {{ source('raw_mfp', 'tariffs') }}",
+      "compiled_code": "select distinct\n    tariff_code,\n    risk_code,\n    region_factor,\n    base_rate,\n    valid_from\nfrom `pnc-raw-prd`.raw_mfp.tariffs\n",
+      "columns": {
+        "tariff_code": {
+          "name": "tariff_code",
+          "description": "Tariff key.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Risk the tariff applies to.",
+          "meta": {},
+          "tags": []
+        },
+        "region_factor": {
+          "name": "region_factor",
+          "description": "Regional loading factor.",
+          "meta": {},
+          "tags": []
+        },
+        "base_rate": {
+          "name": "base_rate",
+          "description": "Base rate per 1000 CHF sum insured.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "description": "Start of validity.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000003bf0a2d9fadf1d26"
+      }
+    },
+    "model.pnc_analytics.int_mfp_contracts": {
+      "unique_id": "model.pnc_analytics.int_mfp_contracts",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "int_mfp_contracts",
+      "alias": "int_mfp_contracts",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_intermediate",
+      "path": "bestand_mfp/intermediate/int_mfp_contracts.sql",
+      "original_file_path": "models/bestand_mfp/intermediate/int_mfp_contracts.sql",
+      "description": "Contract versions enriched with partner attributes. Core entity of the portfolio pipeline.",
+      "tags": [
+        "mfp",
+        "core"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "table",
+        "schema": "intermediate",
+        "tags": [
+          "mfp",
+          "core"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.src_mfp_contracts",
+          "model.pnc_analytics.src_mfp_partners"
+        ]
+      },
+      "refs": [
+        {
+          "name": "src_mfp_contracts",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "src_mfp_partners",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nwith contracts as (\n    select * from {{ ref('src_mfp_contracts') }}\n),\n\npartners as (\n    select * from {{ ref('src_mfp_partners') }}\n)\n\nselect\n    c.contract_id,\n    c.partner_id,\n    c.product_code,\n    c.contract_status,\n    c.valid_from,\n    c.valid_to,\n    c.annual_premium_chf,\n    p.partner_type,\n    p.age_years,\n    p.canton,\n    p.language_code\nfrom contracts c\nleft join partners p using (partner_id)",
+      "compiled_code": "with contracts as (\n    select * from `pnc-analytics-prd`.mfp_staging.src_mfp_contracts\n),\npartners as (\n    select * from `pnc-analytics-prd`.mfp_staging.src_mfp_partners\n)\nselect\n    c.contract_id,\n    c.partner_id,\n    c.product_code,\n    c.contract_status,\n    c.valid_from,\n    c.valid_to,\n    c.annual_premium_chf,\n    p.partner_type,\n    p.age_years,\n    p.canton,\n    p.language_code\nfrom contracts c\nleft join partners p using (partner_id)\n",
+      "columns": {
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Technical contract key.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Policy holder reference.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_status": {
+          "name": "contract_status",
+          "description": "active | cancelled | suspended.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "description": "Start of the contract version.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_to": {
+          "name": "valid_to",
+          "description": "End of the contract version.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Gross annual premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_type": {
+          "name": "partner_type",
+          "description": "person | company.",
+          "meta": {},
+          "tags": []
+        },
+        "age_years": {
+          "name": "age_years",
+          "description": "Age of the policy holder.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "language_code": {
+          "name": "language_code",
+          "description": "Correspondence language.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000002077161b8ef4ca45"
+      }
+    },
+    "model.pnc_analytics.int_mfp_coverages": {
+      "unique_id": "model.pnc_analytics.int_mfp_coverages",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "int_mfp_coverages",
+      "alias": "int_mfp_coverages",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_intermediate",
+      "path": "bestand_mfp/intermediate/int_mfp_coverages.sql",
+      "original_file_path": "models/bestand_mfp/intermediate/int_mfp_coverages.sql",
+      "description": "Coverage lines joined to their tariff, incrementally loaded on valid_from.",
+      "tags": [
+        "mfp",
+        "core"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "incremental",
+        "schema": "intermediate",
+        "tags": [
+          "mfp",
+          "core"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.src_mfp_coverages",
+          "model.pnc_analytics.src_mfp_tariffs"
+        ]
+      },
+      "refs": [
+        {
+          "name": "src_mfp_coverages",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "src_mfp_tariffs",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='incremental', unique_key='coverage_id') }}\n\nwith coverages as (\n    select * from {{ ref('src_mfp_coverages') }}\n    {% if is_incremental() %}\n    where valid_from >= (select max(valid_from) from {{ this }})\n    {% endif %}\n),\n\ntariffs as (\n    select * from {{ ref('src_mfp_tariffs') }}\n)\n\nselect\n    cov.coverage_id,\n    cov.contract_id,\n    cov.risk_code,\n    cov.sum_insured_chf,\n    cov.deductible_chf,\n    cov.tariff_code,\n    cov.valid_from,\n    t.region_factor,\n    t.base_rate\nfrom coverages cov\nleft join tariffs t\n    on cov.tariff_code = t.tariff_code\n   and cov.risk_code  = t.risk_code",
+      "compiled_code": "with coverages as (\n    select * from `pnc-analytics-prd`.mfp_staging.src_mfp_coverages\n),\ntariffs as (\n    select * from `pnc-analytics-prd`.mfp_staging.src_mfp_tariffs\n)\nselect\n    cov.coverage_id,\n    cov.contract_id,\n    cov.risk_code,\n    cov.sum_insured_chf,\n    cov.deductible_chf,\n    cov.tariff_code,\n    cov.valid_from,\n    t.region_factor,\n    t.base_rate\nfrom coverages cov\nleft join tariffs t\n    on cov.tariff_code = t.tariff_code\n   and cov.risk_code  = t.risk_code\n",
+      "columns": {
+        "coverage_id": {
+          "name": "coverage_id",
+          "description": "Technical coverage key.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Parent contract.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Covered risk.",
+          "meta": {},
+          "tags": []
+        },
+        "sum_insured_chf": {
+          "name": "sum_insured_chf",
+          "description": "Sum insured in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "deductible_chf": {
+          "name": "deductible_chf",
+          "description": "Deductible in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "tariff_code": {
+          "name": "tariff_code",
+          "description": "Applied tariff.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "description": "Start of the coverage version.",
+          "meta": {},
+          "tags": []
+        },
+        "region_factor": {
+          "name": "region_factor",
+          "description": "Regional loading factor.",
+          "meta": {},
+          "tags": []
+        },
+        "base_rate": {
+          "name": "base_rate",
+          "description": "Base rate per 1000 CHF sum insured.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000001de8916143bef6c9"
+      }
+    },
+    "model.pnc_analytics.int_mfp_contract_coverage": {
+      "unique_id": "model.pnc_analytics.int_mfp_contract_coverage",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "int_mfp_contract_coverage",
+      "alias": "int_mfp_contract_coverage",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_intermediate",
+      "path": "bestand_mfp/intermediate/int_mfp_contract_coverage.sql",
+      "original_file_path": "models/bestand_mfp/intermediate/int_mfp_contract_coverage.sql",
+      "description": "Contract x coverage grain: the central fact table of the portfolio pipeline.",
+      "tags": [
+        "mfp",
+        "core"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "table",
+        "schema": "intermediate",
+        "tags": [
+          "mfp",
+          "core"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.int_mfp_contracts",
+          "model.pnc_analytics.int_mfp_coverages"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_mfp_contracts",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "int_mfp_coverages",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nselect\n    c.contract_id,\n    cov.coverage_id,\n    c.partner_id,\n    c.product_code,\n    cov.risk_code,\n    c.contract_status,\n    c.canton,\n    cov.sum_insured_chf,\n    cov.deductible_chf,\n    cov.region_factor,\n    cov.base_rate,\n    c.annual_premium_chf,\n    greatest(c.valid_from, cov.valid_from) as valid_from\nfrom {{ ref('int_mfp_contracts') }} c\ninner join {{ ref('int_mfp_coverages') }} cov using (contract_id)",
+      "compiled_code": "select\n    c.contract_id,\n    cov.coverage_id,\n    c.partner_id,\n    c.product_code,\n    cov.risk_code,\n    c.contract_status,\n    c.canton,\n    cov.sum_insured_chf,\n    cov.deductible_chf,\n    cov.region_factor,\n    cov.base_rate,\n    c.annual_premium_chf,\n    greatest(c.valid_from, cov.valid_from) as valid_from\nfrom `pnc-analytics-prd`.mfp_intermediate.int_mfp_contracts c\ninner join `pnc-analytics-prd`.mfp_intermediate.int_mfp_coverages cov using (contract_id)\n",
+      "columns": {
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Technical contract key.",
+          "meta": {},
+          "tags": []
+        },
+        "coverage_id": {
+          "name": "coverage_id",
+          "description": "Technical coverage key.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Policy holder reference.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Covered risk.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_status": {
+          "name": "contract_status",
+          "description": "active | cancelled | suspended.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "sum_insured_chf": {
+          "name": "sum_insured_chf",
+          "description": "Sum insured in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "deductible_chf": {
+          "name": "deductible_chf",
+          "description": "Deductible in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "region_factor": {
+          "name": "region_factor",
+          "description": "Regional loading factor.",
+          "meta": {},
+          "tags": []
+        },
+        "base_rate": {
+          "name": "base_rate",
+          "description": "Base rate per 1000 CHF sum insured.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Gross annual premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "description": "Start of the combined version.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000006ef22a196344f9b3"
+      }
+    },
+    "model.pnc_analytics.int_mfp_premium_calc": {
+      "unique_id": "model.pnc_analytics.int_mfp_premium_calc",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "int_mfp_premium_calc",
+      "alias": "int_mfp_premium_calc",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_intermediate",
+      "path": "bestand_mfp/intermediate/int_mfp_premium_calc.sql",
+      "original_file_path": "models/bestand_mfp/intermediate/int_mfp_premium_calc.sql",
+      "description": "Technical premium per coverage (ephemeral: inlined into downstream models).",
+      "tags": [
+        "mfp",
+        "calculation"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "ephemeral",
+        "schema": "intermediate",
+        "tags": [
+          "mfp",
+          "calculation"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.int_mfp_contract_coverage"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_mfp_contract_coverage",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='ephemeral') }}\n\nselect\n    contract_id,\n    coverage_id,\n    risk_code,\n    sum_insured_chf,\n    base_rate,\n    region_factor,\n    round(sum_insured_chf / 1000 * base_rate * region_factor, 2) as technical_premium_chf,\n    annual_premium_chf\nfrom {{ ref('int_mfp_contract_coverage') }}",
+      "compiled_code": "select\n    contract_id,\n    coverage_id,\n    risk_code,\n    sum_insured_chf,\n    base_rate,\n    region_factor,\n    round(sum_insured_chf / 1000 * base_rate * region_factor, 2) as technical_premium_chf,\n    annual_premium_chf\nfrom `pnc-analytics-prd`.mfp_intermediate.int_mfp_contract_coverage\n",
+      "columns": {
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Technical contract key.",
+          "meta": {},
+          "tags": []
+        },
+        "coverage_id": {
+          "name": "coverage_id",
+          "description": "Technical coverage key.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Covered risk.",
+          "meta": {},
+          "tags": []
+        },
+        "sum_insured_chf": {
+          "name": "sum_insured_chf",
+          "description": "Sum insured in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "base_rate": {
+          "name": "base_rate",
+          "description": "Base rate per 1000 CHF sum insured.",
+          "meta": {},
+          "tags": []
+        },
+        "region_factor": {
+          "name": "region_factor",
+          "description": "Regional loading factor.",
+          "meta": {},
+          "tags": []
+        },
+        "technical_premium_chf": {
+          "name": "technical_premium_chf",
+          "description": "Calculated technical premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Gross annual premium in CHF.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000001b9f6b06bf356abc"
+      }
+    },
+    "model.pnc_analytics.out_mfp_portfolio_daily": {
+      "unique_id": "model.pnc_analytics.out_mfp_portfolio_daily",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "out_mfp_portfolio_daily",
+      "alias": "out_mfp_portfolio_daily",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_marts",
+      "path": "bestand_mfp/marts/out_mfp_portfolio_daily.sql",
+      "original_file_path": "models/bestand_mfp/marts/out_mfp_portfolio_daily.sql",
+      "description": "Daily portfolio snapshot per product, canton and risk. Feeds the portfolio dashboard.",
+      "tags": [
+        "mfp",
+        "mart",
+        "reporting"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "incremental",
+        "schema": "marts",
+        "tags": [
+          "mfp",
+          "mart",
+          "reporting"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.int_mfp_contract_coverage",
+          "model.pnc_analytics.int_mfp_premium_calc"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_mfp_contract_coverage",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "int_mfp_premium_calc",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='incremental', unique_key='snapshot_date') }}\n\nselect\n    current_date()                        as snapshot_date,\n    cc.product_code,\n    cc.canton,\n    cc.risk_code,\n    count(distinct cc.contract_id)        as contract_count,\n    count(cc.coverage_id)                 as coverage_count,\n    sum(cc.sum_insured_chf)               as sum_insured_chf,\n    sum(pc.technical_premium_chf)         as technical_premium_chf,\n    sum(cc.annual_premium_chf)            as written_premium_chf\nfrom {{ ref('int_mfp_contract_coverage') }} cc\nleft join {{ ref('int_mfp_premium_calc') }} pc using (coverage_id)\nwhere cc.contract_status = 'active'\ngroup by 1, 2, 3, 4",
+      "compiled_code": "select\n    current_date()                        as snapshot_date,\n    cc.product_code,\n    cc.canton,\n    cc.risk_code,\n    count(distinct cc.contract_id)        as contract_count,\n    count(cc.coverage_id)                 as coverage_count,\n    sum(cc.sum_insured_chf)               as sum_insured_chf,\n    sum(pc.technical_premium_chf)         as technical_premium_chf,\n    sum(cc.annual_premium_chf)            as written_premium_chf\nfrom `pnc-analytics-prd`.mfp_intermediate.int_mfp_contract_coverage cc\nleft join `pnc-analytics-prd`.mfp_intermediate.int_mfp_premium_calc pc using (coverage_id)\nwhere cc.contract_status = 'active'\ngroup by 1, 2, 3, 4\n",
+      "columns": {
+        "snapshot_date": {
+          "name": "snapshot_date",
+          "description": "Snapshot day.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Covered risk.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_count": {
+          "name": "contract_count",
+          "description": "Distinct active contracts.",
+          "meta": {},
+          "tags": []
+        },
+        "coverage_count": {
+          "name": "coverage_count",
+          "description": "Number of coverage lines.",
+          "meta": {},
+          "tags": []
+        },
+        "sum_insured_chf": {
+          "name": "sum_insured_chf",
+          "description": "Total sum insured in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "technical_premium_chf": {
+          "name": "technical_premium_chf",
+          "description": "Total technical premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "written_premium_chf": {
+          "name": "written_premium_chf",
+          "description": "Total written premium in CHF.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000007e4bd0a79e918563"
+      }
+    },
+    "model.pnc_analytics.out_mfp_premium_report": {
+      "unique_id": "model.pnc_analytics.out_mfp_premium_report",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "out_mfp_premium_report",
+      "alias": "out_mfp_premium_report",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_marts",
+      "path": "bestand_mfp/marts/out_mfp_premium_report.sql",
+      "original_file_path": "models/bestand_mfp/marts/out_mfp_premium_report.sql",
+      "description": "Monthly premium reconciliation: technical vs. written premium per product.",
+      "tags": [
+        "mfp",
+        "mart",
+        "finance"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "table",
+        "schema": "marts",
+        "tags": [
+          "mfp",
+          "mart",
+          "finance"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "monthly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "monthly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.int_mfp_premium_calc",
+          "model.pnc_analytics.int_mfp_contracts"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_mfp_premium_calc",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "int_mfp_contracts",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nselect\n    date_trunc(current_date(), month)                       as reporting_month,\n    c.product_code,\n    count(distinct pc.contract_id)                          as contract_count,\n    sum(pc.technical_premium_chf)                           as technical_premium_chf,\n    sum(pc.annual_premium_chf)                              as annual_premium_chf,\n    safe_divide(sum(pc.technical_premium_chf),\n                sum(pc.annual_premium_chf))                 as premium_adequacy_ratio\nfrom {{ ref('int_mfp_premium_calc') }} pc\njoin {{ ref('int_mfp_contracts') }} c using (contract_id)\ngroup by 1, 2",
+      "compiled_code": "select\n    date_trunc(current_date(), month)                       as reporting_month,\n    c.product_code,\n    count(distinct pc.contract_id)                          as contract_count,\n    sum(pc.technical_premium_chf)                           as technical_premium_chf,\n    sum(pc.annual_premium_chf)                              as annual_premium_chf,\n    safe_divide(sum(pc.technical_premium_chf),\n                sum(pc.annual_premium_chf))                 as premium_adequacy_ratio\nfrom `pnc-analytics-prd`.mfp_intermediate.int_mfp_premium_calc pc\njoin `pnc-analytics-prd`.mfp_intermediate.int_mfp_contracts c using (contract_id)\ngroup by 1, 2\n",
+      "columns": {
+        "reporting_month": {
+          "name": "reporting_month",
+          "description": "First day of the reporting month.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_count": {
+          "name": "contract_count",
+          "description": "Distinct contracts.",
+          "meta": {},
+          "tags": []
+        },
+        "technical_premium_chf": {
+          "name": "technical_premium_chf",
+          "description": "Technical premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Written premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "premium_adequacy_ratio": {
+          "name": "premium_adequacy_ratio",
+          "description": "Technical / written premium.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "000000000000000000000000000000000000000000000000462eb5503f5242cf"
+      }
+    },
+    "model.pnc_analytics.out_mfp_customer_360": {
+      "unique_id": "model.pnc_analytics.out_mfp_customer_360",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "out_mfp_customer_360",
+      "alias": "out_mfp_customer_360",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_marts",
+      "path": "bestand_mfp/marts/out_mfp_customer_360.sql",
+      "original_file_path": "models/bestand_mfp/marts/out_mfp_customer_360.sql",
+      "description": "One row per partner with portfolio aggregates for the CRM front-end.",
+      "tags": [
+        "mfp",
+        "mart",
+        "crm"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "view",
+        "schema": "marts",
+        "tags": [
+          "mfp",
+          "mart",
+          "crm"
+        ],
+        "meta": {
+          "pipeline": "bestand_mfp",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.int_mfp_contracts",
+          "model.pnc_analytics.src_mfp_partners"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_mfp_contracts",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "src_mfp_partners",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    p.partner_id,\n    p.partner_type,\n    p.age_years,\n    p.canton,\n    p.language_code,\n    count(c.contract_id)                                as contract_count,\n    sum(c.annual_premium_chf)                           as total_premium_chf,\n    min(c.valid_from)                                   as customer_since,\n    array_agg(distinct c.product_code ignore nulls)     as product_codes\nfrom {{ ref('src_mfp_partners') }} p\nleft join {{ ref('int_mfp_contracts') }} c using (partner_id)\ngroup by 1, 2, 3, 4, 5",
+      "compiled_code": "select\n    p.partner_id,\n    p.partner_type,\n    p.age_years,\n    p.canton,\n    p.language_code,\n    count(c.contract_id)                                as contract_count,\n    sum(c.annual_premium_chf)                           as total_premium_chf,\n    min(c.valid_from)                                   as customer_since,\n    array_agg(distinct c.product_code ignore nulls)     as product_codes\nfrom `pnc-analytics-prd`.mfp_staging.src_mfp_partners p\nleft join `pnc-analytics-prd`.mfp_intermediate.int_mfp_contracts c using (partner_id)\ngroup by 1, 2, 3, 4, 5\n",
+      "columns": {
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Technical partner key.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_type": {
+          "name": "partner_type",
+          "description": "person | company.",
+          "meta": {},
+          "tags": []
+        },
+        "age_years": {
+          "name": "age_years",
+          "description": "Age of the partner.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "language_code": {
+          "name": "language_code",
+          "description": "Correspondence language.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_count": {
+          "name": "contract_count",
+          "description": "Number of contracts.",
+          "meta": {},
+          "tags": []
+        },
+        "total_premium_chf": {
+          "name": "total_premium_chf",
+          "description": "Total annual premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "customer_since": {
+          "name": "customer_since",
+          "description": "Earliest contract start.",
+          "meta": {},
+          "tags": []
+        },
+        "product_codes": {
+          "name": "product_codes",
+          "description": "Distinct product codes held.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "00000000000000000000000000000000000000000000000040d00d8fe00f7850"
+      }
+    },
+    "model.pnc_analytics.src_claims_cases": {
+      "unique_id": "model.pnc_analytics.src_claims_cases",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "src_claims_cases",
+      "alias": "src_claims_cases",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_staging",
+      "path": "schaden_claims/staging/src_claims_cases.sql",
+      "original_file_path": "models/schaden_claims/staging/src_claims_cases.sql",
+      "description": "Cleaned claim cases with harmonised status and reporting delay.",
+      "tags": [
+        "claims",
+        "staging"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "view",
+        "schema": "staging",
+        "tags": [
+          "claims",
+          "staging"
+        ],
+        "meta": {
+          "pipeline": "schaden_claims",
+          "execution_mode": "hourly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "schaden_claims",
+        "execution_mode": "hourly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.pnc_analytics.raw_claims.claims"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "raw_claims",
+          "claims"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    claim_id,\n    contract_id,\n    risk_code,\n    loss_date,\n    report_date,\n    date_diff(report_date, loss_date, day)  as reporting_delay_days,\n    lower(claim_status)                     as claim_status,\n    reserve_amount                          as reserve_chf,\n    load_ts                                 as _loaded_at\nfrom {{ source('raw_claims', 'claims') }}\nwhere loss_date is not null",
+      "compiled_code": "select\n    claim_id,\n    contract_id,\n    risk_code,\n    loss_date,\n    report_date,\n    date_diff(report_date, loss_date, day)  as reporting_delay_days,\n    lower(claim_status)                     as claim_status,\n    reserve_amount                          as reserve_chf,\n    load_ts                                 as _loaded_at\nfrom `pnc-raw-prd`.raw_claims.claims\nwhere loss_date is not null\n",
+      "columns": {
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Technical claim key.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Contract the claim was reported on.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Affected risk.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_date": {
+          "name": "loss_date",
+          "description": "Date of loss.",
+          "meta": {},
+          "tags": []
+        },
+        "report_date": {
+          "name": "report_date",
+          "description": "Date the claim was reported.",
+          "meta": {},
+          "tags": []
+        },
+        "reporting_delay_days": {
+          "name": "reporting_delay_days",
+          "description": "Days between loss and report.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_status": {
+          "name": "claim_status",
+          "description": "open | closed | reopened.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_chf": {
+          "name": "reserve_chf",
+          "description": "Case reserve in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "_loaded_at": {
+          "name": "_loaded_at",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000001e50eb605d5151c4"
+      }
+    },
+    "model.pnc_analytics.src_claims_payments": {
+      "unique_id": "model.pnc_analytics.src_claims_payments",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "src_claims_payments",
+      "alias": "src_claims_payments",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_staging",
+      "path": "schaden_claims/staging/src_claims_payments.sql",
+      "original_file_path": "models/schaden_claims/staging/src_claims_payments.sql",
+      "description": "Cleaned claim payments with signed amounts per payment type.",
+      "tags": [
+        "claims",
+        "staging"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "view",
+        "schema": "staging",
+        "tags": [
+          "claims",
+          "staging"
+        ],
+        "meta": {
+          "pipeline": "schaden_claims",
+          "execution_mode": "hourly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "schaden_claims",
+        "execution_mode": "hourly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.pnc_analytics.raw_claims.payments"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "raw_claims",
+          "payments"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    payment_id,\n    claim_id,\n    payment_date,\n    upper(payment_type)                                        as payment_type,\n    case when upper(payment_type) = 'RECOVERY'\n         then -abs(amount) else abs(amount) end                as amount_chf,\n    load_ts                                                    as _loaded_at\nfrom {{ source('raw_claims', 'payments') }}",
+      "compiled_code": "select\n    payment_id,\n    claim_id,\n    payment_date,\n    upper(payment_type)                                        as payment_type,\n    case when upper(payment_type) = 'RECOVERY'\n         then -abs(amount) else abs(amount) end                as amount_chf,\n    load_ts                                                    as _loaded_at\nfrom `pnc-raw-prd`.raw_claims.payments\n",
+      "columns": {
+        "payment_id": {
+          "name": "payment_id",
+          "description": "Technical payment key.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Parent claim.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_date": {
+          "name": "payment_date",
+          "description": "Value date of the payment.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_type": {
+          "name": "payment_type",
+          "description": "INDEMNITY | EXPENSE | RECOVERY.",
+          "meta": {},
+          "tags": []
+        },
+        "amount_chf": {
+          "name": "amount_chf",
+          "description": "Signed amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "_loaded_at": {
+          "name": "_loaded_at",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000005a2e7b3eebcabcf5"
+      }
+    },
+    "model.pnc_analytics.int_claims_cases": {
+      "unique_id": "model.pnc_analytics.int_claims_cases",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "int_claims_cases",
+      "alias": "int_claims_cases",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_intermediate",
+      "path": "schaden_claims/intermediate/int_claims_cases.sql",
+      "original_file_path": "models/schaden_claims/intermediate/int_claims_cases.sql",
+      "description": "Claim cases enriched with contract attributes from the portfolio pipeline.",
+      "tags": [
+        "claims",
+        "core",
+        "cross-pipeline"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "table",
+        "schema": "intermediate",
+        "tags": [
+          "claims",
+          "core",
+          "cross-pipeline"
+        ],
+        "meta": {
+          "pipeline": "schaden_claims",
+          "execution_mode": "hourly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "schaden_claims",
+        "execution_mode": "hourly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.src_claims_cases",
+          "model.pnc_analytics.int_mfp_contracts"
+        ]
+      },
+      "refs": [
+        {
+          "name": "src_claims_cases",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "int_mfp_contracts",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nselect\n    cl.claim_id,\n    cl.contract_id,\n    cl.risk_code,\n    cl.loss_date,\n    cl.report_date,\n    cl.reporting_delay_days,\n    cl.claim_status,\n    cl.reserve_chf,\n    c.product_code,\n    c.canton,\n    c.partner_id,\n    c.annual_premium_chf\nfrom {{ ref('src_claims_cases') }} cl\nleft join {{ ref('int_mfp_contracts') }} c using (contract_id)",
+      "compiled_code": "select\n    cl.claim_id,\n    cl.contract_id,\n    cl.risk_code,\n    cl.loss_date,\n    cl.report_date,\n    cl.reporting_delay_days,\n    cl.claim_status,\n    cl.reserve_chf,\n    c.product_code,\n    c.canton,\n    c.partner_id,\n    c.annual_premium_chf\nfrom `pnc-analytics-prd`.claims_staging.src_claims_cases cl\nleft join `pnc-analytics-prd`.mfp_intermediate.int_mfp_contracts c using (contract_id)\n",
+      "columns": {
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Technical claim key.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Contract the claim was reported on.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Affected risk.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_date": {
+          "name": "loss_date",
+          "description": "Date of loss.",
+          "meta": {},
+          "tags": []
+        },
+        "report_date": {
+          "name": "report_date",
+          "description": "Date the claim was reported.",
+          "meta": {},
+          "tags": []
+        },
+        "reporting_delay_days": {
+          "name": "reporting_delay_days",
+          "description": "Days between loss and report.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_status": {
+          "name": "claim_status",
+          "description": "open | closed | reopened.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_chf": {
+          "name": "reserve_chf",
+          "description": "Case reserve in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code of the contract.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Policy holder reference.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Written premium of the contract.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000000543e9c3c9cf06c6"
+      }
+    },
+    "model.pnc_analytics.int_claims_payments": {
+      "unique_id": "model.pnc_analytics.int_claims_payments",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "int_claims_payments",
+      "alias": "int_claims_payments",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_intermediate",
+      "path": "schaden_claims/intermediate/int_claims_payments.sql",
+      "original_file_path": "models/schaden_claims/intermediate/int_claims_payments.sql",
+      "description": "Payments aggregated per claim and payment type, incrementally loaded.",
+      "tags": [
+        "claims",
+        "core"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "incremental",
+        "schema": "intermediate",
+        "tags": [
+          "claims",
+          "core"
+        ],
+        "meta": {
+          "pipeline": "schaden_claims",
+          "execution_mode": "hourly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "schaden_claims",
+        "execution_mode": "hourly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.src_claims_payments"
+        ]
+      },
+      "refs": [
+        {
+          "name": "src_claims_payments",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='incremental', unique_key='claim_id') }}\n\nselect\n    claim_id,\n    payment_type,\n    count(*)            as payment_count,\n    sum(amount_chf)     as paid_chf,\n    max(payment_date)   as last_payment_date\nfrom {{ ref('src_claims_payments') }}\n{% if is_incremental() %}\nwhere payment_date >= date_sub(current_date(), interval 7 day)\n{% endif %}\ngroup by 1, 2",
+      "compiled_code": "select\n    claim_id,\n    payment_type,\n    count(*)            as payment_count,\n    sum(amount_chf)     as paid_chf,\n    max(payment_date)   as last_payment_date\nfrom `pnc-analytics-prd`.claims_staging.src_claims_payments\ngroup by 1, 2\n",
+      "columns": {
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Parent claim.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_type": {
+          "name": "payment_type",
+          "description": "INDEMNITY | EXPENSE | RECOVERY.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_count": {
+          "name": "payment_count",
+          "description": "Number of payments.",
+          "meta": {},
+          "tags": []
+        },
+        "paid_chf": {
+          "name": "paid_chf",
+          "description": "Signed paid amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "last_payment_date": {
+          "name": "last_payment_date",
+          "description": "Most recent payment.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000007c24e916eba9aa82"
+      }
+    },
+    "model.pnc_analytics.int_claims_loss_ratio": {
+      "unique_id": "model.pnc_analytics.int_claims_loss_ratio",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "int_claims_loss_ratio",
+      "alias": "int_claims_loss_ratio",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_intermediate",
+      "path": "schaden_claims/intermediate/int_claims_loss_ratio.sql",
+      "original_file_path": "models/schaden_claims/intermediate/int_claims_loss_ratio.sql",
+      "description": "Loss ratio per product and canton, combining claims with the portfolio snapshot.",
+      "tags": [
+        "claims",
+        "core",
+        "cross-pipeline"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "table",
+        "schema": "intermediate",
+        "tags": [
+          "claims",
+          "core",
+          "cross-pipeline"
+        ],
+        "meta": {
+          "pipeline": "schaden_claims",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "schaden_claims",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.int_claims_cases",
+          "model.pnc_analytics.int_claims_payments",
+          "model.pnc_analytics.out_mfp_portfolio_daily"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_claims_cases",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "int_claims_payments",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "out_mfp_portfolio_daily",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nwith claims as (\n    select\n        cs.product_code,\n        cs.canton,\n        cs.risk_code,\n        count(distinct cs.claim_id)                as claim_count,\n        sum(cs.reserve_chf)                        as reserve_chf,\n        sum(coalesce(pm.paid_chf, 0))              as paid_chf\n    from {{ ref('int_claims_cases') }} cs\n    left join {{ ref('int_claims_payments') }} pm using (claim_id)\n    group by 1, 2, 3\n),\n\nportfolio as (\n    select product_code, canton, risk_code, sum(written_premium_chf) as written_premium_chf\n    from {{ ref('out_mfp_portfolio_daily') }}\n    where snapshot_date = current_date()\n    group by 1, 2, 3\n)\n\nselect\n    c.product_code,\n    c.canton,\n    c.risk_code,\n    c.claim_count,\n    c.paid_chf,\n    c.reserve_chf,\n    p.written_premium_chf,\n    safe_divide(c.paid_chf + c.reserve_chf, p.written_premium_chf) as loss_ratio\nfrom claims c\nleft join portfolio p using (product_code, canton, risk_code)",
+      "compiled_code": "with claims as (\n    select\n        cs.product_code,\n        cs.canton,\n        cs.risk_code,\n        count(distinct cs.claim_id)                as claim_count,\n        sum(cs.reserve_chf)                        as reserve_chf,\n        sum(coalesce(pm.paid_chf, 0))              as paid_chf\n    from `pnc-analytics-prd`.claims_intermediate.int_claims_cases cs\n    left join `pnc-analytics-prd`.claims_intermediate.int_claims_payments pm using (claim_id)\n    group by 1, 2, 3\n),\nportfolio as (\n    select product_code, canton, risk_code, sum(written_premium_chf) as written_premium_chf\n    from `pnc-analytics-prd`.mfp_marts.out_mfp_portfolio_daily\n    where snapshot_date = current_date()\n    group by 1, 2, 3\n)\nselect\n    c.product_code,\n    c.canton,\n    c.risk_code,\n    c.claim_count,\n    c.paid_chf,\n    c.reserve_chf,\n    p.written_premium_chf,\n    safe_divide(c.paid_chf + c.reserve_chf, p.written_premium_chf) as loss_ratio\nfrom claims c\nleft join portfolio p using (product_code, canton, risk_code)\n",
+      "columns": {
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Covered risk.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_count": {
+          "name": "claim_count",
+          "description": "Number of claims.",
+          "meta": {},
+          "tags": []
+        },
+        "paid_chf": {
+          "name": "paid_chf",
+          "description": "Paid amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_chf": {
+          "name": "reserve_chf",
+          "description": "Outstanding reserves in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "written_premium_chf": {
+          "name": "written_premium_chf",
+          "description": "Written premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_ratio": {
+          "name": "loss_ratio",
+          "description": "(paid + reserve) / written premium.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000003543e8ab80934bb4"
+      }
+    },
+    "model.pnc_analytics.out_claims_kpi_daily": {
+      "unique_id": "model.pnc_analytics.out_claims_kpi_daily",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "out_claims_kpi_daily",
+      "alias": "out_claims_kpi_daily",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_marts",
+      "path": "schaden_claims/marts/out_claims_kpi_daily.sql",
+      "original_file_path": "models/schaden_claims/marts/out_claims_kpi_daily.sql",
+      "description": "Daily claims KPI table for the management dashboard.",
+      "tags": [
+        "claims",
+        "mart",
+        "reporting"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "incremental",
+        "schema": "marts",
+        "tags": [
+          "claims",
+          "mart",
+          "reporting"
+        ],
+        "meta": {
+          "pipeline": "schaden_claims",
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "schaden_claims",
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.int_claims_loss_ratio"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_claims_loss_ratio",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='incremental', unique_key='snapshot_date') }}\n\nselect\n    current_date()                  as snapshot_date,\n    product_code,\n    canton,\n    sum(claim_count)                as claim_count,\n    sum(paid_chf)                   as paid_chf,\n    sum(reserve_chf)                as reserve_chf,\n    safe_divide(sum(paid_chf) + sum(reserve_chf),\n                sum(written_premium_chf)) as loss_ratio\nfrom {{ ref('int_claims_loss_ratio') }}\ngroup by 1, 2, 3",
+      "compiled_code": "select\n    current_date()                  as snapshot_date,\n    product_code,\n    canton,\n    sum(claim_count)                as claim_count,\n    sum(paid_chf)                   as paid_chf,\n    sum(reserve_chf)                as reserve_chf,\n    safe_divide(sum(paid_chf) + sum(reserve_chf),\n                sum(written_premium_chf)) as loss_ratio\nfrom `pnc-analytics-prd`.claims_intermediate.int_claims_loss_ratio\ngroup by 1, 2, 3\n",
+      "columns": {
+        "snapshot_date": {
+          "name": "snapshot_date",
+          "description": "Snapshot day.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_count": {
+          "name": "claim_count",
+          "description": "Number of claims.",
+          "meta": {},
+          "tags": []
+        },
+        "paid_chf": {
+          "name": "paid_chf",
+          "description": "Paid amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_chf": {
+          "name": "reserve_chf",
+          "description": "Outstanding reserves in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_ratio": {
+          "name": "loss_ratio",
+          "description": "Loss ratio.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000007ced73d83c4c58f9"
+      }
+    },
+    "model.pnc_analytics.out_claims_reserve_report": {
+      "unique_id": "model.pnc_analytics.out_claims_reserve_report",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "out_claims_reserve_report",
+      "alias": "out_claims_reserve_report",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_marts",
+      "path": "schaden_claims/marts/out_claims_reserve_report.sql",
+      "original_file_path": "models/schaden_claims/marts/out_claims_reserve_report.sql",
+      "description": "Reserve development per loss year for the actuarial department.",
+      "tags": [
+        "claims",
+        "mart",
+        "actuarial"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "table",
+        "schema": "marts",
+        "tags": [
+          "claims",
+          "mart",
+          "actuarial"
+        ],
+        "meta": {
+          "pipeline": "schaden_claims",
+          "execution_mode": "monthly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "schaden_claims",
+        "execution_mode": "monthly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.int_claims_cases",
+          "model.pnc_analytics.int_claims_payments"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_claims_cases",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "int_claims_payments",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nselect\n    extract(year from cs.loss_date)      as loss_year,\n    cs.product_code,\n    cs.claim_status,\n    count(distinct cs.claim_id)          as claim_count,\n    sum(cs.reserve_chf)                  as reserve_chf,\n    sum(coalesce(pm.paid_chf, 0))        as paid_chf,\n    avg(cs.reporting_delay_days)         as avg_reporting_delay_days\nfrom {{ ref('int_claims_cases') }} cs\nleft join {{ ref('int_claims_payments') }} pm using (claim_id)\ngroup by 1, 2, 3",
+      "compiled_code": "select\n    extract(year from cs.loss_date)      as loss_year,\n    cs.product_code,\n    cs.claim_status,\n    count(distinct cs.claim_id)          as claim_count,\n    sum(cs.reserve_chf)                  as reserve_chf,\n    sum(coalesce(pm.paid_chf, 0))        as paid_chf,\n    avg(cs.reporting_delay_days)         as avg_reporting_delay_days\nfrom `pnc-analytics-prd`.claims_intermediate.int_claims_cases cs\nleft join `pnc-analytics-prd`.claims_intermediate.int_claims_payments pm using (claim_id)\ngroup by 1, 2, 3\n",
+      "columns": {
+        "loss_year": {
+          "name": "loss_year",
+          "description": "Year of loss.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_status": {
+          "name": "claim_status",
+          "description": "open | closed | reopened.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_count": {
+          "name": "claim_count",
+          "description": "Number of claims.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_chf": {
+          "name": "reserve_chf",
+          "description": "Outstanding reserves in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "paid_chf": {
+          "name": "paid_chf",
+          "description": "Paid amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "avg_reporting_delay_days": {
+          "name": "avg_reporting_delay_days",
+          "description": "Average reporting delay.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000004e9d9646ab62e769"
+      }
+    },
+    "model.pnc_analytics.out_pnc_combined_ratio": {
+      "unique_id": "model.pnc_analytics.out_pnc_combined_ratio",
+      "resource_type": "model",
+      "package_name": "pnc_analytics",
+      "name": "out_pnc_combined_ratio",
+      "alias": "out_pnc_combined_ratio",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_marts",
+      "path": "schaden_claims/marts/out_pnc_combined_ratio.sql",
+      "original_file_path": "models/schaden_claims/marts/out_pnc_combined_ratio.sql",
+      "description": "Combined ratio per product: joins the claims loss ratio with the premium report.",
+      "tags": [
+        "claims",
+        "mfp",
+        "mart",
+        "finance",
+        "cross-pipeline"
+      ],
+      "config": {
+        "enabled": true,
+        "materialized": "table",
+        "schema": "marts",
+        "tags": [
+          "claims",
+          "mfp",
+          "mart",
+          "finance",
+          "cross-pipeline"
+        ],
+        "meta": {
+          "pipeline": "schaden_claims",
+          "execution_mode": "monthly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "pipeline": "schaden_claims",
+        "execution_mode": "monthly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.pnc_analytics.int_claims_loss_ratio",
+          "model.pnc_analytics.out_mfp_premium_report"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_claims_loss_ratio",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "out_mfp_premium_report",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nwith loss as (\n    select product_code,\n           sum(paid_chf + reserve_chf) as incurred_chf,\n           sum(written_premium_chf)    as written_premium_chf\n    from {{ ref('int_claims_loss_ratio') }}\n    group by 1\n),\n\npremium as (\n    select product_code, technical_premium_chf, annual_premium_chf, premium_adequacy_ratio\n    from {{ ref('out_mfp_premium_report') }}\n)\n\nselect\n    l.product_code,\n    l.incurred_chf,\n    l.written_premium_chf,\n    p.technical_premium_chf,\n    p.premium_adequacy_ratio,\n    safe_divide(l.incurred_chf, l.written_premium_chf)              as loss_ratio,\n    safe_divide(l.incurred_chf * 0.28, l.written_premium_chf)       as expense_ratio,\n    safe_divide(l.incurred_chf * 1.28, l.written_premium_chf)       as combined_ratio\nfrom loss l\nleft join premium p using (product_code)",
+      "compiled_code": "with loss as (\n    select product_code,\n           sum(paid_chf + reserve_chf) as incurred_chf,\n           sum(written_premium_chf)    as written_premium_chf\n    from `pnc-analytics-prd`.claims_intermediate.int_claims_loss_ratio\n    group by 1\n),\npremium as (\n    select product_code, technical_premium_chf, annual_premium_chf, premium_adequacy_ratio\n    from `pnc-analytics-prd`.mfp_marts.out_mfp_premium_report\n)\nselect\n    l.product_code,\n    l.incurred_chf,\n    l.written_premium_chf,\n    p.technical_premium_chf,\n    p.premium_adequacy_ratio,\n    safe_divide(l.incurred_chf, l.written_premium_chf)              as loss_ratio,\n    safe_divide(l.incurred_chf * 0.28, l.written_premium_chf)       as expense_ratio,\n    safe_divide(l.incurred_chf * 1.28, l.written_premium_chf)       as combined_ratio\nfrom loss l\nleft join premium p using (product_code)\n",
+      "columns": {
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "incurred_chf": {
+          "name": "incurred_chf",
+          "description": "Incurred claims in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "written_premium_chf": {
+          "name": "written_premium_chf",
+          "description": "Written premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "technical_premium_chf": {
+          "name": "technical_premium_chf",
+          "description": "Technical premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "premium_adequacy_ratio": {
+          "name": "premium_adequacy_ratio",
+          "description": "Technical / written premium.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_ratio": {
+          "name": "loss_ratio",
+          "description": "Incurred / written premium.",
+          "meta": {},
+          "tags": []
+        },
+        "expense_ratio": {
+          "name": "expense_ratio",
+          "description": "Expenses / written premium.",
+          "meta": {},
+          "tags": []
+        },
+        "combined_ratio": {
+          "name": "combined_ratio",
+          "description": "Loss ratio + expense ratio.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000005814d7b8c58c2603"
+      }
+    }
+  },
+  "sources": {
+    "source.pnc_analytics.raw_mfp.contracts": {
+      "unique_id": "source.pnc_analytics.raw_mfp.contracts",
+      "resource_type": "source",
+      "package_name": "pnc_analytics",
+      "name": "contracts",
+      "source_name": "raw_mfp",
+      "identifier": "contracts",
+      "database": "pnc-raw-prd",
+      "schema": "raw_mfp",
+      "description": "Raw contract header export from the MFP policy system (daily full load).",
+      "original_file_path": "models/bestand_mfp/staging/_sources.yml",
+      "path": "bestand_mfp/staging/_sources.yml",
+      "tags": [
+        "source",
+        "raw_mfp"
+      ],
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Technical contract key from MFP.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Policy holder reference.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code, e.g. MOT, HOU, LIA.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "description": "Start of the contract version.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_to": {
+          "name": "valid_to",
+          "description": "End of the contract version, 9999-12-31 if open.",
+          "meta": {},
+          "tags": []
+        },
+        "status_code": {
+          "name": "status_code",
+          "description": "Raw status code of the contract version.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium": {
+          "name": "annual_premium",
+          "description": "Gross annual premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "load_ts": {
+          "name": "load_ts",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    },
+    "source.pnc_analytics.raw_mfp.partners": {
+      "unique_id": "source.pnc_analytics.raw_mfp.partners",
+      "resource_type": "source",
+      "package_name": "pnc_analytics",
+      "name": "partners",
+      "source_name": "raw_mfp",
+      "identifier": "partners",
+      "database": "pnc-raw-prd",
+      "schema": "raw_mfp",
+      "description": "Raw partner / policy holder master data.",
+      "original_file_path": "models/bestand_mfp/staging/_sources.yml",
+      "path": "bestand_mfp/staging/_sources.yml",
+      "tags": [
+        "source",
+        "raw_mfp"
+      ],
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Technical partner key.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_type": {
+          "name": "partner_type",
+          "description": "P = person, C = company.",
+          "meta": {},
+          "tags": []
+        },
+        "birth_date": {
+          "name": "birth_date",
+          "description": "Birth date for natural persons.",
+          "meta": {},
+          "tags": []
+        },
+        "postal_code": {
+          "name": "postal_code",
+          "description": "Postal code of the main address.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "language_code": {
+          "name": "language_code",
+          "description": "Correspondence language.",
+          "meta": {},
+          "tags": []
+        },
+        "load_ts": {
+          "name": "load_ts",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    },
+    "source.pnc_analytics.raw_mfp.coverages": {
+      "unique_id": "source.pnc_analytics.raw_mfp.coverages",
+      "resource_type": "source",
+      "package_name": "pnc_analytics",
+      "name": "coverages",
+      "source_name": "raw_mfp",
+      "identifier": "coverages",
+      "database": "pnc-raw-prd",
+      "schema": "raw_mfp",
+      "description": "Raw coverage lines per contract (one row per covered risk).",
+      "original_file_path": "models/bestand_mfp/staging/_sources.yml",
+      "path": "bestand_mfp/staging/_sources.yml",
+      "tags": [
+        "source",
+        "raw_mfp"
+      ],
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "coverage_id": {
+          "name": "coverage_id",
+          "description": "Technical coverage key.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Parent contract.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Covered risk, e.g. THEFT, FIRE, GLASS.",
+          "meta": {},
+          "tags": []
+        },
+        "sum_insured": {
+          "name": "sum_insured",
+          "description": "Sum insured in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "deductible": {
+          "name": "deductible",
+          "description": "Deductible in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "tariff_code": {
+          "name": "tariff_code",
+          "description": "Applied tariff.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "description": "Start of the coverage version.",
+          "meta": {},
+          "tags": []
+        },
+        "load_ts": {
+          "name": "load_ts",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    },
+    "source.pnc_analytics.raw_mfp.tariffs": {
+      "unique_id": "source.pnc_analytics.raw_mfp.tariffs",
+      "resource_type": "source",
+      "package_name": "pnc_analytics",
+      "name": "tariffs",
+      "source_name": "raw_mfp",
+      "identifier": "tariffs",
+      "database": "pnc-raw-prd",
+      "schema": "raw_mfp",
+      "description": "Tariff master data incl. factors per risk and region.",
+      "original_file_path": "models/bestand_mfp/staging/_sources.yml",
+      "path": "bestand_mfp/staging/_sources.yml",
+      "tags": [
+        "source",
+        "raw_mfp"
+      ],
+      "meta": {
+        "pipeline": "bestand_mfp",
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "tariff_code": {
+          "name": "tariff_code",
+          "description": "Tariff key.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Risk the tariff applies to.",
+          "meta": {},
+          "tags": []
+        },
+        "region_factor": {
+          "name": "region_factor",
+          "description": "Regional loading factor.",
+          "meta": {},
+          "tags": []
+        },
+        "base_rate": {
+          "name": "base_rate",
+          "description": "Base rate per 1000 CHF sum insured.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "description": "Start of validity.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    },
+    "source.pnc_analytics.raw_claims.claims": {
+      "unique_id": "source.pnc_analytics.raw_claims.claims",
+      "resource_type": "source",
+      "package_name": "pnc_analytics",
+      "name": "claims",
+      "source_name": "raw_claims",
+      "identifier": "claims",
+      "database": "pnc-raw-prd",
+      "schema": "raw_claims",
+      "description": "Raw claim cases from the claims handling system.",
+      "original_file_path": "models/schaden_claims/staging/_sources.yml",
+      "path": "schaden_claims/staging/_sources.yml",
+      "tags": [
+        "source",
+        "raw_claims"
+      ],
+      "meta": {
+        "pipeline": "schaden_claims",
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Technical claim key.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Contract the claim was reported on.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Affected risk.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_date": {
+          "name": "loss_date",
+          "description": "Date of loss.",
+          "meta": {},
+          "tags": []
+        },
+        "report_date": {
+          "name": "report_date",
+          "description": "Date the claim was reported.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_status": {
+          "name": "claim_status",
+          "description": "Raw status, e.g. OPEN, CLOSED, REOPENED.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_amount": {
+          "name": "reserve_amount",
+          "description": "Current case reserve in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "load_ts": {
+          "name": "load_ts",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    },
+    "source.pnc_analytics.raw_claims.payments": {
+      "unique_id": "source.pnc_analytics.raw_claims.payments",
+      "resource_type": "source",
+      "package_name": "pnc_analytics",
+      "name": "payments",
+      "source_name": "raw_claims",
+      "identifier": "payments",
+      "database": "pnc-raw-prd",
+      "schema": "raw_claims",
+      "description": "Raw claim payment transactions (indemnity, expenses, recoveries).",
+      "original_file_path": "models/schaden_claims/staging/_sources.yml",
+      "path": "schaden_claims/staging/_sources.yml",
+      "tags": [
+        "source",
+        "raw_claims"
+      ],
+      "meta": {
+        "pipeline": "schaden_claims",
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "payment_id": {
+          "name": "payment_id",
+          "description": "Technical payment key.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Parent claim.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_date": {
+          "name": "payment_date",
+          "description": "Value date of the payment.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_type": {
+          "name": "payment_type",
+          "description": "INDEMNITY | EXPENSE | RECOVERY.",
+          "meta": {},
+          "tags": []
+        },
+        "amount": {
+          "name": "amount",
+          "description": "Signed amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "load_ts": {
+          "name": "load_ts",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    }
+  },
+  "macros": {},
+  "exposures": {},
+  "metrics": {},
+  "groups": {},
+  "selectors": {},
+  "docs": {},
+  "parent_map": {
+    "source.pnc_analytics.raw_mfp.contracts": [],
+    "source.pnc_analytics.raw_mfp.partners": [],
+    "source.pnc_analytics.raw_mfp.coverages": [],
+    "source.pnc_analytics.raw_mfp.tariffs": [],
+    "source.pnc_analytics.raw_claims.claims": [],
+    "source.pnc_analytics.raw_claims.payments": [],
+    "model.pnc_analytics.src_mfp_contracts": [
+      "source.pnc_analytics.raw_mfp.contracts"
+    ],
+    "model.pnc_analytics.src_mfp_partners": [
+      "source.pnc_analytics.raw_mfp.partners"
+    ],
+    "model.pnc_analytics.src_mfp_coverages": [
+      "source.pnc_analytics.raw_mfp.coverages"
+    ],
+    "model.pnc_analytics.src_mfp_tariffs": [
+      "source.pnc_analytics.raw_mfp.tariffs"
+    ],
+    "model.pnc_analytics.int_mfp_contracts": [
+      "model.pnc_analytics.src_mfp_contracts",
+      "model.pnc_analytics.src_mfp_partners"
+    ],
+    "model.pnc_analytics.int_mfp_coverages": [
+      "model.pnc_analytics.src_mfp_coverages",
+      "model.pnc_analytics.src_mfp_tariffs"
+    ],
+    "model.pnc_analytics.int_mfp_contract_coverage": [
+      "model.pnc_analytics.int_mfp_contracts",
+      "model.pnc_analytics.int_mfp_coverages"
+    ],
+    "model.pnc_analytics.int_mfp_premium_calc": [
+      "model.pnc_analytics.int_mfp_contract_coverage"
+    ],
+    "model.pnc_analytics.out_mfp_portfolio_daily": [
+      "model.pnc_analytics.int_mfp_contract_coverage",
+      "model.pnc_analytics.int_mfp_premium_calc"
+    ],
+    "model.pnc_analytics.out_mfp_premium_report": [
+      "model.pnc_analytics.int_mfp_premium_calc",
+      "model.pnc_analytics.int_mfp_contracts"
+    ],
+    "model.pnc_analytics.out_mfp_customer_360": [
+      "model.pnc_analytics.int_mfp_contracts",
+      "model.pnc_analytics.src_mfp_partners"
+    ],
+    "model.pnc_analytics.src_claims_cases": [
+      "source.pnc_analytics.raw_claims.claims"
+    ],
+    "model.pnc_analytics.src_claims_payments": [
+      "source.pnc_analytics.raw_claims.payments"
+    ],
+    "model.pnc_analytics.int_claims_cases": [
+      "model.pnc_analytics.src_claims_cases",
+      "model.pnc_analytics.int_mfp_contracts"
+    ],
+    "model.pnc_analytics.int_claims_payments": [
+      "model.pnc_analytics.src_claims_payments"
+    ],
+    "model.pnc_analytics.int_claims_loss_ratio": [
+      "model.pnc_analytics.int_claims_cases",
+      "model.pnc_analytics.int_claims_payments",
+      "model.pnc_analytics.out_mfp_portfolio_daily"
+    ],
+    "model.pnc_analytics.out_claims_kpi_daily": [
+      "model.pnc_analytics.int_claims_loss_ratio"
+    ],
+    "model.pnc_analytics.out_claims_reserve_report": [
+      "model.pnc_analytics.int_claims_cases",
+      "model.pnc_analytics.int_claims_payments"
+    ],
+    "model.pnc_analytics.out_pnc_combined_ratio": [
+      "model.pnc_analytics.int_claims_loss_ratio",
+      "model.pnc_analytics.out_mfp_premium_report"
+    ]
+  },
+  "child_map": {
+    "source.pnc_analytics.raw_mfp.contracts": [
+      "model.pnc_analytics.src_mfp_contracts"
+    ],
+    "source.pnc_analytics.raw_mfp.partners": [
+      "model.pnc_analytics.src_mfp_partners"
+    ],
+    "source.pnc_analytics.raw_mfp.coverages": [
+      "model.pnc_analytics.src_mfp_coverages"
+    ],
+    "source.pnc_analytics.raw_mfp.tariffs": [
+      "model.pnc_analytics.src_mfp_tariffs"
+    ],
+    "model.pnc_analytics.src_mfp_contracts": [
+      "model.pnc_analytics.int_mfp_contracts"
+    ],
+    "model.pnc_analytics.src_mfp_partners": [
+      "model.pnc_analytics.int_mfp_contracts",
+      "model.pnc_analytics.out_mfp_customer_360"
+    ],
+    "model.pnc_analytics.src_mfp_coverages": [
+      "model.pnc_analytics.int_mfp_coverages"
+    ],
+    "model.pnc_analytics.src_mfp_tariffs": [
+      "model.pnc_analytics.int_mfp_coverages"
+    ],
+    "model.pnc_analytics.int_mfp_contracts": [
+      "model.pnc_analytics.int_mfp_contract_coverage",
+      "model.pnc_analytics.out_mfp_premium_report",
+      "model.pnc_analytics.out_mfp_customer_360",
+      "model.pnc_analytics.int_claims_cases"
+    ],
+    "model.pnc_analytics.int_mfp_coverages": [
+      "model.pnc_analytics.int_mfp_contract_coverage"
+    ],
+    "model.pnc_analytics.int_mfp_contract_coverage": [
+      "model.pnc_analytics.int_mfp_premium_calc",
+      "model.pnc_analytics.out_mfp_portfolio_daily"
+    ],
+    "model.pnc_analytics.int_mfp_premium_calc": [
+      "model.pnc_analytics.out_mfp_portfolio_daily",
+      "model.pnc_analytics.out_mfp_premium_report"
+    ],
+    "source.pnc_analytics.raw_claims.claims": [
+      "model.pnc_analytics.src_claims_cases"
+    ],
+    "source.pnc_analytics.raw_claims.payments": [
+      "model.pnc_analytics.src_claims_payments"
+    ],
+    "model.pnc_analytics.src_claims_cases": [
+      "model.pnc_analytics.int_claims_cases"
+    ],
+    "model.pnc_analytics.src_claims_payments": [
+      "model.pnc_analytics.int_claims_payments"
+    ],
+    "model.pnc_analytics.int_claims_cases": [
+      "model.pnc_analytics.int_claims_loss_ratio",
+      "model.pnc_analytics.out_claims_reserve_report"
+    ],
+    "model.pnc_analytics.int_claims_payments": [
+      "model.pnc_analytics.int_claims_loss_ratio",
+      "model.pnc_analytics.out_claims_reserve_report"
+    ],
+    "model.pnc_analytics.out_mfp_portfolio_daily": [
+      "model.pnc_analytics.int_claims_loss_ratio"
+    ],
+    "model.pnc_analytics.int_claims_loss_ratio": [
+      "model.pnc_analytics.out_claims_kpi_daily",
+      "model.pnc_analytics.out_pnc_combined_ratio"
+    ],
+    "model.pnc_analytics.out_mfp_premium_report": [
+      "model.pnc_analytics.out_pnc_combined_ratio"
+    ],
+    "model.pnc_analytics.out_mfp_customer_360": [],
+    "model.pnc_analytics.out_claims_kpi_daily": [],
+    "model.pnc_analytics.out_claims_reserve_report": [],
+    "model.pnc_analytics.out_pnc_combined_ratio": []
+  },
+  "disabled": {}
+}
