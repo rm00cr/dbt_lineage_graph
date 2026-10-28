@@ -12,6 +12,8 @@ import { MATERIALIZATION_ICONS, useStageColor } from '../visual'
 export type ModelNodeData = {
   node: GraphNode
   dimmed: boolean
+  /** inside the focused lineage path — gets a positive highlight, not just "not dimmed" */
+  inFocus: boolean
   active: boolean
   searchHit: boolean
 }
@@ -23,7 +25,7 @@ const COMPACT_ZOOM = 0.55
 function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
   const compact = useStore((state) => state.transform[2] < COMPACT_ZOOM)
   const stageColor = useStageColor()
-  const { node, dimmed, active, searchHit } = data
+  const { node, dimmed, inFocus, active, searchHit } = data
   const Icon = MATERIALIZATION_ICONS[node.materialization] ?? MATERIALIZATION_ICONS.other
 
   return (
@@ -33,6 +35,7 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
       data-selected={selected}
       data-active={active}
       data-dimmed={dimmed}
+      data-in-focus={inFocus}
       data-search-hit={searchHit}
       title={node.description ?? node.name}
     >

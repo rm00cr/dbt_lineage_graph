@@ -53,7 +53,8 @@
   --edge-dim: rgba(148, 163, 184, 0.1);
   --node-active-ring: rgba(255, 255, 255, 0.85);
   --node-active-border: #ffffff;
-  --dim-opacity: 0.2;
+  --dim-opacity: 0.17;
+  --dim-blur: 0.6px;
 
   --glow-1: rgba(99, 102, 241, 0.16);
   --glow-2: rgba(34, 211, 238, 0.1);
@@ -119,7 +120,8 @@
   --edge-dim: rgba(71, 85, 105, 0.13);
   --node-active-ring: rgba(22, 32, 58, 0.75);
   --node-active-border: #16203a;
-  --dim-opacity: 0.26;
+  --dim-opacity: 0.22;
+  --dim-blur: 0.8px;
 
   --glow-1: rgba(99, 102, 241, 0.2);
   --glow-2: rgba(16, 185, 129, 0.14);
@@ -887,11 +889,27 @@ input {
 
 .node[data-dimmed='true'] {
   opacity: var(--dim-opacity);
-  filter: saturate(0.25);
+  filter: saturate(0.15) blur(var(--dim-blur));
+  box-shadow: none;
+}
+
+/* the colour bar is the loudest part of a node — mute it too */
+.node[data-dimmed='true'] .node__accent {
+  background: var(--text-faint);
+  box-shadow: none;
 }
 
 .node[data-dimmed='true']:hover {
-  opacity: 0.55;
+  opacity: 0.75;
+  filter: none;
+}
+
+/* the other half of focus mode: lift what IS on the lineage path */
+.node[data-in-focus='true'] {
+  border-color: color-mix(in srgb, var(--stage-color) 55%, transparent);
+  box-shadow:
+    0 0 0 1px color-mix(in srgb, var(--stage-color) 28%, transparent),
+    var(--shadow-node);
 }
 
 .node[data-search-hit='true']::after {

@@ -62,7 +62,7 @@ cd front-end && npm test                               # 32 tests
 | Open a model | click a node, or search and press ⏎ |
 | Search models | `/` or `Ctrl/Cmd+K`, typo tolerant (Fuse.js) |
 | Search columns | switch the search toggle to **Columns** (hits `/api/search/columns`) |
-| Focus the lineage | `F` cycles **dim → isolate → off** |
+| Focus the lineage | `F` cycles **dim → isolate → off**; the path keeps a stage-coloured ring, everything else fades and blurs |
 | Select a subgraph | selector field: `+int_mfp_contracts+`, `tag:mfp`, `stage:out`, `2+out_claims_kpi_daily` |
 | Grow the selection | `E` or the **+ lineage +** button |
 | Copy a dbt command | **dbt run** button (toolbar = whole selection, overlay = one model) |

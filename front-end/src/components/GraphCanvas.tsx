@@ -118,6 +118,7 @@ export function GraphCanvas() {
         data: {
           node,
           dimmed: dimming && !highlightedIds.has(node.id),
+          inFocus: dimming && highlightedIds.has(node.id),
           active: activeId === node.id,
           searchHit: pulseId === node.id,
         },
