@@ -38,6 +38,7 @@ def test_graph_shape(client: TestClient) -> None:
         "materialization": "table",
         "pipeline": "bestand_mfp",
         "resource_type": "model",
+        "group": "contract",
         "schema_name": "mfp_intermediate",
         "database": "pnc-analytics-prd",
         "description": node["description"],

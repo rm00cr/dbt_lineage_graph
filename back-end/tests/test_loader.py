@@ -29,6 +29,14 @@ def test_stage_derivation(graph: LineageGraph) -> None:
     assert graph.stages == ["src", "int", "out"]
 
 
+def test_dbt_groups(graph: LineageGraph) -> None:
+    assert graph.nodes[CONTRACTS].group == "contract"
+    assert graph.nodes[CLAIMS_CASES].group == "claims"
+    # sources have no dbt group: inherited from their consumers (raw contracts -> src_mfp_contracts)
+    assert graph.nodes[RAW_CONTRACTS].group == "contract"
+    assert graph.groups == ["claims", "contract", "finance", "partner", "premium"]
+
+
 def test_stage_fallbacks() -> None:
     assert resolve_stage(name="whatever", resource_type="source", original_file_path=None) == "src"
     assert resolve_stage(name="stg_x", resource_type="model", original_file_path=None) == "src"

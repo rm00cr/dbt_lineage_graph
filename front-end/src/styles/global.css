@@ -993,6 +993,47 @@ input {
   font-weight: 500;
 }
 
+/* dbt groups (domains): horizontal bands across the stage lanes */
+.row-band {
+  position: absolute;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--text-faint) 22%, transparent);
+  background: color-mix(in srgb, var(--text-faint) 4%, transparent);
+  pointer-events: none;
+}
+
+.row-band--ungrouped {
+  border-style: dashed;
+  background: transparent;
+}
+
+.row-band__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 56px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-muted, var(--text-faint));
+}
+
+.row-band__count {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+  color: var(--text-faint);
+}
+
 /* ===================================== legend ============================= */
 
 .legend {
@@ -1669,6 +1710,15 @@ mark {
 .segmented button[data-active='true'] {
   background: var(--accent-chip-bg);
   color: var(--accent-chip-text);
+}
+
+.segmented button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbar__zones {
+  align-self: center;
 }
 
 .icon-button {

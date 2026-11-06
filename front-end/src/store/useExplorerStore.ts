@@ -12,7 +12,7 @@ import { ApiError, api } from '../api/client'
 import { mockColumnLineage, mockGraph, mockModelDetail } from '../api/mock'
 import type { GraphResponse, MetaResponse, ModelDetail, TraceDirection } from '../api/types'
 import { type TraceView, buildTraceView } from '../graph/columnTrace'
-import type { LayoutMode } from '../graph/layout'
+import type { LayoutMode, ZoneMode } from '../graph/layout'
 import {
   type AdjacencyIndex,
   buildIndex,
@@ -59,6 +59,8 @@ interface ExplorerState {
 
   filters: Filters
   layoutMode: LayoutMode
+  /** which zones the 'lanes' layout draws: stage columns, dbt-group rows, or both */
+  zoneMode: ZoneMode
   focusMode: FocusMode
   showMiniMap: boolean
   selectionDrag: boolean
@@ -83,6 +85,7 @@ interface ExplorerState {
   refresh: () => Promise<void>
   setFilters: (patch: Partial<Filters>) => Promise<void>
   setLayoutMode: (mode: LayoutMode) => void
+  setZoneMode: (mode: ZoneMode) => void
   setFocusMode: (mode: FocusMode) => void
   cycleFocusMode: () => void
   toggleMiniMap: () => void
@@ -146,6 +149,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   filters: { pipelines: [], stages: [], includeSources: true },
   layoutMode: 'dag',
+  zoneMode: 'both',
   focusMode: 'dim',
   showMiniMap: true,
   selectionDrag: false,
@@ -217,6 +221,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   },
 
   setLayoutMode: (mode) => set({ layoutMode: mode }),
+  setZoneMode: (mode) => set({ zoneMode: mode }),
   setFocusMode: (mode) => set({ focusMode: mode }),
   cycleFocusMode: () =>
     set((state) => ({

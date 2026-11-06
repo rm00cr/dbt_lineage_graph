@@ -854,6 +854,38 @@ SCHEMA_BY_FOLDER = {"staging": "staging", "intermediate": "intermediate", "marts
 BQ_TYPE_BY_MATERIALIZATION = {"view": "VIEW", "table": "BASE TABLE", "incremental": "BASE TABLE"}
 
 
+# dbt groups (domains) -> horizontal rows in the stage-lanes layout. Sources have no group in
+# dbt; the loader places them in the group of their consumers.
+GROUP_BY_MODEL: dict[str, str] = {
+    "src_mfp_partners": "partner",
+    "out_mfp_customer_360": "partner",
+    "src_mfp_contracts": "contract",
+    "src_mfp_coverages": "contract",
+    "int_mfp_contracts": "contract",
+    "int_mfp_coverages": "contract",
+    "int_mfp_contract_coverage": "contract",
+    "out_mfp_portfolio_daily": "contract",
+    "src_mfp_tariffs": "premium",
+    "int_mfp_premium_calc": "premium",
+    "out_mfp_premium_report": "premium",
+    "src_claims_cases": "claims",
+    "src_claims_payments": "claims",
+    "int_claims_cases": "claims",
+    "int_claims_payments": "claims",
+    "int_claims_loss_ratio": "claims",
+    "out_claims_kpi_daily": "claims",
+    "out_claims_reserve_report": "claims",
+    "out_pnc_combined_ratio": "finance",
+}
+GROUP_OWNERS: dict[str, str] = {
+    "partner": "Partner Data Team",
+    "contract": "Portfolio Team",
+    "premium": "Pricing Team",
+    "claims": "Claims Analytics",
+    "finance": "Finance Controlling",
+}
+
+
 def source_id(source_name: str, table: str) -> str:
     return f"source.{PROJECT}.{source_name}.{table}"
 
@@ -988,8 +1020,10 @@ def build_manifest_and_catalog(scale: int = 1) -> tuple[dict[str, Any], dict[str
                 "original_file_path": f"models/{folder_path}",
                 "description": model["description"],
                 "tags": model["tags"],
+                "group": GROUP_BY_MODEL.get(model["name"]),
                 "config": {
                     "enabled": True,
+                    "group": GROUP_BY_MODEL.get(model["name"]),
                     "materialized": model["materialized"],
                     "schema": SCHEMA_BY_FOLDER[model["folder"]],
                     "tags": model["tags"],
@@ -1061,7 +1095,18 @@ def build_manifest_and_catalog(scale: int = 1) -> tuple[dict[str, Any], dict[str
         "macros": {},
         "exposures": {},
         "metrics": {},
-        "groups": {},
+        "groups": {
+            f"group.{PROJECT}.{g}": {
+                "name": g,
+                "resource_type": "group",
+                "package_name": PROJECT,
+                "path": "groups.yml",
+                "original_file_path": "models/groups.yml",
+                "unique_id": f"group.{PROJECT}.{g}",
+                "owner": {"name": owner, "email": None},
+            }
+            for g, owner in GROUP_OWNERS.items()
+        },
         "selectors": {},
         "docs": {},
         "parent_map": parent_map,

@@ -63,6 +63,7 @@ class GraphService:
             dbt_version=self.graph.dbt_version,
             generated_at=self.graph.generated_at,
             pipelines=self.graph.pipelines,
+            groups=self.graph.groups,
             stages=self.graph.stages,
             materializations=self.graph.materializations,
             tags=self.graph.tags,
@@ -113,6 +114,7 @@ class GraphService:
                 node_count=len(nodes),
                 edge_count=len(edges),
                 pipelines=sorted({n.pipeline for n in nodes}),
+                groups=sorted({n.group for n in nodes if n.group}),
                 stages=[s for s in self.graph.stages if any(n.stage == s for n in nodes)],
                 materializations=[
                     m for m in self.graph.materializations if any(n.materialization == m for n in nodes)
@@ -135,6 +137,7 @@ class GraphService:
             materialization=node.materialization,
             pipeline=node.pipeline,
             resource_type=node.resource_type,
+            group=node.group,
             description=node.description,
             tags=node.tags,
             schema_name=node.schema_name,
@@ -330,6 +333,7 @@ class GraphService:
             materialization=node.materialization,  # type: ignore[arg-type]
             pipeline=node.pipeline,
             resource_type=node.resource_type,  # type: ignore[arg-type]
+            group=node.group,
             schema_name=node.schema_name,
             database=node.database,
             description=node.description,

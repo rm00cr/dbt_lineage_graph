@@ -22,11 +22,18 @@ import {
 } from 'lucide-react'
 import { useState } from 'react'
 
+import type { ZoneMode } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { STAGE_LABELS, copyToClipboard, useStageColor } from './visual'
 
 const FOCUS_LABEL = { off: 'Focus off', dim: 'Focus: dim', isolate: 'Focus: isolate' } as const
 const FOCUS_ICON = { off: EyeOff, dim: Eye, isolate: Crosshair } as const
+
+const ZONE_OPTIONS: { mode: ZoneMode; label: string; title: string }[] = [
+  { mode: 'stages', label: 'Stages', title: 'Stage columns only (src / int / out)' },
+  { mode: 'both', label: 'Stages × Groups', title: 'Stage columns, one row per dbt group' },
+  { mode: 'groups', label: 'Groups', title: 'One row per dbt group, columns by DAG depth' },
+]
 
 interface ToolbarProps {
   onToast: (message: string) => void
@@ -35,6 +42,9 @@ interface ToolbarProps {
 export function Toolbar({ onToast }: ToolbarProps) {
   const layoutMode = useExplorerStore((s) => s.layoutMode)
   const setLayoutMode = useExplorerStore((s) => s.setLayoutMode)
+  const zoneMode = useExplorerStore((s) => s.zoneMode)
+  const setZoneMode = useExplorerStore((s) => s.setZoneMode)
+  const hasGroups = useExplorerStore((s) => s.graph?.nodes.some((n) => n.group) ?? false)
   const focusMode = useExplorerStore((s) => s.focusMode)
   const cycleFocusMode = useExplorerStore((s) => s.cycleFocusMode)
   const showMiniMap = useExplorerStore((s) => s.showMiniMap)
@@ -101,10 +111,29 @@ export function Toolbar({ onToast }: ToolbarProps) {
         <button
           className={`btn ${layoutMode === 'lanes' ? 'btn--active' : ''}`}
           onClick={() => setLayoutMode('lanes')}
-          title="Stage zones: src / int / out as columns"
+          title="Zones: stages (src / int / out) as columns and/or dbt groups as rows"
         >
-          <Columns3 size={14} /> Stage zones
+          <Columns3 size={14} /> Zones
         </button>
+        {layoutMode === 'lanes' && (
+          <div className="segmented toolbar__zones" role="group" aria-label="Zones">
+            {ZONE_OPTIONS.map(({ mode, label, title }) => {
+              const needsGroups = mode !== 'stages'
+              const disabled = needsGroups && !hasGroups
+              return (
+                <button
+                  key={mode}
+                  data-active={zoneMode === mode}
+                  disabled={disabled}
+                  onClick={() => setZoneMode(mode)}
+                  title={disabled ? 'No dbt groups in this project (set `group:` on your models)' : title}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        )}
 
         <span className="toolbar__divider" />
 

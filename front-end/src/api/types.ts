@@ -17,6 +17,8 @@ export interface NodeRef {
 }
 
 export interface GraphNode extends NodeRef {
+  /** dbt group (domain) = row in the stage-lanes layout; sources inherit their consumers' group */
+  group?: string | null
   schema_name: string | null
   database: string | null
   description: string | null
@@ -36,6 +38,7 @@ export interface GraphStats {
   node_count: number
   edge_count: number
   pipelines: string[]
+  groups?: string[]
   stages: string[]
   materializations: string[]
 }
@@ -70,6 +73,7 @@ export interface BigQueryRef {
 }
 
 export interface ModelDetail extends NodeRef {
+  group?: string | null
   description: string | null
   tags: string[]
   schema_name: string | null
@@ -104,6 +108,7 @@ export interface MetaResponse {
   dbt_version: string | null
   generated_at: string | null
   pipelines: string[]
+  groups?: string[]
   stages: string[]
   materializations: string[]
   tags: string[]

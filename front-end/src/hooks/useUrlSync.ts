@@ -7,7 +7,7 @@ import { useEffect, useRef } from 'react'
 
 import type { TraceDirection } from '../api/types'
 import { decodeTraceParam, encodeTraceParam } from '../graph/columnTrace'
-import type { LayoutMode } from '../graph/layout'
+import { type LayoutMode, ZONE_MODES, type ZoneMode } from '../graph/layout'
 import { type FocusMode, type OverlayTab, useExplorerStore } from '../store/useExplorerStore'
 
 const TABS: OverlayTab[] = ['overview', 'code', 'schema', 'lineage']
@@ -21,6 +21,7 @@ export function useUrlSync() {
   const activeId = useExplorerStore((s) => s.activeId)
   const overlayTab = useExplorerStore((s) => s.overlayTab)
   const layoutMode = useExplorerStore((s) => s.layoutMode)
+  const zoneMode = useExplorerStore((s) => s.zoneMode)
   const focusMode = useExplorerStore((s) => s.focusMode)
   const traceModel = useExplorerStore((s) => s.columnTrace?.modelId ?? null)
   const traceColumn = useExplorerStore((s) => s.columnTrace?.column ?? null)
@@ -38,6 +39,9 @@ export function useUrlSync() {
 
     const layout = params.get('layout') as LayoutMode | null
     if (layout && LAYOUTS.includes(layout)) store.setLayoutMode(layout)
+
+    const zones = params.get('zones') as ZoneMode | null
+    if (zones && ZONE_MODES.includes(zones)) store.setZoneMode(zones)
 
     const focus = params.get('focus') as FocusMode | null
     if (focus && FOCUS.includes(focus)) store.setFocusMode(focus)
@@ -78,10 +82,11 @@ export function useUrlSync() {
     set('model', activeId)
     set('tab', activeId && overlayTab !== 'overview' ? overlayTab : null)
     set('layout', layoutMode === 'dag' ? null : layoutMode)
+    set('zones', layoutMode === 'lanes' && zoneMode !== 'both' ? zoneMode : null)
     set('focus', focusMode === 'dim' ? null : focusMode)
     set('col', traceModel && traceColumn ? encodeTraceParam(traceModel, traceColumn) : null)
     set('coldir', traceModel && traceDirection !== 'both' ? traceDirection : null)
 
     window.history.replaceState(null, '', url)
-  }, [activeId, overlayTab, layoutMode, focusMode, traceModel, traceColumn, traceDirection])
+  }, [activeId, overlayTab, layoutMode, zoneMode, focusMode, traceModel, traceColumn, traceDirection])
 }

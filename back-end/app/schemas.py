@@ -26,6 +26,7 @@ class NodeRef(BaseModel):
 class GraphNode(NodeRef):
     """Node as rendered on the canvas — intentionally slim."""
 
+    group: str | None = None  # dbt group = domain row in the stage-lanes layout
     schema_name: str | None = None
     database: str | None = None
     description: str | None = None
@@ -45,6 +46,7 @@ class GraphStats(BaseModel):
     node_count: int
     edge_count: int
     pipelines: list[str] = Field(default_factory=list)
+    groups: list[str] = Field(default_factory=list)
     stages: list[str] = Field(default_factory=list)
     materializations: list[str] = Field(default_factory=list)
 
@@ -85,6 +87,7 @@ class ModelDetail(BaseModel):
     materialization: Materialization
     pipeline: str
     resource_type: ResourceType
+    group: str | None = None
     description: str | None = None
     tags: list[str] = Field(default_factory=list)
     schema_name: str | None = None
@@ -119,6 +122,7 @@ class MetaResponse(BaseModel):
     dbt_version: str | None = None
     generated_at: str | None = None
     pipelines: list[str]
+    groups: list[str] = Field(default_factory=list)
     stages: list[str]
     materializations: list[str]
     tags: list[str]

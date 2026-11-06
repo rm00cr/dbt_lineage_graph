@@ -30,6 +30,14 @@ Configurable through `STAGE_PREFIXES` / `STAGE_FOLDERS` in `back-end/app/config.
 `config.meta.pipeline` of the dbt node, else the first path segment under `models/`
 (e.g. `models/bestand_mfp/...` → `bestand_mfp`). Used for *lineage across pipelines* (2.4).
 
+### 1.2b Group (domain)
+
+`group` on `GraphNode` / `ModelDetail` (nullable), plus `groups` in `/api/graph` stats and
+`/api/meta`. Models: the native dbt `group` (`config.group`, defined under `groups:` in yml).
+Sources cannot have a dbt group: explicit `meta.group` on the source, else the group most of
+its direct consumers belong to (ties alphabetical), else `null`. The stage-lanes layout draws
+one horizontal row per group (ungrouped nodes last); without any groups it is a single row.
+
 ### 1.3 Node ids
 
 dbt `unique_id`, e.g. `model.pnc_analytics.int_mfp_contracts`,

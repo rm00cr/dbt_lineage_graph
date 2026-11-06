@@ -35,6 +35,7 @@ const PULSE_MS = 1900
 export function GraphCanvas() {
   const graph = useExplorerStore((s) => s.graph)
   const layoutMode = useExplorerStore((s) => s.layoutMode)
+  const zoneMode = useExplorerStore((s) => s.zoneMode)
   const focusMode = useExplorerStore((s) => s.focusMode)
   const showMiniMap = useExplorerStore((s) => s.showMiniMap)
   const selectionDrag = useExplorerStore((s) => s.selectionDrag)
@@ -70,8 +71,8 @@ export function GraphCanvas() {
   }, [traceView])
 
   const layout = useMemo(
-    () => layoutGraph(graph?.nodes ?? [], graph?.edges ?? [], layoutMode, heights),
-    [graph, layoutMode, heights],
+    () => layoutGraph(graph?.nodes ?? [], graph?.edges ?? [], layoutMode, heights, zoneMode),
+    [graph, layoutMode, heights, zoneMode],
   )
 
   /**
@@ -98,7 +99,7 @@ export function GraphCanvas() {
     void fitBounds({ ...bounds, width: (bounds.width * width) / (width - covered) }, { duration: 650, padding: 0.12 })
   }, [fitView, fitBounds, getNodesBounds])
 
-  const layoutSignature = `${layoutMode}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
+  const layoutSignature = `${layoutMode}:${layoutMode === 'lanes' ? zoneMode : ''}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
   useEffect(() => {
     setDragged(new Map())
     const timer = window.setTimeout(frameView, 60)
@@ -321,6 +322,22 @@ export function GraphCanvas() {
 
         {layoutMode === 'lanes' && (
           <ViewportPortal>
+            {layout.rows.map((row) => (
+              <div
+                key={row.group ?? '__ungrouped__'}
+                className={`row-band ${row.group ? '' : 'row-band--ungrouped'}`}
+                style={{
+                  transform: `translate(${row.x}px, ${row.y}px)`,
+                  width: row.width,
+                  height: row.height,
+                }}
+              >
+                <div className="row-band__label">
+                  {row.group ?? 'ungrouped'}
+                  <span className="row-band__count">{row.count}</span>
+                </div>
+              </div>
+            ))}
             {layout.lanes.map((lane) => (
               <div
                 key={lane.stage}
