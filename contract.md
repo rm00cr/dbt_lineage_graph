@@ -37,6 +37,19 @@ Configurable through `STAGE_PREFIXES` / `STAGE_FOLDERS` in `back-end/app/config.
 Sources cannot have a dbt group: explicit `meta.group` on the source, else the group most of
 its direct consumers belong to (ties alphabetical), else `null`. The stage-lanes layout draws
 one horizontal row per group (ungrouped nodes last); without any groups it is a single row.
+The zones toggle picks stages only / stages × groups / groups only (`?zones=stages|groups`),
+and *split by pipeline* (`?split=pipeline`) gives every pipeline its own grid in its own box.
+It assumes the convention that only a pipeline's outputs feed other pipelines (into a src
+model): a consuming pipeline is placed right of the pipelines it reads from, independent
+pipelines are stacked in the same column (frontend only, no API change).
+
+### 1.2c Pipeline boundary convention
+
+Only a pipeline's outputs may feed another pipeline, imported through a src model:
+cross-pipeline edges must be `out -> src`. The frontend flags the rest
+(`front-end/src/graph/boundary.ts`): `internal` (upstream is not an `out` model) and
+`skips-src` (an output read by a non-`src` model). Edges from dbt sources never count. The
+fixtures follow the convention (`out_mfp_* -> src_claims_mfp_*`).
 
 ### 1.3 Node ids
 

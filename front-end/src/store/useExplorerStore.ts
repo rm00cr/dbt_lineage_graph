@@ -61,6 +61,8 @@ interface ExplorerState {
   layoutMode: LayoutMode
   /** which zones the 'lanes' layout draws: stage columns, dbt-group rows, or both */
   zoneMode: ZoneMode
+  /** zones layout: one grid per pipeline, placed left to right by pipeline dependency */
+  splitPipelines: boolean
   focusMode: FocusMode
   showMiniMap: boolean
   selectionDrag: boolean
@@ -86,6 +88,7 @@ interface ExplorerState {
   setFilters: (patch: Partial<Filters>) => Promise<void>
   setLayoutMode: (mode: LayoutMode) => void
   setZoneMode: (mode: ZoneMode) => void
+  setSplitPipelines: (split: boolean) => void
   setFocusMode: (mode: FocusMode) => void
   cycleFocusMode: () => void
   toggleMiniMap: () => void
@@ -150,6 +153,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   filters: { pipelines: [], stages: [], includeSources: true },
   layoutMode: 'dag',
   zoneMode: 'both',
+  splitPipelines: false,
   focusMode: 'dim',
   showMiniMap: true,
   selectionDrag: false,
@@ -222,6 +226,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   setLayoutMode: (mode) => set({ layoutMode: mode }),
   setZoneMode: (mode) => set({ zoneMode: mode }),
+  setSplitPipelines: (split) => set({ splitPipelines: split }),
   setFocusMode: (mode) => set({ focusMode: mode }),
   cycleFocusMode: () =>
     set((state) => ({

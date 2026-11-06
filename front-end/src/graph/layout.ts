@@ -23,6 +23,8 @@ export interface Positioned {
 
 export interface LaneBox {
   stage: Stage
+  /** the enclosing pipeline band, when split by pipeline */
+  pipeline: string | null
   x: number
   y: number
   width: number
@@ -34,6 +36,18 @@ export interface LaneBox {
 export interface RowBand {
   /** null = nodes without a group */
   group: string | null
+  /** the enclosing pipeline band, when split by pipeline */
+  pipeline: string | null
+  x: number
+  y: number
+  width: number
+  height: number
+  count: number
+}
+
+/** Box around one pipeline's own grid (zones layout, split by pipeline). */
+export interface PipelineBand {
+  pipeline: string
   x: number
   y: number
   width: number
@@ -44,8 +58,16 @@ export interface RowBand {
 export interface LayoutResult {
   positions: Map<string, { x: number; y: number }>
   lanes: LaneBox[]
-  /** empty unless the graph has dbt groups */
+  /** group bands; empty unless group rows are shown */
   rows: RowBand[]
+  /** pipeline bands; empty unless split by pipeline */
+  pipelines: PipelineBand[]
+}
+
+export interface ZoneOptions {
+  zones: ZoneMode
+  /** one grid per pipeline, placed left to right by pipeline dependency (needs 2+ pipelines) */
+  splitPipelines: boolean
 }
 
 const STAGE_SEQUENCE: Stage[] = ['src', 'int', 'out', 'other']
@@ -62,6 +84,11 @@ const ROW_GUTTER = 56
 /** vertical padding inside a group band, and gap between bands */
 const ROW_PADDING = 22
 const ROW_BAND_GAP = 18
+/** pipeline bands: label strip on top, inner padding, vertical gap, horizontal gap */
+const PIPE_HEADER = 40
+const PIPE_PADDING = 18
+const PIPE_GAP = 48
+const PIPE_COLUMN_GAP = 170
 
 export function layoutGraph(
   nodes: GraphNode[],
@@ -69,12 +96,13 @@ export function layoutGraph(
   mode: LayoutMode = 'dag',
   /** per-node heights, e.g. nodes that show traced columns (2.3); default NODE_HEIGHT */
   heights?: Map<string, number>,
-  /** which zones the 'lanes' layout draws */
-  zones: ZoneMode = 'both',
+  /** what the 'lanes' (zones) layout draws */
+  zoneOptions: Partial<ZoneOptions> = {},
 ): LayoutResult {
-  if (nodes.length === 0) return { positions: new Map(), lanes: [], rows: [] }
+  if (nodes.length === 0) return { positions: new Map(), lanes: [], rows: [], pipelines: [] }
   const heightOf = (id: string) => heights?.get(id) ?? NODE_HEIGHT
-  return mode === 'lanes' ? layoutZones(nodes, edges, heightOf, zones) : layoutDag(nodes, edges, heightOf)
+  const options: ZoneOptions = { zones: 'both', splitPipelines: false, ...zoneOptions }
+  return mode === 'lanes' ? layoutZones(nodes, edges, heightOf, options) : layoutDag(nodes, edges, heightOf)
 }
 
 /** Classic left-to-right dagre layout. */
@@ -99,7 +127,7 @@ function layoutDag(nodes: GraphNode[], edges: GraphEdge[], heightOf: (id: string
     })
   }
 
-  return { positions, lanes: [], rows: [] }
+  return { positions, lanes: [], rows: [], pipelines: [] }
 }
 
 /**
@@ -146,37 +174,91 @@ function longestPathDepths(
 /** Key of the row for nodes without a dbt group. */
 export const UNGROUPED = '__ungrouped__'
 
+/** Pipeline-to-pipeline dependency graph (from cross-pipeline edges). */
+function pipelineGraph(nodes: GraphNode[], edges: GraphEdge[]) {
+  const pipelineOf = new Map(nodes.map((n) => [n.id, n.pipeline]))
+  const all = [...new Set(nodes.map((n) => n.pipeline))].sort()
+  const downstream = new Map<string, Set<string>>(all.map((p) => [p, new Set()]))
+  const upstream = new Map<string, Set<string>>(all.map((p) => [p, new Set()]))
+  for (const edge of edges) {
+    const from = pipelineOf.get(edge.source)
+    const to = pipelineOf.get(edge.target)
+    if (from === undefined || to === undefined || from === to) continue
+    downstream.get(from)!.add(to)
+    upstream.get(to)!.add(from)
+  }
+  return { all, downstream, upstream }
+}
+
 /**
- * Zone grid. Columns are the stages (src / int / out) and rows the dbt groups (domains);
- * `zones` switches either axis off:
- *  - 'stages': stage columns, one row
- *  - 'both':   stage columns x group rows
- *  - 'groups': group rows; columns are the DAG depth (dagre rank), no stage boxes
+ * Pipelines in dependency order (upstream first). Kahn's algorithm with alphabetical ties;
+ * pipelines in a cycle are appended alphabetically.
+ */
+export function orderPipelines(nodes: GraphNode[], edges: GraphEdge[]): string[] {
+  const { all, downstream } = pipelineGraph(nodes, edges)
+  const indegree = new Map(all.map((p) => [p, 0]))
+  for (const targets of downstream.values()) for (const t of targets) indegree.set(t, indegree.get(t)! + 1)
+
+  const order: string[] = []
+  const ready = all.filter((p) => indegree.get(p) === 0)
+  while (ready.length > 0) {
+    ready.sort()
+    const next = ready.shift()!
+    order.push(next)
+    for (const t of downstream.get(next)!) {
+      indegree.set(t, indegree.get(t)! - 1)
+      if (indegree.get(t) === 0) ready.push(t)
+    }
+  }
+  return [...order, ...all.filter((p) => !order.includes(p))]
+}
+
+/**
+ * Column of each pipeline: the longest chain of upstream pipelines. Pipelines that do not
+ * depend on each other share a column (stacked); a consumer sits right of all it reads from.
+ */
+function pipelineColumns(nodes: GraphNode[], edges: GraphEdge[], order: string[]): Map<string, number> {
+  const { upstream } = pipelineGraph(nodes, edges)
+  const column = new Map<string, number>()
+  for (const p of order) {
+    // upstream pipelines that come later in `order` are part of a cycle: ignored
+    const parents = [...upstream.get(p)!].filter((q) => column.has(q))
+    column.set(p, Math.max(-1, ...parents.map((q) => column.get(q)!)) + 1)
+  }
+  return column
+}
+
+interface Block {
+  positions: Map<string, { x: number; y: number }>
+  lanes: LaneBox[]
+  rows: RowBand[]
+  width: number
+  height: number
+}
+
+/**
+ * One zone grid, relative to (0, 0). Columns are the stages (src / int / out) or, without
+ * stages, the DAG depth; rows are the dbt groups.
  *
  * Inside a stage, nodes are split into sub-columns by intra-stage depth so chains like
  * raw -> src flow left to right. Column x positions are shared by every row, so columns stay
  * aligned. Within a cell, nodes are ordered by the dagre layout, and rows are ordered by their
- * mean dagre y, both to keep edge crossings low. Without any groups there is a single row
- * and no row bands.
+ * mean dagre y, both to keep edge crossings low.
  */
-function layoutZones(
+function layoutBlock(
   nodes: GraphNode[],
   edges: GraphEdge[],
   heightOf: (id: string) => number,
-  zones: ZoneMode,
-): LayoutResult {
-  const dagLayout = layoutDag(nodes, edges, heightOf)
-  const dagY = (id: string) => dagLayout.positions.get(id)?.y ?? 0
-  const byStage = zones !== 'groups'
-  const grouped = zones !== 'stages' && nodes.some((n) => n.group)
-  const rowKey = (node: GraphNode) => (grouped ? (node.group ?? UNGROUPED) : '')
-
+  dagY: (id: string) => number,
+  byStage: boolean,
+  grouped: boolean,
+  pipeline: string | null,
+): Block {
   // ------------------------------------------------------------------ columns (x)
-  const gutter = grouped ? ROW_GUTTER : 0
   const columnOf = new Map<string, string>() // node id -> column key
   const columnX = new Map<string, number>() // column key -> x
   const lanes: LaneBox[] = []
-  let laneX = gutter + LANE_PADDING
+  let laneX = (grouped ? ROW_GUTTER : 0) + LANE_PADDING
 
   if (byStage) {
     const depths = intraStageDepths(nodes, edges)
@@ -187,7 +269,15 @@ function layoutZones(
       distinct.forEach((d, i) => columnX.set(`${stage}:${d}`, laneX + i * (NODE_WIDTH + SUB_COLUMN_GAP)))
       for (const n of stageNodes) columnOf.set(n.id, `${stage}:${depths.get(n.id) ?? 0}`)
       const innerWidth = distinct.length * NODE_WIDTH + (distinct.length - 1) * SUB_COLUMN_GAP
-      lanes.push({ stage, x: laneX - LANE_PADDING / 2, y: 0, width: innerWidth + LANE_PADDING, height: 0, count: stageNodes.length })
+      lanes.push({
+        stage,
+        pipeline,
+        x: laneX - LANE_PADDING / 2,
+        y: 0,
+        width: innerWidth + LANE_PADDING,
+        height: 0,
+        count: stageNodes.length,
+      })
       laneX += innerWidth + LANE_GAP
     }
   } else {
@@ -202,12 +292,8 @@ function layoutZones(
   const gridRight = laneX - LANE_GAP + LANE_PADDING / 2
 
   // ------------------------------------------------------------------ rows (y)
-  const rowNodes = new Map<string, GraphNode[]>()
-  for (const node of nodes) {
-    const key = rowKey(node)
-    rowNodes.set(key, [...(rowNodes.get(key) ?? []), node])
-  }
   const meanY = (list: GraphNode[]) => list.reduce((sum, n) => sum + dagY(n.id), 0) / list.length
+  const rowNodes = bucket(nodes, (n) => (grouped ? (n.group ?? UNGROUPED) : ''))
   const rowOrder = [...rowNodes.keys()].sort((a, b) => {
     if (a === UNGROUPED) return 1
     if (b === UNGROUPED) return -1
@@ -216,36 +302,115 @@ function layoutZones(
 
   const positions = new Map<string, { x: number; y: number }>()
   const rows: RowBand[] = []
-  let rowTop = byStage ? LANE_HEADER : LANE_PADDING / 2
+  let y = byStage ? LANE_HEADER : LANE_PADDING / 2
   for (const key of rowOrder) {
     const members = rowNodes.get(key)!
+    const rowTop = y
     const top = rowTop + (grouped ? ROW_PADDING : 0)
 
     // one stack per column
-    const stacks = new Map<string, GraphNode[]>()
-    for (const node of members) {
-      const col = columnOf.get(node.id)!
-      stacks.set(col, [...(stacks.get(col) ?? []), node])
-    }
     let bottom = top
-    for (const [col, stack] of stacks) {
+    for (const [col, stack] of bucket(members, (n) => columnOf.get(n.id)!)) {
       stack.sort((a, b) => dagY(a.id) - dagY(b.id) || a.name.localeCompare(b.name))
       const x = columnX.get(col) ?? 0
-      let y = top
+      let stackY = top
       for (const node of stack) {
-        positions.set(node.id, { x, y })
-        y += heightOf(node.id) + ROW_GAP
+        positions.set(node.id, { x, y: stackY })
+        stackY += heightOf(node.id) + ROW_GAP
       }
-      bottom = Math.max(bottom, y - ROW_GAP)
+      bottom = Math.max(bottom, stackY - ROW_GAP)
     }
 
     const height = bottom - rowTop + (grouped ? ROW_PADDING : 0)
-    rows.push({ group: key === UNGROUPED ? null : key, x: 0, y: rowTop, width: gridRight, height, count: members.length })
-    rowTop += height + (grouped ? ROW_BAND_GAP : 0)
+    if (grouped) {
+      rows.push({
+        group: key === UNGROUPED ? null : key,
+        pipeline,
+        x: 0,
+        y: rowTop,
+        width: gridRight,
+        height,
+        count: members.length,
+      })
+    }
+    y += height + (grouped ? ROW_BAND_GAP : 0)
+  }
+  if (grouped) y -= ROW_BAND_GAP
+
+  const gridBottom = Math.max(y + LANE_PADDING / 2, byStage ? NODE_HEIGHT + LANE_PADDING * 2 : 0)
+  for (const lane of lanes) lane.height = gridBottom
+
+  return { positions, lanes, rows, width: gridRight, height: gridBottom }
+}
+
+function bucket(list: GraphNode[], key: (n: GraphNode) => string): Map<string, GraphNode[]> {
+  const map = new Map<string, GraphNode[]>()
+  for (const n of list) map.set(key(n), [...(map.get(key(n)) ?? []), n])
+  return map
+}
+
+/** Move a block by (dx, dy) and merge it into `into`. */
+function placeBlock(block: Block, dx: number, dy: number, into: LayoutResult): void {
+  for (const [id, p] of block.positions) into.positions.set(id, { x: p.x + dx, y: p.y + dy })
+  for (const lane of block.lanes) into.lanes.push({ ...lane, x: lane.x + dx, y: lane.y + dy })
+  for (const row of block.rows) into.rows.push({ ...row, x: row.x + dx, y: row.y + dy })
+}
+
+/**
+ * Zones layout. `zones` picks the axes of the grid:
+ *  - 'stages': stage columns, one row
+ *  - 'both':   stage columns x group rows
+ *  - 'groups': group rows; columns are the DAG depth (longest path), no stage boxes
+ *
+ * `splitPipelines` gives every pipeline its own grid inside a pipeline band. Assuming the
+ * convention that only a pipeline's outputs feed other pipelines, the bands are placed like
+ * a DAG: a consumer sits right of the pipelines it reads from (OUT -> SRC reads left to
+ * right), and pipelines that do not depend on each other are stacked in the same column.
+ */
+function layoutZones(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  heightOf: (id: string) => number,
+  { zones, splitPipelines }: ZoneOptions,
+): LayoutResult {
+  const dagLayout = layoutDag(nodes, edges, heightOf)
+  const dagY = (id: string) => dagLayout.positions.get(id)?.y ?? 0
+  const byStage = zones !== 'groups'
+  const grouped = zones !== 'stages' && nodes.some((n) => n.group)
+  const split = splitPipelines && new Set(nodes.map((n) => n.pipeline)).size > 1
+
+  const result: LayoutResult = { positions: new Map(), lanes: [], rows: [], pipelines: [] }
+  if (!split) {
+    placeBlock(layoutBlock(nodes, edges, heightOf, dagY, byStage, grouped, null), 0, 0, result)
+    return result
   }
 
-  const gridBottom = rowTop - (grouped ? ROW_BAND_GAP : 0) + LANE_PADDING / 2
-  for (const lane of lanes) lane.height = Math.max(gridBottom, NODE_HEIGHT + LANE_PADDING * 2)
+  const order = orderPipelines(nodes, edges)
+  const columnOf = pipelineColumns(nodes, edges, order)
+  const byPipeline = bucket(nodes, (n) => n.pipeline)
+  const blocks = new Map<string, Block>()
+  for (const p of order) {
+    const members = byPipeline.get(p)!
+    const ids = new Set(members.map((n) => n.id))
+    const inner = edges.filter((e) => ids.has(e.source) && ids.has(e.target))
+    blocks.set(p, layoutBlock(members, inner, heightOf, dagY, byStage, grouped, p))
+  }
 
-  return { positions, lanes, rows: grouped ? rows : [] }
+  const columnCount = Math.max(...columnOf.values()) + 1
+  let x = 0
+  for (let col = 0; col < columnCount; col++) {
+    const inColumn = order.filter((p) => columnOf.get(p) === col)
+    if (inColumn.length === 0) continue
+    const bandWidth = Math.max(...inColumn.map((p) => blocks.get(p)!.width)) + PIPE_PADDING * 2
+    let y = 0
+    for (const p of inColumn) {
+      const block = blocks.get(p)!
+      const bandHeight = PIPE_HEADER + block.height + PIPE_PADDING
+      placeBlock(block, x + PIPE_PADDING, y + PIPE_HEADER, result)
+      result.pipelines.push({ pipeline: p, x, y, width: bandWidth, height: bandHeight, count: byPipeline.get(p)!.length })
+      y += bandHeight + PIPE_GAP
+    }
+    x += bandWidth + PIPE_COLUMN_GAP
+  }
+  return result
 }

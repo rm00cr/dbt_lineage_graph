@@ -21,7 +21,8 @@ import {
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { GraphNode } from '../api/types'
+import type { GraphEdge, GraphNode } from '../api/types'
+import { boundaryViolations } from '../graph/boundary'
 import { edgeHandles, traceNodeHeight } from '../graph/columnTrace'
 import { NODE_HEIGHT, NODE_WIDTH, layoutGraph } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
@@ -36,6 +37,7 @@ export function GraphCanvas() {
   const graph = useExplorerStore((s) => s.graph)
   const layoutMode = useExplorerStore((s) => s.layoutMode)
   const zoneMode = useExplorerStore((s) => s.zoneMode)
+  const splitPipelines = useExplorerStore((s) => s.splitPipelines)
   const focusMode = useExplorerStore((s) => s.focusMode)
   const showMiniMap = useExplorerStore((s) => s.showMiniMap)
   const selectionDrag = useExplorerStore((s) => s.selectionDrag)
@@ -71,8 +73,9 @@ export function GraphCanvas() {
   }, [traceView])
 
   const layout = useMemo(
-    () => layoutGraph(graph?.nodes ?? [], graph?.edges ?? [], layoutMode, heights, zoneMode),
-    [graph, layoutMode, heights, zoneMode],
+    () =>
+      layoutGraph(graph?.nodes ?? [], graph?.edges ?? [], layoutMode, heights, { zones: zoneMode, splitPipelines }),
+    [graph, layoutMode, heights, zoneMode, splitPipelines],
   )
 
   /**
@@ -99,7 +102,7 @@ export function GraphCanvas() {
     void fitBounds({ ...bounds, width: (bounds.width * width) / (width - covered) }, { duration: 650, padding: 0.12 })
   }, [fitView, fitBounds, getNodesBounds])
 
-  const layoutSignature = `${layoutMode}:${layoutMode === 'lanes' ? zoneMode : ''}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
+  const layoutSignature = `${layoutMode}:${layoutMode === 'lanes' ? `${zoneMode}:${splitPipelines}` : ''}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
   useEffect(() => {
     setDragged(new Map())
     const timer = window.setTimeout(frameView, 60)
@@ -176,9 +179,14 @@ export function GraphCanvas() {
   const accentColor = theme === 'light' ? '#4f46e5' : '#6366f1'
   const edgeColor = theme === 'light' ? 'rgba(71,85,105,0.5)' : 'rgba(148,163,184,0.4)'
 
+  // cross-pipeline edges that break the boundary convention (only OUT -> SRC may cross)
+  const violations = useMemo(() => boundaryViolations(graph?.nodes ?? [], graph?.edges ?? []), [graph])
+
   const edges = useMemo(() => {
     if (!graph) return []
     const dimming = focusMode !== 'off' && highlightedEdgeIds.size > 0
+    const crossClass = (edge: GraphEdge) =>
+      edge.cross_pipeline ? `edge--cross${violations.has(edge.id) ? ' edge--violation' : ''}` : ''
 
     // while a column is traced, the model edges on its path are replaced by column edges
     if (traceView) {
@@ -189,7 +197,7 @@ export function GraphCanvas() {
           id: edge.id,
           source: edge.source,
           target: edge.target,
-          className: `edge--dim${edge.cross_pipeline ? ' edge--cross' : ''}`,
+          className: `edge--dim ${crossClass(edge)}`.trim(),
           markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: edgeColor },
         }))
       const columnEdges = traceView.edges
@@ -212,7 +220,7 @@ export function GraphCanvas() {
         const highlighted = highlightedEdgeIds.has(edge.id)
         const classes = [
           highlighted ? 'edge--highlight' : dimming ? 'edge--dim' : '',
-          edge.cross_pipeline ? 'edge--cross' : '',
+          crossClass(edge),
         ]
           .filter(Boolean)
           .join(' ')
@@ -230,7 +238,7 @@ export function GraphCanvas() {
           },
         }
       })
-  }, [graph, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor, traceView])
+  }, [graph, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor, traceView, violations])
 
   // ------------------------------------------------------------------ interaction
   const onNodesChange = useCallback(
@@ -322,9 +330,25 @@ export function GraphCanvas() {
 
         {layoutMode === 'lanes' && (
           <ViewportPortal>
+            {layout.pipelines.map((band) => (
+              <div
+                key={band.pipeline}
+                className="pipeline-band"
+                style={{
+                  transform: `translate(${band.x}px, ${band.y}px)`,
+                  width: band.width,
+                  height: band.height,
+                }}
+              >
+                <div className="pipeline-band__label">
+                  {band.pipeline}
+                  <span className="row-band__count">{band.count}</span>
+                </div>
+              </div>
+            ))}
             {layout.rows.map((row) => (
               <div
-                key={row.group ?? '__ungrouped__'}
+                key={`${row.pipeline ?? ''}:${row.group ?? '__ungrouped__'}`}
                 className={`row-band ${row.group ? '' : 'row-band--ungrouped'}`}
                 style={{
                   transform: `translate(${row.x}px, ${row.y}px)`,
@@ -340,7 +364,7 @@ export function GraphCanvas() {
             ))}
             {layout.lanes.map((lane) => (
               <div
-                key={lane.stage}
+                key={`${lane.pipeline ?? ''}:${lane.stage}`}
                 className="lane"
                 style={{
                   ['--stage-color' as string]: stageColor(lane.stage),

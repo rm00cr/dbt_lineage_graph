@@ -1,14 +1,14 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GraphEdge, GraphNode, Stage } from '../api/types'
-import { NODE_HEIGHT, NODE_WIDTH, layoutGraph } from './layout'
+import { NODE_HEIGHT, NODE_WIDTH, layoutGraph, orderPipelines } from './layout'
 
-const node = (id: string, stage: Stage, group: string | null = null): GraphNode => ({
+const node = (id: string, stage: Stage, group: string | null = null, pipeline = 'p'): GraphNode => ({
   id,
   name: id,
   stage,
   materialization: 'table',
-  pipeline: 'p',
+  pipeline,
   resource_type: 'model',
   group,
   schema_name: null,
@@ -71,16 +71,77 @@ describe('lanes layout', () => {
   const groupedEdges = [edge('a_src', 'a_out')]
 
   it("'stages' ignores groups", () => {
-    const { lanes, rows } = layoutGraph(grouped, groupedEdges, 'lanes', undefined, 'stages')
+    const { lanes, rows } = layoutGraph(grouped, groupedEdges, 'lanes', undefined, { zones: 'stages' })
     expect(lanes.map((l) => l.stage)).toEqual(['src', 'out'])
     expect(rows).toEqual([])
   })
 
   it("'groups' draws group rows without stage lanes, columns by DAG depth", () => {
-    const { positions, lanes, rows } = layoutGraph(grouped, groupedEdges, 'lanes', undefined, 'groups')
+    const { positions, lanes, rows } = layoutGraph(grouped, groupedEdges, 'lanes', undefined, { zones: 'groups' })
     expect(lanes).toEqual([])
     expect(new Set(rows.map((r) => r.group))).toEqual(new Set(['claims', 'contract']))
     expect(positions.get('a_out')!.x).toBeGreaterThan(positions.get('a_src')!.x)
     expect(positions.get('a_src')!.y).not.toBe(positions.get('b_src')!.y)
+  })
+
+  describe('split by pipeline', () => {
+    // convention: only outputs cross pipelines, into a src model.
+    // 'zz_up' feeds 'aa_down' (alphabetical order would put aa_down first); 'mm_solo' is independent
+    const multi = [
+      node('u_src', 'src', 'contract', 'zz_up'),
+      node('u_out', 'out', 'contract', 'zz_up'),
+      node('d_src', 'src', 'claims', 'aa_down'),
+      node('d_int', 'int', 'claims', 'aa_down'),
+      node('d_fin', 'out', 'finance', 'aa_down'),
+      node('s_src', 'src', null, 'mm_solo'),
+      node('s_out', 'out', null, 'mm_solo'),
+    ]
+    const multiEdges = [
+      edge('u_src', 'u_out'),
+      edge('u_out', 'd_src'),
+      edge('d_src', 'd_int'),
+      edge('d_int', 'd_fin'),
+      edge('s_src', 's_out'),
+    ]
+    const split = () => layoutGraph(multi, multiEdges, 'lanes', undefined, { zones: 'both', splitPipelines: true })
+    const band = (result: ReturnType<typeof split>, p: string) => result.pipelines.find((b) => b.pipeline === p)!
+
+    it('orders pipelines upstream first', () => {
+      expect(orderPipelines(multi, multiEdges)).toEqual(['mm_solo', 'zz_up', 'aa_down'])
+    })
+
+    it('places a consuming pipeline right of its upstream, so OUT -> SRC flows left to right', () => {
+      const result = split()
+      const up = band(result, 'zz_up')
+      const down = band(result, 'aa_down')
+      expect(down.x).toBeGreaterThan(up.x + up.width)
+      expect(result.positions.get('d_src')!.x).toBeGreaterThan(result.positions.get('u_out')!.x)
+    })
+
+    it('stacks pipelines that do not depend on each other', () => {
+      const result = split()
+      const solo = band(result, 'mm_solo')
+      const up = band(result, 'zz_up')
+      expect(solo.x).toBe(up.x)
+      expect(Math.abs(solo.y - up.y)).toBeGreaterThanOrEqual(Math.min(solo.height, up.height))
+    })
+
+    it('gives every pipeline its own stage lanes and group rows inside its box', () => {
+      const result = split()
+      expect(result.lanes.filter((l) => l.pipeline === 'aa_down').map((l) => l.stage)).toEqual(['src', 'int', 'out'])
+      expect(result.rows.filter((r) => r.pipeline === 'aa_down').map((r) => r.group).sort()).toEqual(['claims', 'finance'])
+      for (const box of [...result.lanes, ...result.rows]) {
+        const b = band(result, box.pipeline!)
+        expect(box.x).toBeGreaterThanOrEqual(b.x)
+        expect(box.y).toBeGreaterThanOrEqual(b.y)
+        expect(box.x + box.width).toBeLessThanOrEqual(b.x + b.width)
+        expect(box.y + box.height).toBeLessThanOrEqual(b.y + b.height)
+      }
+    })
+
+    it('is a no-op with a single pipeline', () => {
+      const { pipelines } = layoutGraph(grouped, groupedEdges, 'lanes', undefined, { splitPipelines: true })
+      expect(pipelines).toEqual([])
+    })
   })
 })

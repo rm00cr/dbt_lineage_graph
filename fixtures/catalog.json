@@ -816,6 +816,83 @@
         }
       }
     },
+    "model.pnc_analytics.out_mfp_contracts": {
+      "unique_id": "model.pnc_analytics.out_mfp_contracts",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_marts",
+        "name": "out_mfp_contracts",
+        "comment": "Public contract dimension: the interface other pipelines read contract attributes from.",
+        "owner": null
+      },
+      "columns": {
+        "contract_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "contract_id",
+          "comment": "Technical contract key."
+        },
+        "partner_id": {
+          "type": "STRING",
+          "index": 2,
+          "name": "partner_id",
+          "comment": "Policy holder reference."
+        },
+        "product_code": {
+          "type": "STRING",
+          "index": 3,
+          "name": "product_code",
+          "comment": "PnC product code."
+        },
+        "canton": {
+          "type": "STRING",
+          "index": 4,
+          "name": "canton",
+          "comment": "Swiss canton code."
+        },
+        "contract_status": {
+          "type": "STRING",
+          "index": 5,
+          "name": "contract_status",
+          "comment": "active | cancelled | suspended."
+        },
+        "annual_premium_chf": {
+          "type": "NUMERIC",
+          "index": 6,
+          "name": "annual_premium_chf",
+          "comment": "Written annual premium in CHF."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 7,
+          "name": "valid_from",
+          "comment": "Start of the contract version."
+        },
+        "valid_to": {
+          "type": "DATE",
+          "index": 8,
+          "name": "valid_to",
+          "comment": "End of the contract version."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 4812004.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 734003200.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
     "model.pnc_analytics.src_claims_cases": {
       "unique_id": "model.pnc_analytics.src_claims_cases",
       "metadata": {
@@ -952,6 +1029,171 @@
           "id": "num_rows",
           "label": "# Rows",
           "value": 3942118.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 0.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.pnc_analytics.src_claims_mfp_contracts": {
+      "unique_id": "model.pnc_analytics.src_claims_mfp_contracts",
+      "metadata": {
+        "type": "VIEW",
+        "database": "pnc-analytics-prd",
+        "schema": "claims_staging",
+        "name": "src_claims_mfp_contracts",
+        "comment": "Contract attributes imported from the portfolio pipeline (out_mfp_contracts).",
+        "owner": null
+      },
+      "columns": {
+        "contract_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "contract_id",
+          "comment": "Technical contract key."
+        },
+        "partner_id": {
+          "type": "STRING",
+          "index": 2,
+          "name": "partner_id",
+          "comment": "Policy holder reference."
+        },
+        "product_code": {
+          "type": "STRING",
+          "index": 3,
+          "name": "product_code",
+          "comment": "PnC product code."
+        },
+        "canton": {
+          "type": "STRING",
+          "index": 4,
+          "name": "canton",
+          "comment": "Swiss canton code."
+        },
+        "annual_premium_chf": {
+          "type": "NUMERIC",
+          "index": 5,
+          "name": "annual_premium_chf",
+          "comment": "Written annual premium in CHF."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 4102877.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 0.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.pnc_analytics.src_claims_mfp_portfolio": {
+      "unique_id": "model.pnc_analytics.src_claims_mfp_portfolio",
+      "metadata": {
+        "type": "VIEW",
+        "database": "pnc-analytics-prd",
+        "schema": "claims_staging",
+        "name": "src_claims_mfp_portfolio",
+        "comment": "Today's portfolio snapshot imported from the portfolio pipeline (out_mfp_portfolio_daily).",
+        "owner": null
+      },
+      "columns": {
+        "product_code": {
+          "type": "STRING",
+          "index": 1,
+          "name": "product_code",
+          "comment": "PnC product code."
+        },
+        "canton": {
+          "type": "STRING",
+          "index": 2,
+          "name": "canton",
+          "comment": "Swiss canton code."
+        },
+        "risk_code": {
+          "type": "STRING",
+          "index": 3,
+          "name": "risk_code",
+          "comment": "Covered risk."
+        },
+        "written_premium_chf": {
+          "type": "NUMERIC",
+          "index": 4,
+          "name": "written_premium_chf",
+          "comment": "Written premium in CHF."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 2281.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 0.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.pnc_analytics.src_claims_mfp_premium": {
+      "unique_id": "model.pnc_analytics.src_claims_mfp_premium",
+      "metadata": {
+        "type": "VIEW",
+        "database": "pnc-analytics-prd",
+        "schema": "claims_staging",
+        "name": "src_claims_mfp_premium",
+        "comment": "Premium reconciliation imported from the portfolio pipeline (out_mfp_premium_report).",
+        "owner": null
+      },
+      "columns": {
+        "product_code": {
+          "type": "STRING",
+          "index": 1,
+          "name": "product_code",
+          "comment": "PnC product code."
+        },
+        "technical_premium_chf": {
+          "type": "NUMERIC",
+          "index": 2,
+          "name": "technical_premium_chf",
+          "comment": "Technical premium in CHF."
+        },
+        "annual_premium_chf": {
+          "type": "NUMERIC",
+          "index": 3,
+          "name": "annual_premium_chf",
+          "comment": "Written premium in CHF."
+        },
+        "premium_adequacy_ratio": {
+          "type": "FLOAT64",
+          "index": 4,
+          "name": "premium_adequacy_ratio",
+          "comment": "Technical / written premium."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 24.0,
           "include": true,
           "description": "Approximate count of rows."
         },

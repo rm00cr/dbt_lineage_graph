@@ -547,6 +547,38 @@ group by 1, 2, 3, 4, 5""",
         "rows": 2_104_551,
         "bytes": 0,
     },
+    {
+        "name": "out_mfp_contracts",
+        "pipeline": "bestand_mfp",
+        "folder": "marts",
+        "materialized": "table",
+        "execution_mode": "daily",
+        "tags": ["mfp", "mart", "public"],
+        "description": "Public contract dimension: the interface other pipelines read contract attributes from.",
+        "deps": ["int_mfp_contracts"],
+        "sql": """select
+    contract_id,
+    partner_id,
+    product_code,
+    canton,
+    contract_status,
+    annual_premium_chf,
+    valid_from,
+    valid_to
+from {{ ref('int_mfp_contracts') }}""",
+        "columns": [
+            ("contract_id", "STRING", "Technical contract key."),
+            ("partner_id", "STRING", "Policy holder reference."),
+            ("product_code", "STRING", "PnC product code."),
+            ("canton", "STRING", "Swiss canton code."),
+            ("contract_status", "STRING", "active | cancelled | suspended."),
+            ("annual_premium_chf", "NUMERIC", "Written annual premium in CHF."),
+            ("valid_from", "DATE", "Start of the contract version."),
+            ("valid_to", "DATE", "End of the contract version."),
+        ],
+        "rows": 4_812_004,
+        "bytes": 734_003_200,
+    },
     # --------------------------- schaden_claims / staging ---------------------------
     {
         "name": "src_claims_cases",
@@ -612,6 +644,84 @@ from {{ source('raw_claims', 'payments') }}""",
         "rows": 3_942_118,
         "bytes": 0,
     },
+    # convention: other pipelines are only read through their outputs, via a src model
+    {
+        "name": "src_claims_mfp_contracts",
+        "pipeline": "schaden_claims",
+        "folder": "staging",
+        "materialized": "view",
+        "execution_mode": "hourly",
+        "tags": ["claims", "staging", "cross-pipeline"],
+        "description": "Contract attributes imported from the portfolio pipeline (out_mfp_contracts).",
+        "deps": ["out_mfp_contracts"],
+        "sql": """select
+    contract_id,
+    partner_id,
+    product_code,
+    canton,
+    annual_premium_chf
+from {{ ref('out_mfp_contracts') }}
+where contract_status = 'active'""",
+        "columns": [
+            ("contract_id", "STRING", "Technical contract key."),
+            ("partner_id", "STRING", "Policy holder reference."),
+            ("product_code", "STRING", "PnC product code."),
+            ("canton", "STRING", "Swiss canton code."),
+            ("annual_premium_chf", "NUMERIC", "Written annual premium in CHF."),
+        ],
+        "rows": 4_102_877,
+        "bytes": 0,
+    },
+    {
+        "name": "src_claims_mfp_portfolio",
+        "pipeline": "schaden_claims",
+        "folder": "staging",
+        "materialized": "view",
+        "execution_mode": "daily",
+        "tags": ["claims", "staging", "cross-pipeline"],
+        "description": "Today's portfolio snapshot imported from the portfolio pipeline (out_mfp_portfolio_daily).",
+        "deps": ["out_mfp_portfolio_daily"],
+        "sql": """select
+    product_code,
+    canton,
+    risk_code,
+    written_premium_chf
+from {{ ref('out_mfp_portfolio_daily') }}
+where snapshot_date = current_date()""",
+        "columns": [
+            ("product_code", "STRING", "PnC product code."),
+            ("canton", "STRING", "Swiss canton code."),
+            ("risk_code", "STRING", "Covered risk."),
+            ("written_premium_chf", "NUMERIC", "Written premium in CHF."),
+        ],
+        "rows": 2_281,
+        "bytes": 0,
+    },
+    {
+        "name": "src_claims_mfp_premium",
+        "pipeline": "schaden_claims",
+        "folder": "staging",
+        "materialized": "view",
+        "execution_mode": "monthly",
+        "tags": ["claims", "staging", "finance", "cross-pipeline"],
+        "description": "Premium reconciliation imported from the portfolio pipeline (out_mfp_premium_report).",
+        "deps": ["out_mfp_premium_report"],
+        "sql": """select
+    product_code,
+    technical_premium_chf,
+    annual_premium_chf,
+    premium_adequacy_ratio
+from {{ ref('out_mfp_premium_report') }}
+where reporting_month = date_trunc(current_date(), month)""",
+        "columns": [
+            ("product_code", "STRING", "PnC product code."),
+            ("technical_premium_chf", "NUMERIC", "Technical premium in CHF."),
+            ("annual_premium_chf", "NUMERIC", "Written premium in CHF."),
+            ("premium_adequacy_ratio", "FLOAT64", "Technical / written premium."),
+        ],
+        "rows": 24,
+        "bytes": 0,
+    },
     # ------------------------ schaden_claims / intermediate ------------------------
     {
         "name": "int_claims_cases",
@@ -621,7 +731,7 @@ from {{ source('raw_claims', 'payments') }}""",
         "execution_mode": "hourly",
         "tags": ["claims", "core", "cross-pipeline"],
         "description": "Claim cases enriched with contract attributes from the portfolio pipeline.",
-        "deps": ["src_claims_cases", "int_mfp_contracts"],
+        "deps": ["src_claims_cases", "src_claims_mfp_contracts"],
         "sql": """select
     cl.claim_id,
     cl.contract_id,
@@ -636,7 +746,7 @@ from {{ source('raw_claims', 'payments') }}""",
     c.partner_id,
     c.annual_premium_chf
 from {{ ref('src_claims_cases') }} cl
-left join {{ ref('int_mfp_contracts') }} c using (contract_id)""",
+left join {{ ref('src_claims_mfp_contracts') }} c using (contract_id)""",
         "columns": [
             ("claim_id", "STRING", "Technical claim key."),
             ("contract_id", "STRING", "Contract the claim was reported on."),
@@ -692,7 +802,7 @@ group by 1, 2""",
         "execution_mode": "daily",
         "tags": ["claims", "core", "cross-pipeline"],
         "description": "Loss ratio per product and canton, combining claims with the portfolio snapshot.",
-        "deps": ["int_claims_cases", "int_claims_payments", "out_mfp_portfolio_daily"],
+        "deps": ["int_claims_cases", "int_claims_payments", "src_claims_mfp_portfolio"],
         "sql": """with claims as (
     select
         cs.product_code,
@@ -708,8 +818,7 @@ group by 1, 2""",
 
 portfolio as (
     select product_code, canton, risk_code, sum(written_premium_chf) as written_premium_chf
-    from {{ ref('out_mfp_portfolio_daily') }}
-    where snapshot_date = current_date()
+    from {{ ref('src_claims_mfp_portfolio') }}
     group by 1, 2, 3
 )
 
@@ -810,7 +919,7 @@ group by 1, 2, 3""",
         "execution_mode": "monthly",
         "tags": ["claims", "mfp", "mart", "finance", "cross-pipeline"],
         "description": "Combined ratio per product: joins the claims loss ratio with the premium report.",
-        "deps": ["int_claims_loss_ratio", "out_mfp_premium_report"],
+        "deps": ["int_claims_loss_ratio", "src_claims_mfp_premium"],
         "sql": """with loss as (
     select product_code,
            sum(paid_chf + reserve_chf) as incurred_chf,
@@ -821,7 +930,7 @@ group by 1, 2, 3""",
 
 premium as (
     select product_code, technical_premium_chf, annual_premium_chf, premium_adequacy_ratio
-    from {{ ref('out_mfp_premium_report') }}
+    from {{ ref('src_claims_mfp_premium') }}
 )
 
 select
@@ -859,6 +968,10 @@ BQ_TYPE_BY_MATERIALIZATION = {"view": "VIEW", "table": "BASE TABLE", "incrementa
 GROUP_BY_MODEL: dict[str, str] = {
     "src_mfp_partners": "partner",
     "out_mfp_customer_360": "partner",
+    "out_mfp_contracts": "contract",
+    "src_claims_mfp_contracts": "claims",
+    "src_claims_mfp_portfolio": "claims",
+    "src_claims_mfp_premium": "finance",
     "src_mfp_contracts": "contract",
     "src_mfp_coverages": "contract",
     "int_mfp_contracts": "contract",

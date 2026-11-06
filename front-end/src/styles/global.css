@@ -346,6 +346,12 @@ input {
   color: var(--accent-chip-text);
 }
 
+.btn--danger {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  color: var(--danger);
+}
+
 .btn--icon {
   width: 34px;
   padding: 0;
@@ -705,6 +711,20 @@ input {
   animation: dash-flow 0.9s linear infinite;
 }
 
+/* cross-pipeline edge that breaks the boundary convention (only OUT -> SRC may cross) */
+.edge--violation .react-flow__edge-path,
+.edge--violation.edge--dim .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--danger) 75%, transparent);
+  stroke-width: 2;
+  stroke-dasharray: 3 4;
+}
+
+.edge--violation.edge--highlight .react-flow__edge-path {
+  stroke: var(--danger);
+  stroke-width: 2.6;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--danger) 60%, transparent));
+}
+
 @keyframes dash-flow {
   to {
     stroke-dashoffset: -24;
@@ -1025,6 +1045,31 @@ input {
   text-transform: uppercase;
   white-space: nowrap;
   color: var(--text-muted, var(--text-faint));
+}
+
+/* pipelines: one box per pipeline around its own grid (split by pipeline) */
+.pipeline-band {
+  position: absolute;
+  border-radius: 22px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  pointer-events: none;
+}
+
+.pipeline-band__label {
+  position: absolute;
+  top: 0;
+  left: 22px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--accent) 80%, var(--text-muted));
 }
 
 .row-band__count {
