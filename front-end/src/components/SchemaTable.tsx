@@ -1,15 +1,44 @@
 /**
  * SchemaTable (AP-3, feature 2.1): columns + data types + descriptions from catalog.json,
- * with an inline filter so wide tables stay usable.
+ * with an inline filter so wide tables stay usable. Each column can be traced (2.3).
  */
 
-import { Search } from 'lucide-react'
+import { Route, Search } from 'lucide-react'
 import { useMemo, useState } from 'react'
 
 import type { ColumnInfo } from '../api/types'
+import { useExplorerStore } from '../store/useExplorerStore'
+import { ColumnTracePanel } from './ColumnTrace'
 
 interface SchemaTableProps {
   columns: ColumnInfo[]
+  /** the model the columns belong to; enables the column-lineage trace */
+  modelId?: string
+}
+
+function TraceButton({ modelId, column }: { modelId: string; column: ColumnInfo }) {
+  const traceColumn = useExplorerStore((s) => s.traceColumn)
+  const up = column.upstream_count
+  const down = column.downstream_count
+  const unknown = up === null || up === undefined || down === null || down === undefined
+  const isolated = !unknown && up === 0 && down === 0
+  return (
+    <button
+      className="trace-btn"
+      disabled={unknown || isolated}
+      title={
+        unknown
+          ? 'Column lineage unavailable: the SQL of this model could not be parsed'
+          : isolated
+            ? 'No column lineage: constant or unused column'
+            : `Trace ${column.name}: ${up} upstream, ${down} downstream`
+      }
+      onClick={() => void traceColumn(modelId, column.name)}
+    >
+      <Route size={11} />
+      {unknown ? '–' : `↑${up} ↓${down}`}
+    </button>
+  )
 }
 
 function highlight(text: string, needle: string) {
@@ -25,8 +54,9 @@ function highlight(text: string, needle: string) {
   )
 }
 
-export function SchemaTable({ columns }: SchemaTableProps) {
+export function SchemaTable({ columns, modelId }: SchemaTableProps) {
   const [filter, setFilter] = useState('')
+  const trace = useExplorerStore((s) => s.columnTrace)
 
   const visible = useMemo(() => {
     const needle = filter.trim().toLowerCase()
@@ -50,6 +80,8 @@ export function SchemaTable({ columns }: SchemaTableProps) {
 
   return (
     <>
+      <ColumnTracePanel />
+
       <div className="schema-search">
         <Search size={13} color="var(--text-faint)" />
         <input
@@ -72,17 +104,26 @@ export function SchemaTable({ columns }: SchemaTableProps) {
             <th>Column</th>
             <th>Type</th>
             <th>Description</th>
+            {modelId && <th style={{ width: 70 }}>Lineage</th>}
           </tr>
         </thead>
         <tbody>
           {visible.map((column) => (
-            <tr key={column.name}>
+            <tr
+              key={column.name}
+              data-traced={trace?.modelId === modelId && trace?.column.toLowerCase() === column.name.toLowerCase()}
+            >
               <td style={{ color: 'var(--text-faint)', fontVariantNumeric: 'tabular-nums' }}>
                 {column.index ?? '–'}
               </td>
               <td className="table__name">{highlight(column.name, filter)}</td>
               <td className="table__type">{column.type ?? '–'}</td>
               <td className="table__desc">{column.description ?? '–'}</td>
+              {modelId && (
+                <td>
+                  <TraceButton modelId={modelId} column={column} />
+                </td>
+              )}
             </tr>
           ))}
         </tbody>

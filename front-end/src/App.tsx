@@ -2,6 +2,7 @@ import { ReactFlowProvider } from '@xyflow/react'
 import { GitFork, TriangleAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { TraceBar } from './components/ColumnTrace'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Legend } from './components/Legend'
 import { ModelOverlay } from './components/ModelOverlay'
@@ -93,6 +94,7 @@ function Explorer() {
             <Toolbar onToast={showToast} />
             <Legend />
             <ModelOverlay onToast={showToast} />
+            <TraceBar />
 
             {usingMock && (
               <div className="banner" title={errorMessage ?? undefined}>

@@ -3,7 +3,15 @@
  * (that is the AP-2 / AP-3 "work against mocks" path). A banner tells the user.
  */
 
-import type { GraphNode, GraphResponse, ModelDetail } from './types'
+import type {
+  ColumnLineageEdge,
+  ColumnLineageResponse,
+  ColumnNode,
+  GraphNode,
+  GraphResponse,
+  ModelDetail,
+  TraceDirection,
+} from './types'
 
 const node = (
   name: string,
@@ -120,7 +128,11 @@ export function mockModelDetail(id: string): ModelDetail {
       { name: 'annual_premium_chf', type: 'NUMERIC', description: 'Gross annual premium in CHF.', index: 4 },
       { name: 'canton', type: 'STRING', description: 'Swiss canton code.', index: 5 },
       { name: 'age_years', type: 'INT64', description: 'Age of the policy holder.', index: 6 },
-    ],
+    ].map((column) => ({
+      ...column,
+      upstream_count: mockGraph.edges.some((e) => e.target === found.id) ? 1 : 0,
+      downstream_count: mockGraph.edges.filter((e) => e.source === found.id).length,
+    })),
     stats: { row_count: 4812004, size_bytes: 1073741824 },
     bigquery: {
       project: 'pnc-analytics-prd',
@@ -130,5 +142,58 @@ export function mockModelDetail(id: string): ModelDetail {
       query_url: null,
     },
     dbt_run_command: found.resource_type === 'model' ? `dbt run --select ${found.name}` : null,
+  }
+}
+
+/**
+ * Offline column trace: pretends every column passes through unchanged along the mock
+ * model edges. Good enough to exercise the UI without a backend.
+ */
+export function mockColumnLineage(
+  modelId: string,
+  column: string,
+  direction: TraceDirection = 'both',
+): ColumnLineageResponse {
+  const name = (id: string) => NODES.find((n) => n.id === id)?.name ?? id
+  const nodes = new Map<string, ColumnNode>()
+  const edges: ColumnLineageEdge[] = []
+  const root: ColumnNode = { model_id: modelId, model_name: name(modelId), column, type: null, distance: 0 }
+  nodes.set(modelId, root)
+
+  const walk = (up: boolean) => {
+    const queue: [string, number][] = [[modelId, 0]]
+    const seen = new Set([modelId])
+    while (queue.length > 0) {
+      const [current, distance] = queue.shift()!
+      for (const edge of mockGraph.edges) {
+        const next = up ? (edge.target === current ? edge.source : null) : edge.source === current ? edge.target : null
+        if (!next) continue
+        const [source, target] = up ? [next, current] : [current, next]
+        edges.push({
+          id: `${source}.${column}->${target}.${column}`,
+          source_model: source,
+          source_column: column,
+          target_model: target,
+          target_column: column,
+          kind: 'passthrough',
+          expression: null,
+        })
+        if (seen.has(next)) continue
+        seen.add(next)
+        nodes.set(next, { model_id: next, model_name: name(next), column, type: null, distance: distance + 1 })
+        queue.push([next, distance + 1])
+      }
+    }
+  }
+  if (direction !== 'down') walk(true)
+  if (direction !== 'up') walk(false)
+
+  return {
+    root,
+    direction,
+    depth: null,
+    nodes: [...nodes.values()],
+    edges: [...new Map(edges.map((e) => [e.id, e])).values()],
+    warnings: ['Mock data: every column is assumed to pass through unchanged.'],
   }
 }

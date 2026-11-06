@@ -768,6 +768,7 @@ input {
   width: 268px;
   height: 96px;
   display: flex;
+  flex-direction: column;
   overflow: hidden;
   border-radius: 14px;
   background: var(--node-bg);
@@ -785,6 +786,16 @@ input {
 .node:hover {
   border-color: var(--stage-color);
   transform: translateY(-1px);
+}
+
+.node__main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.node--traced .node__main {
+  flex: 0 0 94px;
 }
 
 .node__accent {
@@ -1514,4 +1525,280 @@ mark {
 /* spinner used inline (e.g. in the search field) */
 .spin {
   animation: spin 0.85s linear infinite;
+}
+
+/* ============================ column lineage (2.3) ======================== */
+
+.node__cols {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0 6px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--stage-color) 5%, transparent);
+}
+
+.node__col {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 14px 0 18px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.node__col-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node__col[data-role='root'] {
+  color: var(--accent-chip-text);
+  background: var(--accent-chip-bg);
+  font-weight: 650;
+}
+
+.node__col-hop {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.node__col--more {
+  color: var(--text-faint);
+  font-family: inherit;
+  font-style: italic;
+}
+
+/* column edges: colour = how the value changes on the way */
+.cedge .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 1.8;
+}
+
+.cedge--rename .react-flow__edge-path {
+  stroke-dasharray: 6 4;
+}
+
+.cedge--transform .react-flow__edge-path {
+  stroke: var(--warn);
+}
+
+.cedge--aggregate .react-flow__edge-path {
+  stroke: var(--stage-out);
+  stroke-width: 2.4;
+}
+
+.cedge-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top: 2px solid var(--accent);
+  vertical-align: middle;
+}
+
+.cedge-swatch--rename {
+  border-top-style: dashed;
+}
+
+.cedge-swatch--transform {
+  border-top-color: var(--warn);
+}
+
+.cedge-swatch--aggregate {
+  border-top-color: var(--stage-out);
+  border-top-width: 3px;
+}
+
+/* floating bar while a column is traced */
+.trace-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 7px 8px 7px 14px;
+  border-radius: 99px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--accent-ring);
+  box-shadow: var(--shadow-panel);
+  font-size: 12.5px;
+}
+
+.trace-bar__target {
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.trace-bar__meta {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.segmented button[data-active='true'] {
+  background: var(--accent-chip-bg);
+  color: var(--accent-chip-text);
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 99px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.icon-button:hover {
+  background: var(--chip-bg);
+  color: var(--text);
+}
+
+/* keep the bar centred in the visible canvas, the overlay already explains the kinds */
+/* with the overlay open: start right of the legend, stop before the zoom controls */
+.trace-bar--with-overlay {
+  left: 340px;
+  transform: none;
+  max-width: calc(100% - min(560px, 46vw) - 340px - 64px);
+}
+
+.trace-bar__legend {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.trace-bar--with-overlay .trace-bar__legend {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .trace-bar__legend {
+    display: none;
+  }
+}
+
+/* schema tab */
+.trace-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trace-btn:hover:not(:disabled) {
+  border-color: var(--accent-ring);
+  color: var(--accent-chip-text);
+}
+
+.trace-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.table tbody tr[data-traced='true'] td {
+  background: var(--accent-soft);
+}
+
+.trace-panel {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent-ring);
+  background: var(--accent-soft);
+  font-size: 12.5px;
+}
+
+.trace-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.trace-panel__title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 650;
+}
+
+.trace-hop {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+}
+
+.trace-hop__path {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.trace-hop__path button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.trace-hop__expr {
+  grid-column: 2;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.trace-warning {
+  margin-top: 6px;
+  color: var(--warn);
+  font-size: 11.5px;
 }

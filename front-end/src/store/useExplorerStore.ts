@@ -9,8 +9,9 @@
 import { create } from 'zustand'
 
 import { ApiError, api } from '../api/client'
-import { mockGraph, mockModelDetail } from '../api/mock'
-import type { GraphResponse, MetaResponse, ModelDetail } from '../api/types'
+import { mockColumnLineage, mockGraph, mockModelDetail } from '../api/mock'
+import type { GraphResponse, MetaResponse, ModelDetail, TraceDirection } from '../api/types'
+import { type TraceView, buildTraceView } from '../graph/columnTrace'
 import type { LayoutMode } from '../graph/layout'
 import {
   type AdjacencyIndex,
@@ -34,6 +35,17 @@ export interface Filters {
 interface CenterRequest {
   id: string
   nonce: number
+}
+
+/** Column-level lineage trace (2.3). While `view` is set it drives the canvas highlight. */
+export interface ColumnTrace {
+  modelId: string
+  column: string
+  direction: TraceDirection
+  view: TraceView | null
+  warnings: string[]
+  loading: boolean
+  error: string | null
 }
 
 interface ExplorerState {
@@ -64,6 +76,7 @@ interface ExplorerState {
   detailCache: Map<string, ModelDetail>
 
   centerRequest: CenterRequest | null
+  columnTrace: ColumnTrace | null
 
   // actions
   init: () => Promise<void>
@@ -87,6 +100,10 @@ interface ExplorerState {
   setOverlayTab: (tab: OverlayTab) => void
   closeOverlay: () => void
   requestCenter: (id: string) => void
+
+  traceColumn: (modelId: string, column: string, direction?: TraceDirection) => Promise<void>
+  setTraceDirection: (direction: TraceDirection) => Promise<void>
+  clearColumnTrace: () => void
 }
 
 const EMPTY_INDEX: AdjacencyIndex = {
@@ -97,8 +114,13 @@ const EMPTY_INDEX: AdjacencyIndex = {
 }
 
 function computeHighlight(
-  state: Pick<ExplorerState, 'graph' | 'index' | 'selectedIds' | 'activeId'>,
+  state: Pick<ExplorerState, 'graph' | 'index' | 'selectedIds' | 'activeId' | 'columnTrace'>,
 ): { highlightedIds: Set<string>; highlightedEdgeIds: Set<string> } {
+  const trace = state.columnTrace?.view
+  if (trace) {
+    return { highlightedIds: new Set(trace.nodeIds), highlightedEdgeIds: new Set(trace.modelEdgeIds) }
+  }
+
   const seeds = new Set(state.selectedIds)
   if (state.activeId) seeds.add(state.activeId)
 
@@ -141,6 +163,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   detailCache: new Map(),
 
   centerRequest: null,
+  columnTrace: null,
 
   // ------------------------------------------------------------------ loading
   init: async () => {
@@ -183,7 +206,9 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   refresh: async () => {
     set({ detailCache: new Map() })
+    const trace = get().columnTrace
     await get().init()
+    if (trace) await get().traceColumn(trace.modelId, trace.column, trace.direction)
   },
 
   setFilters: async (patch) => {
@@ -215,7 +240,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   toggleSelected: (id) => get().select([id], { additive: true }),
 
   clearSelection: () => {
-    set({ selectedIds: new Set(), selectorInput: '' })
+    set({ selectedIds: new Set(), selectorInput: '', columnTrace: null })
     set((state) => computeHighlight(state))
   },
 
@@ -290,6 +315,72 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   requestCenter: (id) =>
     set((state) => ({ centerRequest: { id, nonce: (state.centerRequest?.nonce ?? 0) + 1 } })),
+
+  // ------------------------------------------------------------------ column lineage (2.3)
+  traceColumn: async (modelId, column, direction = 'both') => {
+    const previous = get().columnTrace
+    set({
+      columnTrace: {
+        modelId,
+        column,
+        direction,
+        // keep the old picture while the new one loads, so the canvas does not flash
+        view: previous?.view ?? null,
+        warnings: [],
+        loading: true,
+        error: null,
+      },
+    })
+
+    const isCurrent = () => {
+      const current = get().columnTrace
+      return current?.modelId === modelId && current.column === column && current.direction === direction
+    }
+
+    try {
+      const response = get().usingMock
+        ? mockColumnLineage(modelId, column, direction)
+        : await api.columnLineage(modelId, column, direction)
+      if (!isCurrent()) return
+      set({
+        columnTrace: {
+          modelId: response.root.model_id,
+          column: response.root.column,
+          direction,
+          view: buildTraceView(response),
+          warnings: response.warnings,
+          loading: false,
+          error: null,
+        },
+      })
+    } catch (error) {
+      if (!isCurrent()) return
+      set({
+        columnTrace: {
+          modelId,
+          column,
+          direction,
+          view: null,
+          warnings: [],
+          loading: false,
+          error: error instanceof ApiError ? error.message : String(error),
+        },
+      })
+    }
+    set((state) => computeHighlight(state))
+  },
+
+  setTraceDirection: async (direction) => {
+    const trace = get().columnTrace
+    if (!trace || trace.direction === direction) return
+    await get().traceColumn(trace.modelId, trace.column, direction)
+  },
+
+  clearColumnTrace: () => {
+    if (!get().columnTrace) return
+    set({ columnTrace: null })
+    set((state) => computeHighlight(state))
+  },
 }))
 
 /** Selector helpers for components (keeps re-renders narrow). */

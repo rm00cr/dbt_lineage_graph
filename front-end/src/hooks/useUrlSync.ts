@@ -5,12 +5,15 @@
 
 import { useEffect, useRef } from 'react'
 
+import type { TraceDirection } from '../api/types'
+import { decodeTraceParam, encodeTraceParam } from '../graph/columnTrace'
 import type { LayoutMode } from '../graph/layout'
 import { type FocusMode, type OverlayTab, useExplorerStore } from '../store/useExplorerStore'
 
 const TABS: OverlayTab[] = ['overview', 'code', 'schema', 'lineage']
 const LAYOUTS: LayoutMode[] = ['dag', 'lanes']
 const FOCUS: FocusMode[] = ['off', 'dim', 'isolate']
+const DIRECTIONS: TraceDirection[] = ['up', 'down', 'both']
 
 export function useUrlSync() {
   const status = useExplorerStore((s) => s.status)
@@ -19,6 +22,9 @@ export function useUrlSync() {
   const overlayTab = useExplorerStore((s) => s.overlayTab)
   const layoutMode = useExplorerStore((s) => s.layoutMode)
   const focusMode = useExplorerStore((s) => s.focusMode)
+  const traceModel = useExplorerStore((s) => s.columnTrace?.modelId ?? null)
+  const traceColumn = useExplorerStore((s) => s.columnTrace?.column ?? null)
+  const traceDirection = useExplorerStore((s) => s.columnTrace?.direction ?? null)
 
   const restored = useRef(false)
 
@@ -39,6 +45,12 @@ export function useUrlSync() {
     const selector = params.get('select')
     if (selector) store.applySelector(selector)
 
+    const trace = decodeTraceParam(params.get('col'))
+    if (trace) {
+      const direction = params.get('coldir') as TraceDirection | null
+      void store.traceColumn(trace.modelId, trace.column, direction && DIRECTIONS.includes(direction) ? direction : 'both')
+    }
+
     const wanted = params.get('model')
     if (!wanted) return
 
@@ -49,7 +61,11 @@ export function useUrlSync() {
 
     const tab = params.get('tab') as OverlayTab | null
     if (!selector) store.select([node.id])
-    void store.openModel(node.id, { tab: tab && TABS.includes(tab) ? tab : 'overview' })
+    void store.openModel(node.id, {
+      tab: tab && TABS.includes(tab) ? tab : 'overview',
+      // a restored column trace frames its own path; don't fight it with a centre jump
+      center: !trace,
+    })
   }, [status, graph])
 
   // write back
@@ -63,7 +79,9 @@ export function useUrlSync() {
     set('tab', activeId && overlayTab !== 'overview' ? overlayTab : null)
     set('layout', layoutMode === 'dag' ? null : layoutMode)
     set('focus', focusMode === 'dim' ? null : focusMode)
+    set('col', traceModel && traceColumn ? encodeTraceParam(traceModel, traceColumn) : null)
+    set('coldir', traceModel && traceDirection !== 'both' ? traceDirection : null)
 
     window.history.replaceState(null, '', url)
-  }, [activeId, overlayTab, layoutMode, focusMode])
+  }, [activeId, overlayTab, layoutMode, focusMode, traceModel, traceColumn, traceDirection])
 }

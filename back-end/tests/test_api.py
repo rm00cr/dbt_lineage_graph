@@ -82,7 +82,55 @@ def test_model_detail(client: TestClient) -> None:
         "type": "STRING",
         "description": "Technical contract key.",
         "index": 1,
+        "upstream_count": 1,  # src_mfp_contracts.contract_id
+        "downstream_count": 2,
     }
+
+
+def test_column_lineage_upstream(client: TestClient) -> None:
+    body = client.get(
+        "/api/lineage/column",
+        params={"model": "out_pnc_combined_ratio", "column": "INCURRED_CHF", "direction": "up"},
+    ).json()
+    assert body["root"]["model_id"] == "model.pnc_analytics.out_pnc_combined_ratio"
+    assert body["root"]["column"] == "incurred_chf"
+    assert body["root"]["distance"] == 0
+    reached = {(n["model_name"], n["column"]) for n in body["nodes"]}
+    assert ("raw_claims.claims", "reserve_amount") in reached
+    assert ("raw_claims.payments", "amount") in reached
+    first_hop = [e for e in body["edges"] if e["target_column"] == "incurred_chf"]
+    assert {e["source_column"] for e in first_hop} == {"paid_chf", "reserve_chf"}
+    assert {e["kind"] for e in first_hop} == {"aggregate"}
+    assert all(e["id"] for e in body["edges"])
+    assert body["warnings"] == []
+
+
+def test_column_lineage_downstream_depth(client: TestClient) -> None:
+    params = {"model": RAW_CONTRACTS, "column": "contract_id", "direction": "down"}
+    one_hop = client.get("/api/lineage/column", params={**params, "depth": 1}).json()
+    everything = client.get("/api/lineage/column", params=params).json()
+    assert {n["distance"] for n in one_hop["nodes"]} == {0, 1}
+    assert len(everything["nodes"]) > len(one_hop["nodes"])
+    assert all(e["source_model"] != e["target_model"] for e in everything["edges"])
+
+
+def test_column_lineage_not_found(client: TestClient) -> None:
+    unknown_model = client.get("/api/lineage/column", params={"model": "nope", "column": "x"})
+    unknown_column = client.get("/api/lineage/column", params={"model": CONTRACTS, "column": "nope"})
+    bad_direction = client.get(
+        "/api/lineage/column", params={"model": CONTRACTS, "column": "contract_id", "direction": "x"}
+    )
+    assert unknown_model.status_code == unknown_column.status_code == 404
+    assert bad_direction.status_code == 422
+
+
+def test_lineage_status(client: TestClient) -> None:
+    body = client.get("/api/lineage/status").json()
+    assert body["dialect"] == "bigquery"
+    assert body["coverage"] == 1.0
+    assert body["counts"] == {"ok": 19, "partial": 0, "failed": 0, "skipped": 0}
+    assert body["edge_count"] > 100
+    assert len(body["models"]) == 19
 
 
 def test_model_detail_bigquery_deeplink(client: TestClient) -> None:

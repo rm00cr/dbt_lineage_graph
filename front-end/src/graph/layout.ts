@@ -41,18 +41,21 @@ export function layoutGraph(
   nodes: GraphNode[],
   edges: GraphEdge[],
   mode: LayoutMode = 'dag',
+  /** per-node heights, e.g. nodes that show traced columns (2.3); default NODE_HEIGHT */
+  heights?: Map<string, number>,
 ): LayoutResult {
   if (nodes.length === 0) return { positions: new Map(), lanes: [] }
-  return mode === 'lanes' ? layoutLanes(nodes, edges) : layoutDag(nodes, edges)
+  const heightOf = (id: string) => heights?.get(id) ?? NODE_HEIGHT
+  return mode === 'lanes' ? layoutLanes(nodes, edges, heightOf) : layoutDag(nodes, edges, heightOf)
 }
 
 /** Classic left-to-right dagre layout. */
-function layoutDag(nodes: GraphNode[], edges: GraphEdge[]): LayoutResult {
+function layoutDag(nodes: GraphNode[], edges: GraphEdge[], heightOf: (id: string) => number): LayoutResult {
   const g = new dagre.graphlib.Graph()
   g.setGraph({ rankdir: 'LR', nodesep: 44, ranksep: 140, marginx: 40, marginy: 40, ranker: 'network-simplex' })
   g.setDefaultEdgeLabel(() => ({}))
 
-  for (const node of nodes) g.setNode(node.id, { width: NODE_WIDTH, height: NODE_HEIGHT })
+  for (const node of nodes) g.setNode(node.id, { width: NODE_WIDTH, height: heightOf(node.id) })
   for (const edge of edges) {
     if (g.hasNode(edge.source) && g.hasNode(edge.target)) g.setEdge(edge.source, edge.target)
   }
@@ -64,7 +67,7 @@ function layoutDag(nodes: GraphNode[], edges: GraphEdge[]): LayoutResult {
     const laid = g.node(node.id) as { x: number; y: number } | undefined
     positions.set(node.id, {
       x: (laid?.x ?? 0) - NODE_WIDTH / 2,
-      y: (laid?.y ?? 0) - NODE_HEIGHT / 2,
+      y: (laid?.y ?? 0) - heightOf(node.id) / 2,
     })
   }
 
@@ -75,8 +78,8 @@ function layoutDag(nodes: GraphNode[], edges: GraphEdge[]): LayoutResult {
  * Stage lanes: x is driven by the stage, y by the dagre ordering inside the lane, so the
  * flow still reads left to right but the zones are visually crisp.
  */
-function layoutLanes(nodes: GraphNode[], edges: GraphEdge[]): LayoutResult {
-  const dagLayout = layoutDag(nodes, edges)
+function layoutLanes(nodes: GraphNode[], edges: GraphEdge[], heightOf: (id: string) => number): LayoutResult {
+  const dagLayout = layoutDag(nodes, edges, heightOf)
   const stagesPresent = STAGE_SEQUENCE.filter((stage) => nodes.some((n) => n.stage === stage))
 
   const positions = new Map<string, { x: number; y: number }>()
@@ -94,19 +97,18 @@ function layoutLanes(nodes: GraphNode[], edges: GraphEdge[]): LayoutResult {
 
     const x = LANE_PADDING + laneIndex * (NODE_WIDTH + LANE_GAP)
 
-    laneNodes.forEach((node, rowIndex) => {
-      positions.set(node.id, { x, y: LANE_PADDING + rowIndex * (NODE_HEIGHT + ROW_GAP) })
-    })
+    let y = LANE_PADDING
+    for (const node of laneNodes) {
+      positions.set(node.id, { x, y })
+      y += heightOf(node.id) + ROW_GAP
+    }
 
     lanes.push({
       stage,
       x: x - LANE_PADDING / 2,
       y: 0,
       width: NODE_WIDTH + LANE_PADDING,
-      height: Math.max(
-        laneNodes.length * (NODE_HEIGHT + ROW_GAP) + LANE_PADDING * 2,
-        NODE_HEIGHT + LANE_PADDING * 2,
-      ),
+      height: Math.max(y + LANE_PADDING, NODE_HEIGHT + LANE_PADDING * 2),
       count: laneNodes.length,
     })
   })

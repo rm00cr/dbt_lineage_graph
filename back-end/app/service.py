@@ -4,18 +4,24 @@ from __future__ import annotations
 
 from urllib.parse import quote, urlencode
 
+from .column_lineage import ColumnLineageIndex, Direction, build_column_lineage
 from .config import Settings
 from .loader import LineageGraph, LineageNode, load_graph
 from .schemas import (
     BigQueryRef,
+    ColumnEdge,
     ColumnInfo,
+    ColumnLineageResponse,
+    ColumnNode,
     GraphEdge,
     GraphNode,
     GraphResponse,
     GraphStats,
     HealthResponse,
+    LineageStatusResponse,
     MetaResponse,
     ModelDetail,
+    ModelLineageInfo,
     NodeRef,
     NodeStats,
     SearchHit,
@@ -31,11 +37,13 @@ class GraphService:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
         self.graph: LineageGraph = load_graph(settings.artifacts)
+        self.column_lineage: ColumnLineageIndex = build_column_lineage(self.graph)
 
     # ------------------------------------------------------------------ lifecycle
     def reload(self) -> LineageGraph:
         """Re-read the artifacts from disk (handy when a fresh dbt run just finished)."""
         self.graph = load_graph(self.settings.artifacts)
+        self.column_lineage = build_column_lineage(self.graph)
         return self.graph
 
     # ------------------------------------------------------------------ health / meta
@@ -138,13 +146,86 @@ class GraphService:
             raw_code=node.raw_code,
             dependencies=[self._node_ref(i) for i in node.depends_on],
             dependents=[self._node_ref(i) for i in node.dependents],
-            columns=[
-                ColumnInfo(name=c.name, type=c.type, description=c.description, index=c.index)
-                for c in node.columns
-            ],
+            columns=[self._column_info(node, c.name, c.type, c.description, c.index) for c in node.columns],
             stats=NodeStats(row_count=node.row_count, size_bytes=node.size_bytes),
             bigquery=self._bigquery_ref(node),
             dbt_run_command=self._dbt_run_command(node),
+        )
+
+    # ------------------------------------------------------------------ column lineage (2.3)
+    def column_lineage_trace(
+        self,
+        model_id: str,
+        column: str,
+        direction: Direction = "both",
+        depth: int | None = None,
+    ) -> ColumnLineageResponse | None:
+        """Trace one column. ``None`` if the model or the column is unknown."""
+        node = self.graph.get(model_id) or self._find_by_name(model_id)
+        if node is None:
+            return None
+        index = self.column_lineage
+        known = {c.name.lower(): c.name for c in node.columns}
+        for m, c in [*index.upstream, *index.downstream]:
+            if m == node.id:
+                known.setdefault(c.lower(), c)
+        resolved = known.get(column.lower())
+        if resolved is None:
+            return None
+
+        result = index.trace(node.id, resolved, direction, depth)
+        warnings: list[str] = []
+        for model in sorted({m for m, _ in result.nodes}):
+            info = index.models.get(model)
+            if info and info.status in ("partial", "failed"):
+                reason = info.error or "; ".join(info.warnings)
+                warnings.append(f"{self.graph.nodes[model].name}: lineage {info.status} - {reason}")
+
+        nodes = [self._column_node(m, c, d) for (m, c), d in result.nodes.items()]
+        nodes.sort(key=lambda n: (n.distance, n.model_name, n.column))
+        return ColumnLineageResponse(
+            root=self._column_node(node.id, resolved, 0),
+            direction=direction,
+            depth=depth,
+            nodes=nodes,
+            edges=[
+                ColumnEdge(
+                    id=e.id,
+                    source_model=e.source_model,
+                    source_column=e.source_column,
+                    target_model=e.target_model,
+                    target_column=e.target_column,
+                    kind=e.kind,
+                    expression=e.expression,
+                )
+                for e in result.edges
+            ],
+            warnings=warnings,
+        )
+
+    def lineage_status(self) -> LineageStatusResponse:
+        index = self.column_lineage
+        counts = {"ok": 0, "partial": 0, "failed": 0, "skipped": 0}
+        models: list[ModelLineageInfo] = []
+        for info in index.models.values():
+            counts[info.status] += 1
+            models.append(
+                ModelLineageInfo(
+                    model_id=info.model_id,
+                    model_name=self.graph.nodes[info.model_id].name,
+                    status=info.status,
+                    error=info.error,
+                    warnings=info.warnings,
+                )
+            )
+        order = {"failed": 0, "partial": 1, "skipped": 2, "ok": 3}
+        models.sort(key=lambda m: (order[m.status], m.model_name))
+        return LineageStatusResponse(
+            dialect=index.dialect,
+            coverage=round(index.coverage, 4),
+            edge_count=len(index.edges),
+            counts=counts,
+            models=models,
         )
 
     # ------------------------------------------------------------------ search
@@ -209,6 +290,34 @@ class GraphService:
         return SearchResponse(query=query, results=hits[:limit])
 
     # ------------------------------------------------------------------ internals
+    def _column_info(
+        self,
+        node: LineageNode,
+        name: str,
+        type_: str | None,
+        description: str | None,
+        index: int | None,
+    ) -> ColumnInfo:
+        upstream = downstream = None
+        status = self.column_lineage.models.get(node.id)
+        if node.resource_type == "source" or (status and status.status in ("ok", "partial")):
+            upstream, downstream = self.column_lineage.counts(node.id, name)
+        return ColumnInfo(
+            name=name,
+            type=type_,
+            description=description,
+            index=index,
+            upstream_count=upstream,
+            downstream_count=downstream,
+        )
+
+    def _column_node(self, model_id: str, column: str, distance: int) -> ColumnNode:
+        node = self.graph.nodes[model_id]
+        type_ = next((c.type for c in node.columns if c.name.lower() == column.lower()), None)
+        return ColumnNode(
+            model_id=model_id, model_name=node.name, column=column, type=type_, distance=distance
+        )
+
     def _find_by_name(self, name: str) -> LineageNode | None:
         lowered = name.lower()
         for node in self.graph.nodes.values():
