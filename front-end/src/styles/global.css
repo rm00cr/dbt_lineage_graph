@@ -1712,6 +1712,22 @@ mark {
   }
 }
 
+/* column search results: lineage counts */
+.result__lineage {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.result[data-active='true'] .result__lineage {
+  color: var(--accent-chip-text);
+}
+
 /* schema tab */
 .trace-btn {
   display: inline-flex;

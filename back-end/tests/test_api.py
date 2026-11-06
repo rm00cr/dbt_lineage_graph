@@ -193,6 +193,8 @@ def test_search_columns(client: TestClient) -> None:
     assert first["matched_on"] == "column"
     assert first["column"]["name"] == "loss_ratio"
     assert first["column"]["type"] == "FLOAT64"
+    # column-lineage counts come along, so the search result can offer a trace (2.3)
+    assert all(isinstance(r["column"]["upstream_count"], int) for r in body["results"])
     assert {r["name"] for r in body["results"]} >= {
         "int_claims_loss_ratio",
         "out_claims_kpi_daily",

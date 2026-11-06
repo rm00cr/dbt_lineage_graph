@@ -130,4 +130,54 @@ describe('SearchBar', () => {
     expect(requested.pathname).toBe('/api/search/columns')
     expect(requested.searchParams.get('q')).toBe('premium')
   })
+
+  it('opens the schema tab and traces the column when a column hit is picked', async () => {
+    primeStore()
+    const openModel = vi.fn().mockResolvedValue(undefined)
+    const traceColumn = vi.fn().mockResolvedValue(undefined)
+    useExplorerStore.setState({ openModel, traceColumn })
+
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(
+        JSON.stringify({
+          query: 'premium',
+          results: [
+            {
+              id: 'model.pnc_analytics.out_mfp_premium_report',
+              name: 'out_mfp_premium_report',
+              stage: 'out',
+              materialization: 'table',
+              pipeline: 'bestand_mfp',
+              resource_type: 'model',
+              score: 0.97,
+              matched_on: 'column',
+              column: {
+                name: 'annual_premium_chf',
+                type: 'NUMERIC',
+                description: null,
+                index: 4,
+                upstream_count: 1,
+                downstream_count: 0,
+              },
+            },
+          ],
+        }),
+        { status: 200, headers: { 'Content-Type': 'application/json' } },
+      ),
+    )
+
+    const user = userEvent.setup()
+    render(<SearchBar />)
+    await user.click(screen.getByRole('button', { name: /columns/i }))
+    await user.type(screen.getByPlaceholderText(/search columns/i), 'premium')
+    await waitFor(() => expect(screen.getByText('annual_premium_chf')).toBeDefined())
+    expect(screen.getByText(/↑1 ↓0/)).toBeDefined()
+
+    await user.keyboard('{Enter}')
+    expect(openModel).toHaveBeenCalledWith('model.pnc_analytics.out_mfp_premium_report', {
+      tab: 'schema',
+      center: false,
+    })
+    expect(traceColumn).toHaveBeenCalledWith('model.pnc_analytics.out_mfp_premium_report', 'annual_premium_chf')
+  })
 })

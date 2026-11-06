@@ -277,11 +277,8 @@ class GraphService:
                         **self._node_ref(node.id).model_dump(),
                         score=round(score, 4),
                         matched_on="column",
-                        column=ColumnInfo(
-                            name=column.name,
-                            type=column.type,
-                            description=column.description,
-                            index=column.index,
+                        column=self._column_info(
+                            node, column.name, column.type, column.description, column.index
                         ),
                     )
                 )

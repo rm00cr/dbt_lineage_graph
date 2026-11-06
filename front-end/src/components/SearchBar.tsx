@@ -3,11 +3,12 @@
  *
  * Models  -> client-side fuzzy search with Fuse.js (instant, typo tolerant).
  * Columns -> server-side `/api/search/columns`, because column metadata is not part of
- *            the slim graph payload.
+ *            the slim graph payload. Picking a column opens its model's Schema tab and
+ *            traces the column's lineage (2.3).
  */
 
 import Fuse, { type FuseResult } from 'fuse.js'
-import { Columns3, Loader2, Search, Table2, X } from 'lucide-react'
+import { Columns3, Loader2, Route, Search, Table2, X } from 'lucide-react'
 import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { api } from '../api/client'
@@ -23,8 +24,17 @@ interface Row {
   stage: GraphNode['stage']
   meta: string
   column?: string
+  /** direct column-lineage edges; null/undefined when unknown */
+  upstream?: number | null
+  downstream?: number | null
   score: number
 }
+
+const traceable = (row: Row) =>
+  row.column !== undefined &&
+  typeof row.upstream === 'number' &&
+  typeof row.downstream === 'number' &&
+  row.upstream + row.downstream > 0
 
 const MAX_ROWS = 12
 
@@ -33,6 +43,7 @@ export function SearchBar() {
   const usingMock = useExplorerStore((s) => s.usingMock)
   const openModel = useExplorerStore((s) => s.openModel)
   const select = useExplorerStore((s) => s.select)
+  const traceColumn = useExplorerStore((s) => s.traceColumn)
 
   const [query, setQuery] = useState('')
   const [mode, setMode] = useState<Mode>('models')
@@ -124,6 +135,8 @@ export function SearchBar() {
       stage: hit.stage,
       meta: hit.column?.type ? `${hit.column.type} · ${hit.pipeline}` : hit.pipeline,
       column: hit.column?.name,
+      upstream: hit.column?.upstream_count,
+      downstream: hit.column?.downstream_count,
       score: hit.score,
     }))
   }, [query, mode, fuse, columnHits])
@@ -157,7 +170,13 @@ export function SearchBar() {
 
   const pick = (row: Row) => {
     select([row.id])
-    void openModel(row.id)
+    if (row.column !== undefined) {
+      // the trace frames its own path, so no centre jump on the model
+      void openModel(row.id, { tab: 'schema', center: !traceable(row) })
+      if (traceable(row)) void traceColumn(row.id, row.column)
+    } else {
+      void openModel(row.id)
+    }
     setOpen(false)
     inputRef.current?.blur()
   }
@@ -231,7 +250,7 @@ export function SearchBar() {
 
           {rows.length > 0 && (
             <div className="search__hint">
-              {mode === 'models' ? 'Models' : 'Columns'} · ↑↓ to navigate · ⏎ to open
+              {mode === 'models' ? 'Models · ↑↓ to navigate · ⏎ to open' : 'Columns · ↑↓ to navigate · ⏎ to trace lineage'}
             </div>
           )}
 
@@ -258,6 +277,18 @@ export function SearchBar() {
                 </span>
                 <span className="result__meta">{row.meta}</span>
               </span>
+              {row.column !== undefined && typeof row.upstream === 'number' && (
+                <span
+                  className="result__lineage"
+                  title={
+                    traceable(row)
+                      ? `${row.upstream} upstream, ${row.downstream} downstream column(s): Enter traces it`
+                      : 'No column lineage: constant or unused column'
+                  }
+                >
+                  <Route size={10} />↑{row.upstream} ↓{row.downstream}
+                </span>
+              )}
               <span className="result__score">{Math.round(row.score * 100)}%</span>
             </button>
           ))}
