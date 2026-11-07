@@ -176,7 +176,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
             {tab === 'code' && (
               <CodeViewer compiled={detail.compiled_code} raw={detail.raw_code} fileName={detail.name} />
             )}
-            {tab === 'schema' && <SchemaTable columns={detail.columns} />}
+            {tab === 'schema' && <SchemaTable columns={detail.columns} modelId={detail.id} />}
             {tab === 'lineage' && (
               <>
                 <DependencySection

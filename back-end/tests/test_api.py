@@ -13,7 +13,7 @@ def test_health(client: TestClient) -> None:
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
     assert body["catalog_loaded"] is True
-    assert body["node_count"] == 25
+    assert body["node_count"] == 29
 
 
 def test_meta(client: TestClient) -> None:
@@ -21,14 +21,14 @@ def test_meta(client: TestClient) -> None:
     assert body["pipelines"] == ["bestand_mfp", "schaden_claims"]
     assert body["stages"] == ["src", "int", "out"]
     assert "incremental" in body["materializations"]
-    assert body["model_count"] == 19 and body["source_count"] == 6
+    assert body["model_count"] == 23 and body["source_count"] == 6
     assert "mfp" in body["tags"]
 
 
 def test_graph_shape(client: TestClient) -> None:
     body = client.get("/api/graph").json()
-    assert body["stats"]["node_count"] == len(body["nodes"]) == 25
-    assert body["stats"]["edge_count"] == len(body["edges"]) == 30
+    assert body["stats"]["node_count"] == len(body["nodes"]) == 29
+    assert body["stats"]["edge_count"] == len(body["edges"]) == 34
 
     node = next(n for n in body["nodes"] if n["id"] == CONTRACTS)
     assert node == {
@@ -38,6 +38,7 @@ def test_graph_shape(client: TestClient) -> None:
         "materialization": "table",
         "pipeline": "bestand_mfp",
         "resource_type": "model",
+        "group": "contract",
         "schema_name": "mfp_intermediate",
         "database": "pnc-analytics-prd",
         "description": node["description"],
@@ -60,7 +61,7 @@ def test_graph_filters(client: TestClient) -> None:
 
     no_sources = client.get("/api/graph", params={"include_sources": "false"}).json()
     assert all(n["resource_type"] == "model" for n in no_sources["nodes"])
-    assert no_sources["stats"]["node_count"] == 19
+    assert no_sources["stats"]["node_count"] == 23
 
     out_only = client.get("/api/graph", params={"stage": "out"}).json()
     assert {n["stage"] for n in out_only["nodes"]} == {"out"}
@@ -74,7 +75,7 @@ def test_model_detail(client: TestClient) -> None:
     assert body["compiled_code"].lower().startswith("with contracts as")
     assert "{{ config(materialized='table') }}" in body["raw_code"]
     assert [d["name"] for d in body["dependencies"]] == ["src_mfp_contracts", "src_mfp_partners"]
-    assert "int_claims_cases" in [d["name"] for d in body["dependents"]]
+    assert "out_mfp_contracts" in [d["name"] for d in body["dependents"]]
     assert body["dbt_run_command"] == "dbt run --select int_mfp_contracts"
     assert body["stats"] == {"row_count": 4812004, "size_bytes": 1073741824}
     assert body["columns"][0] == {
@@ -82,7 +83,55 @@ def test_model_detail(client: TestClient) -> None:
         "type": "STRING",
         "description": "Technical contract key.",
         "index": 1,
+        "upstream_count": 1,  # src_mfp_contracts.contract_id
+        "downstream_count": 3,  # + out_mfp_contracts.contract_id
     }
+
+
+def test_column_lineage_upstream(client: TestClient) -> None:
+    body = client.get(
+        "/api/lineage/column",
+        params={"model": "out_pnc_combined_ratio", "column": "INCURRED_CHF", "direction": "up"},
+    ).json()
+    assert body["root"]["model_id"] == "model.pnc_analytics.out_pnc_combined_ratio"
+    assert body["root"]["column"] == "incurred_chf"
+    assert body["root"]["distance"] == 0
+    reached = {(n["model_name"], n["column"]) for n in body["nodes"]}
+    assert ("raw_claims.claims", "reserve_amount") in reached
+    assert ("raw_claims.payments", "amount") in reached
+    first_hop = [e for e in body["edges"] if e["target_column"] == "incurred_chf"]
+    assert {e["source_column"] for e in first_hop} == {"paid_chf", "reserve_chf"}
+    assert {e["kind"] for e in first_hop} == {"aggregate"}
+    assert all(e["id"] for e in body["edges"])
+    assert body["warnings"] == []
+
+
+def test_column_lineage_downstream_depth(client: TestClient) -> None:
+    params = {"model": RAW_CONTRACTS, "column": "contract_id", "direction": "down"}
+    one_hop = client.get("/api/lineage/column", params={**params, "depth": 1}).json()
+    everything = client.get("/api/lineage/column", params=params).json()
+    assert {n["distance"] for n in one_hop["nodes"]} == {0, 1}
+    assert len(everything["nodes"]) > len(one_hop["nodes"])
+    assert all(e["source_model"] != e["target_model"] for e in everything["edges"])
+
+
+def test_column_lineage_not_found(client: TestClient) -> None:
+    unknown_model = client.get("/api/lineage/column", params={"model": "nope", "column": "x"})
+    unknown_column = client.get("/api/lineage/column", params={"model": CONTRACTS, "column": "nope"})
+    bad_direction = client.get(
+        "/api/lineage/column", params={"model": CONTRACTS, "column": "contract_id", "direction": "x"}
+    )
+    assert unknown_model.status_code == unknown_column.status_code == 404
+    assert bad_direction.status_code == 422
+
+
+def test_lineage_status(client: TestClient) -> None:
+    body = client.get("/api/lineage/status").json()
+    assert body["dialect"] == "bigquery"
+    assert body["coverage"] == 1.0
+    assert body["counts"] == {"ok": 23, "partial": 0, "failed": 0, "skipped": 0}
+    assert body["edge_count"] > 100
+    assert len(body["models"]) == 23
 
 
 def test_model_detail_bigquery_deeplink(client: TestClient) -> None:
@@ -145,6 +194,8 @@ def test_search_columns(client: TestClient) -> None:
     assert first["matched_on"] == "column"
     assert first["column"]["name"] == "loss_ratio"
     assert first["column"]["type"] == "FLOAT64"
+    # column-lineage counts come along, so the search result can offer a trace (2.3)
+    assert all(isinstance(r["column"]["upstream_count"], int) for r in body["results"])
     assert {r["name"] for r in body["results"]} >= {
         "int_claims_loss_ratio",
         "out_claims_kpi_daily",
@@ -157,4 +208,4 @@ def test_search_columns(client: TestClient) -> None:
 def test_reload_endpoint(client: TestClient) -> None:
     body = client.post("/api/reload").json()
     assert body["status"] == "ok"
-    assert body["node_count"] == 25
+    assert body["node_count"] == 29

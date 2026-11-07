@@ -41,7 +41,8 @@ export function useKeyboardShortcuts() {
           break
         case 'escape':
           event.preventDefault()
-          if (store.activeId) store.closeOverlay()
+          if (store.columnTrace) store.clearColumnTrace()
+          else if (store.activeId) store.closeOverlay()
           else store.clearSelection()
           break
         default:

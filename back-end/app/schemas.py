@@ -26,6 +26,7 @@ class NodeRef(BaseModel):
 class GraphNode(NodeRef):
     """Node as rendered on the canvas — intentionally slim."""
 
+    group: str | None = None  # dbt group = domain row in the stage-lanes layout
     schema_name: str | None = None
     database: str | None = None
     description: str | None = None
@@ -45,6 +46,7 @@ class GraphStats(BaseModel):
     node_count: int
     edge_count: int
     pipelines: list[str] = Field(default_factory=list)
+    groups: list[str] = Field(default_factory=list)
     stages: list[str] = Field(default_factory=list)
     materializations: list[str] = Field(default_factory=list)
 
@@ -60,6 +62,9 @@ class ColumnInfo(BaseModel):
     type: str | None = None
     description: str | None = None
     index: int | None = None
+    # direct column-lineage edges (2.3); null when the model could not be parsed
+    upstream_count: int | None = None
+    downstream_count: int | None = None
 
 
 class NodeStats(BaseModel):
@@ -82,6 +87,7 @@ class ModelDetail(BaseModel):
     materialization: Materialization
     pipeline: str
     resource_type: ResourceType
+    group: str | None = None
     description: str | None = None
     tags: list[str] = Field(default_factory=list)
     schema_name: str | None = None
@@ -116,6 +122,7 @@ class MetaResponse(BaseModel):
     dbt_version: str | None = None
     generated_at: str | None = None
     pipelines: list[str]
+    groups: list[str] = Field(default_factory=list)
     stages: list[str]
     materializations: list[str]
     tags: list[str]
@@ -130,3 +137,52 @@ class HealthResponse(BaseModel):
     artifacts: list[str]
     catalog_loaded: bool
     node_count: int
+
+
+# ----------------------------------------------------------------- column lineage (2.3)
+
+ColumnEdgeKind = Literal["passthrough", "rename", "transform", "aggregate"]
+ModelLineageStatus = Literal["ok", "partial", "failed", "skipped"]
+
+
+class ColumnNode(BaseModel):
+    model_id: str
+    model_name: str
+    column: str
+    type: str | None = None
+    distance: int = Field(description="hops from the traced column (0 = the root)")
+
+
+class ColumnEdge(BaseModel):
+    id: str
+    source_model: str
+    source_column: str
+    target_model: str
+    target_column: str
+    kind: ColumnEdgeKind
+    expression: str | None = None
+
+
+class ColumnLineageResponse(BaseModel):
+    root: ColumnNode
+    direction: Literal["up", "down", "both"]
+    depth: int | None = None
+    nodes: list[ColumnNode]
+    edges: list[ColumnEdge]
+    warnings: list[str] = Field(default_factory=list)
+
+
+class ModelLineageInfo(BaseModel):
+    model_id: str
+    model_name: str
+    status: ModelLineageStatus
+    error: str | None = None
+    warnings: list[str] = Field(default_factory=list)
+
+
+class LineageStatusResponse(BaseModel):
+    dialect: str | None = None
+    coverage: float = Field(description="share of models with SQL that parsed (ok or partial)")
+    edge_count: int
+    counts: dict[str, int]
+    models: list[ModelLineageInfo]

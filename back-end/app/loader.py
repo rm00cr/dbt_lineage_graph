@@ -10,6 +10,7 @@ Design notes
 from __future__ import annotations
 
 import json
+from collections import Counter
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -37,6 +38,8 @@ class LineageNode:
     pipeline: str
     resource_type: str
     project: str
+    # dbt `group` (models: `config.group`); sources inherit it from their consumers in _link
+    group: str | None = None
     schema_name: str | None = None
     database: str | None = None
     alias: str | None = None
@@ -68,6 +71,10 @@ class LineageGraph:
     @property
     def pipelines(self) -> list[str]:
         return sorted({n.pipeline for n in self.nodes.values() if n.pipeline})
+
+    @property
+    def groups(self) -> list[str]:
+        return sorted({n.group for n in self.nodes.values() if n.group})
 
     @property
     def stages(self) -> list[str]:
@@ -235,6 +242,7 @@ def _ingest(graph: LineageGraph, manifest: dict[str, Any], catalog: dict[str, An
             pipeline=_pipeline_of(node, project),
             resource_type="model",
             project=node.get("package_name") or project,
+            group=node.get("group") or config.get("group") or None,
             schema_name=node.get("schema"),
             database=node.get("database"),
             alias=node.get("alias") or node.get("name"),
@@ -266,6 +274,8 @@ def _ingest(graph: LineageGraph, manifest: dict[str, Any], catalog: dict[str, An
             pipeline=_pipeline_of(node, project),
             resource_type="source",
             project=node.get("package_name") or project,
+            # dbt has no groups for sources; allow an explicit `meta.group`, else inferred in _link
+            group=_source_group(node),
             schema_name=node.get("schema"),
             database=node.get("database"),
             alias=identifier,
@@ -304,3 +314,21 @@ def _link(graph: LineageGraph) -> None:
         node.dependents.sort(key=lambda i: graph.nodes[i].name)
 
     graph.edges = edges
+    _infer_source_groups(graph)
+
+
+def _source_group(node: dict[str, Any]) -> str | None:
+    meta = {**(node.get("meta") or {}), **((node.get("config") or {}).get("meta") or {})}
+    group = meta.get("group")
+    return str(group) if group else None
+
+
+def _infer_source_groups(graph: LineageGraph) -> None:
+    """Sources cannot be in a dbt group: place each ungrouped source in the group most of its
+    direct consumers belong to (ties broken alphabetically), so it lands in their domain row."""
+    for node in graph.nodes.values():
+        if node.resource_type != "source" or node.group:
+            continue
+        counts = Counter(g for i in node.dependents if (g := graph.nodes[i].group))
+        if counts:
+            node.group = min(counts, key=lambda g: (-counts[g], g))

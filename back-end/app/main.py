@@ -8,10 +8,13 @@ from typing import Annotated
 from fastapi import Depends, FastAPI, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 
+from .column_lineage import Direction
 from .config import Settings
 from .schemas import (
+    ColumnLineageResponse,
     GraphResponse,
     HealthResponse,
+    LineageStatusResponse,
     MetaResponse,
     ModelDetail,
     SearchResponse,
@@ -98,6 +101,27 @@ def search_columns(
     limit: Annotated[int, Query(ge=1, le=500)] = 50,
 ) -> SearchResponse:
     return service.search_columns(q, limit=limit)
+
+
+@app.get("/api/lineage/column", response_model=ColumnLineageResponse, tags=["lineage"])
+def column_lineage(
+    service: ServiceDep,
+    model: Annotated[str, Query(description="dbt unique_id or plain model name")],
+    column: Annotated[str, Query(description="column name (case-insensitive)")],
+    direction: Annotated[Direction, Query(description="up = origins, down = impact")] = "both",
+    depth: Annotated[int | None, Query(ge=1, le=50, description="max hops; omit for all")] = None,
+) -> ColumnLineageResponse:
+    """Column-level lineage (2.3): a column's upstream origins and/or downstream impact."""
+    result = service.column_lineage_trace(model, column, direction, depth)
+    if result is None:
+        raise HTTPException(status_code=404, detail=f"column '{column}' of '{model}' not found")
+    return result
+
+
+@app.get("/api/lineage/status", response_model=LineageStatusResponse, tags=["lineage"])
+def lineage_status(service: ServiceDep) -> LineageStatusResponse:
+    """Which models the SQL parser understood: coverage of the column-level lineage."""
+    return service.lineage_status()
 
 
 @app.get("/api/model/{model_id:path}", response_model=ModelDetail, tags=["graph"])

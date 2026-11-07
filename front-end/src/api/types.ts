@@ -17,6 +17,8 @@ export interface NodeRef {
 }
 
 export interface GraphNode extends NodeRef {
+  /** dbt group (domain) = row in the stage-lanes layout; sources inherit their consumers' group */
+  group?: string | null
   schema_name: string | null
   database: string | null
   description: string | null
@@ -36,6 +38,7 @@ export interface GraphStats {
   node_count: number
   edge_count: number
   pipelines: string[]
+  groups?: string[]
   stages: string[]
   materializations: string[]
 }
@@ -51,6 +54,9 @@ export interface ColumnInfo {
   type: string | null
   description: string | null
   index: number | null
+  /** direct column-lineage edges (2.3); null when the model could not be parsed */
+  upstream_count?: number | null
+  downstream_count?: number | null
 }
 
 export interface NodeStats {
@@ -67,6 +73,7 @@ export interface BigQueryRef {
 }
 
 export interface ModelDetail extends NodeRef {
+  group?: string | null
   description: string | null
   tags: string[]
   schema_name: string | null
@@ -101,6 +108,7 @@ export interface MetaResponse {
   dbt_version: string | null
   generated_at: string | null
   pipelines: string[]
+  groups?: string[]
   stages: string[]
   materializations: string[]
   tags: string[]
@@ -108,4 +116,54 @@ export interface MetaResponse {
   edge_count: number
   source_count: number
   model_count: number
+}
+
+// ------------------------------------------------------------------ column lineage (2.3)
+
+export type ColumnEdgeKind = 'passthrough' | 'rename' | 'transform' | 'aggregate'
+export type TraceDirection = 'up' | 'down' | 'both'
+export type ModelLineageStatus = 'ok' | 'partial' | 'failed' | 'skipped'
+
+export interface ColumnNode {
+  model_id: string
+  model_name: string
+  column: string
+  type: string | null
+  /** hops from the traced column, 0 = the root */
+  distance: number
+}
+
+export interface ColumnLineageEdge {
+  id: string
+  source_model: string
+  source_column: string
+  target_model: string
+  target_column: string
+  kind: ColumnEdgeKind
+  expression: string | null
+}
+
+export interface ColumnLineageResponse {
+  root: ColumnNode
+  direction: TraceDirection
+  depth: number | null
+  nodes: ColumnNode[]
+  edges: ColumnLineageEdge[]
+  warnings: string[]
+}
+
+export interface ModelLineageInfo {
+  model_id: string
+  model_name: string
+  status: ModelLineageStatus
+  error: string | null
+  warnings: string[]
+}
+
+export interface LineageStatusResponse {
+  dialect: string | null
+  coverage: number
+  edge_count: number
+  counts: Record<ModelLineageStatus, number>
+  models: ModelLineageInfo[]
 }

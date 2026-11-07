@@ -9,9 +9,10 @@
 import { create } from 'zustand'
 
 import { ApiError, api } from '../api/client'
-import { mockGraph, mockModelDetail } from '../api/mock'
-import type { GraphResponse, MetaResponse, ModelDetail } from '../api/types'
-import type { LayoutMode } from '../graph/layout'
+import { mockColumnLineage, mockGraph, mockModelDetail } from '../api/mock'
+import type { GraphResponse, MetaResponse, ModelDetail, TraceDirection } from '../api/types'
+import { type TraceView, buildTraceView } from '../graph/columnTrace'
+import type { LayoutMode, ZoneMode } from '../graph/layout'
 import {
   type AdjacencyIndex,
   buildIndex,
@@ -36,6 +37,17 @@ interface CenterRequest {
   nonce: number
 }
 
+/** Column-level lineage trace (2.3). While `view` is set it drives the canvas highlight. */
+export interface ColumnTrace {
+  modelId: string
+  column: string
+  direction: TraceDirection
+  view: TraceView | null
+  warnings: string[]
+  loading: boolean
+  error: string | null
+}
+
 interface ExplorerState {
   status: Status
   errorMessage: string | null
@@ -47,6 +59,10 @@ interface ExplorerState {
 
   filters: Filters
   layoutMode: LayoutMode
+  /** which zones the 'lanes' layout draws: stage columns, dbt-group rows, or both */
+  zoneMode: ZoneMode
+  /** zones layout: one grid per pipeline, placed left to right by pipeline dependency */
+  splitPipelines: boolean
   focusMode: FocusMode
   showMiniMap: boolean
   selectionDrag: boolean
@@ -64,12 +80,15 @@ interface ExplorerState {
   detailCache: Map<string, ModelDetail>
 
   centerRequest: CenterRequest | null
+  columnTrace: ColumnTrace | null
 
   // actions
   init: () => Promise<void>
   refresh: () => Promise<void>
   setFilters: (patch: Partial<Filters>) => Promise<void>
   setLayoutMode: (mode: LayoutMode) => void
+  setZoneMode: (mode: ZoneMode) => void
+  setSplitPipelines: (split: boolean) => void
   setFocusMode: (mode: FocusMode) => void
   cycleFocusMode: () => void
   toggleMiniMap: () => void
@@ -87,6 +106,10 @@ interface ExplorerState {
   setOverlayTab: (tab: OverlayTab) => void
   closeOverlay: () => void
   requestCenter: (id: string) => void
+
+  traceColumn: (modelId: string, column: string, direction?: TraceDirection) => Promise<void>
+  setTraceDirection: (direction: TraceDirection) => Promise<void>
+  clearColumnTrace: () => void
 }
 
 const EMPTY_INDEX: AdjacencyIndex = {
@@ -97,8 +120,13 @@ const EMPTY_INDEX: AdjacencyIndex = {
 }
 
 function computeHighlight(
-  state: Pick<ExplorerState, 'graph' | 'index' | 'selectedIds' | 'activeId'>,
+  state: Pick<ExplorerState, 'graph' | 'index' | 'selectedIds' | 'activeId' | 'columnTrace'>,
 ): { highlightedIds: Set<string>; highlightedEdgeIds: Set<string> } {
+  const trace = state.columnTrace?.view
+  if (trace) {
+    return { highlightedIds: new Set(trace.nodeIds), highlightedEdgeIds: new Set(trace.modelEdgeIds) }
+  }
+
   const seeds = new Set(state.selectedIds)
   if (state.activeId) seeds.add(state.activeId)
 
@@ -113,6 +141,36 @@ function computeHighlight(
   }
 }
 
+/** `?pipeline=a,b` is read before the first fetch so a shared link loads only those pipelines */
+function pipelinesFromUrl(): string[] {
+  if (typeof window === 'undefined') return []
+  const raw = new URLSearchParams(window.location.search).get('pipeline')
+  return raw ? raw.split(',').map((p) => p.trim()).filter(Boolean) : []
+}
+
+/** offline fallback: apply the same filters the API would */
+function filterMockGraph(filters: Filters): GraphResponse {
+  const nodes = mockGraph.nodes.filter(
+    (n) =>
+      (!filters.pipelines.length || filters.pipelines.includes(n.pipeline)) &&
+      (!filters.stages.length || filters.stages.includes(n.stage)) &&
+      (filters.includeSources || n.resource_type !== 'source'),
+  )
+  const ids = new Set(nodes.map((n) => n.id))
+  const edges = mockGraph.edges.filter((e) => ids.has(e.source) && ids.has(e.target))
+  return {
+    nodes,
+    edges,
+    stats: {
+      ...mockGraph.stats,
+      node_count: nodes.length,
+      edge_count: edges.length,
+      pipelines: mockGraph.stats.pipelines.filter((p) => nodes.some((n) => n.pipeline === p)),
+      stages: mockGraph.stats.stages.filter((s) => nodes.some((n) => n.stage === s)),
+    },
+  }
+}
+
 export const useExplorerStore = create<ExplorerState>((set, get) => ({
   status: 'loading',
   errorMessage: null,
@@ -122,8 +180,10 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   meta: null,
   index: EMPTY_INDEX,
 
-  filters: { pipelines: [], stages: [], includeSources: true },
+  filters: { pipelines: pipelinesFromUrl(), stages: [], includeSources: true },
   layoutMode: 'dag',
+  zoneMode: 'both',
+  splitPipelines: false,
   focusMode: 'dim',
   showMiniMap: true,
   selectionDrag: false,
@@ -141,6 +201,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   detailCache: new Map(),
 
   centerRequest: null,
+  columnTrace: null,
 
   // ------------------------------------------------------------------ loading
   init: async () => {
@@ -168,10 +229,11 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     } catch (error) {
       // AP-2/AP-3 can keep working offline against the mock graph.
       const message = error instanceof ApiError ? error.message : String(error)
+      const graph = filterMockGraph(filters)
       set({
-        graph: mockGraph,
+        graph,
         meta: null,
-        index: buildIndex(mockGraph.nodes, mockGraph.edges),
+        index: buildIndex(graph.nodes, graph.edges),
         status: 'ready',
         usingMock: true,
         errorMessage: message,
@@ -183,7 +245,9 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   refresh: async () => {
     set({ detailCache: new Map() })
+    const trace = get().columnTrace
     await get().init()
+    if (trace) await get().traceColumn(trace.modelId, trace.column, trace.direction)
   },
 
   setFilters: async (patch) => {
@@ -192,6 +256,8 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   },
 
   setLayoutMode: (mode) => set({ layoutMode: mode }),
+  setZoneMode: (mode) => set({ zoneMode: mode }),
+  setSplitPipelines: (split) => set({ splitPipelines: split }),
   setFocusMode: (mode) => set({ focusMode: mode }),
   cycleFocusMode: () =>
     set((state) => ({
@@ -215,7 +281,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   toggleSelected: (id) => get().select([id], { additive: true }),
 
   clearSelection: () => {
-    set({ selectedIds: new Set(), selectorInput: '' })
+    set({ selectedIds: new Set(), selectorInput: '', columnTrace: null })
     set((state) => computeHighlight(state))
   },
 
@@ -290,6 +356,72 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   requestCenter: (id) =>
     set((state) => ({ centerRequest: { id, nonce: (state.centerRequest?.nonce ?? 0) + 1 } })),
+
+  // ------------------------------------------------------------------ column lineage (2.3)
+  traceColumn: async (modelId, column, direction = 'both') => {
+    const previous = get().columnTrace
+    set({
+      columnTrace: {
+        modelId,
+        column,
+        direction,
+        // keep the old picture while the new one loads, so the canvas does not flash
+        view: previous?.view ?? null,
+        warnings: [],
+        loading: true,
+        error: null,
+      },
+    })
+
+    const isCurrent = () => {
+      const current = get().columnTrace
+      return current?.modelId === modelId && current.column === column && current.direction === direction
+    }
+
+    try {
+      const response = get().usingMock
+        ? mockColumnLineage(modelId, column, direction)
+        : await api.columnLineage(modelId, column, direction)
+      if (!isCurrent()) return
+      set({
+        columnTrace: {
+          modelId: response.root.model_id,
+          column: response.root.column,
+          direction,
+          view: buildTraceView(response),
+          warnings: response.warnings,
+          loading: false,
+          error: null,
+        },
+      })
+    } catch (error) {
+      if (!isCurrent()) return
+      set({
+        columnTrace: {
+          modelId,
+          column,
+          direction,
+          view: null,
+          warnings: [],
+          loading: false,
+          error: error instanceof ApiError ? error.message : String(error),
+        },
+      })
+    }
+    set((state) => computeHighlight(state))
+  },
+
+  setTraceDirection: async (direction) => {
+    const trace = get().columnTrace
+    if (!trace || trace.direction === direction) return
+    await get().traceColumn(trace.modelId, trace.column, direction)
+  },
+
+  clearColumnTrace: () => {
+    if (!get().columnTrace) return
+    set({ columnTrace: null })
+    set((state) => computeHighlight(state))
+  },
 }))
 
 /** Selector helpers for components (keeps re-renders narrow). */

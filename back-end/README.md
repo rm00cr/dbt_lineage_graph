@@ -52,6 +52,8 @@ After a fresh `dbt docs generate` you can reload without a restart: `curl -X POS
 | `GET` | `/api/model/{id}` | dbt `unique_id` **or** plain model name |
 | `GET` | `/api/search?q=…` | typo-tolerant, rapidfuzz |
 | `GET` | `/api/search/columns?q=…` | column search (feature 2.2) |
+| `GET` | `/api/lineage/column?model=…&column=…&direction=up\|down\|both` | column-level lineage (2.3) |
+| `GET` | `/api/lineage/status` | per-model SQL parse status and coverage (2.3) |
 | `POST` | `/api/reload` | re-read artifacts from disk |
 
 The payload shapes are fixed in [`../contract.md`](../contract.md) and typed in

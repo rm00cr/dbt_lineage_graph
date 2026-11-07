@@ -96,7 +96,11 @@ cd front-end && npm test                               # 32 tests
 - 2.2 Column search, server-side.
 - 2.4 Cross-pipeline edges are rendered (dashed orange) and the loader already takes a *list*
   of dbt projects — only the config and a UI grouping are missing.
-- 2.3 Column-level lineage: **not started** (stretch goal, needs sqlglot).
+- 2.3 Column-level lineage: sqlglot parses each model's compiled SQL against the catalog
+  schema (`back-end/app/column_lineage.py`). In the Schema tab, the ↑/↓ button on a column
+  traces it: the traced columns appear as rows inside the nodes, column edges are coloured by
+  kind (passthrough / rename / transform / aggregate) and the overlay lists every hop with its
+  SQL expression. `GET /api/lineage/status` reports which models parsed.
 
 **Look and feel** — light and dark themes, defaulting to the operating system setting and
 overridable from the top bar. Both palettes are defined as CSS custom properties in
@@ -118,8 +122,9 @@ Start at **AP-4** — everything it needs is in place:
    index stops scaling and switch `SearchBar` over.
 2. **Lineage across pipelines (2.4)** — set `DBT_ARTIFACTS` to several `manifest,catalog`
    pairs; then group / colour by project in the UI.
-3. **Column-level lineage (2.3)** — new endpoint, sqlglot parsing of `compiled_code`, plus a
-   column-to-column view in the overlay.
+3. **Column-level lineage, next steps (2.3)** — *indirect* edges (columns used in `join` /
+   `where` / `group by`), and checking the parser coverage on the real PnC artifacts
+   (`GET /api/lineage/status`).
 4. **BigQuery cost & execution metadata (4.2 / 3.5)** — an `INFORMATION_SCHEMA` adapter
    feeding new fields into `stats`.
 5. **Real fixtures** — point the backend at a real PnC `manifest.json` / `catalog.json` and

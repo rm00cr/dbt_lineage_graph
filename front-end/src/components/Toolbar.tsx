@@ -17,16 +17,26 @@ import {
   Maximize2,
   MousePointerSquareDashed,
   RefreshCw,
+  Rows3,
+  TriangleAlert,
   Workflow,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 
+import { VIOLATION_LABELS, boundaryViolations } from '../graph/boundary'
+import type { ZoneMode } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { STAGE_LABELS, copyToClipboard, useStageColor } from './visual'
 
 const FOCUS_LABEL = { off: 'Focus off', dim: 'Focus: dim', isolate: 'Focus: isolate' } as const
 const FOCUS_ICON = { off: EyeOff, dim: Eye, isolate: Crosshair } as const
+
+const ZONE_OPTIONS: { mode: ZoneMode; label: string; title: string }[] = [
+  { mode: 'stages', label: 'Stages', title: 'Stage columns only (src / int / out)' },
+  { mode: 'both', label: 'Stages × Groups', title: 'Stage columns, one row per dbt group' },
+  { mode: 'groups', label: 'Groups', title: 'One row per dbt group, columns by DAG depth' },
+]
 
 interface ToolbarProps {
   onToast: (message: string) => void
@@ -35,6 +45,24 @@ interface ToolbarProps {
 export function Toolbar({ onToast }: ToolbarProps) {
   const layoutMode = useExplorerStore((s) => s.layoutMode)
   const setLayoutMode = useExplorerStore((s) => s.setLayoutMode)
+  const zoneMode = useExplorerStore((s) => s.zoneMode)
+  const setZoneMode = useExplorerStore((s) => s.setZoneMode)
+  const hasGroups = useExplorerStore((s) => s.graph?.nodes.some((n) => n.group) ?? false)
+  const splitPipelines = useExplorerStore((s) => s.splitPipelines)
+  const setSplitPipelines = useExplorerStore((s) => s.setSplitPipelines)
+  const pipelineCount = useExplorerStore((s) => s.graph?.stats.pipelines.length ?? 0)
+  const graph = useExplorerStore((s) => s.graph)
+  const select = useExplorerStore((s) => s.select)
+  const violations = useMemo(() => {
+    if (!graph) return []
+    const nameOf = new Map(graph.nodes.map((n) => [n.id, n.name]))
+    const byId = new Map(graph.edges.map((e) => [e.id, e]))
+    return [...boundaryViolations(graph.nodes, graph.edges)].map(([id, kind]) => {
+      const edge = byId.get(id)!
+      return { sourceId: edge.source, targetId: edge.target, source: nameOf.get(edge.source), target: nameOf.get(edge.target), kind }
+    })
+  }, [graph])
+  const selectViolations = () => select([...new Set(violations.flatMap((v) => [v.sourceId, v.targetId]))])
   const focusMode = useExplorerStore((s) => s.focusMode)
   const cycleFocusMode = useExplorerStore((s) => s.cycleFocusMode)
   const showMiniMap = useExplorerStore((s) => s.showMiniMap)
@@ -53,7 +81,6 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const filters = useExplorerStore((s) => s.filters)
   const setFilters = useExplorerStore((s) => s.setFilters)
   const meta = useExplorerStore((s) => s.meta)
-  const graph = useExplorerStore((s) => s.graph)
   const refresh = useExplorerStore((s) => s.refresh)
 
   const [showFilters, setShowFilters] = useState(false)
@@ -101,10 +128,44 @@ export function Toolbar({ onToast }: ToolbarProps) {
         <button
           className={`btn ${layoutMode === 'lanes' ? 'btn--active' : ''}`}
           onClick={() => setLayoutMode('lanes')}
-          title="Stage zones: src / int / out as columns"
+          title="Zones: stages (src / int / out) as columns and/or dbt groups as rows"
         >
-          <Columns3 size={14} /> Stage zones
+          <Columns3 size={14} /> Zones
         </button>
+        {layoutMode === 'lanes' && (
+          <div className="segmented toolbar__zones" role="group" aria-label="Zones">
+            {ZONE_OPTIONS.map(({ mode, label, title }) => {
+              const needsGroups = mode !== 'stages'
+              const disabled = needsGroups && !hasGroups
+              return (
+                <button
+                  key={mode}
+                  data-active={zoneMode === mode}
+                  disabled={disabled}
+                  onClick={() => setZoneMode(mode)}
+                  title={disabled ? 'No dbt groups in this project (set `group:` on your models)' : title}
+                >
+                  {label}
+                </button>
+              )
+            })}
+          </div>
+        )}
+        {layoutMode === 'lanes' && (
+          <button
+            className={`btn btn--icon ${splitPipelines && pipelineCount > 1 ? 'btn--active' : ''}`}
+            onClick={() => setSplitPipelines(!splitPipelines)}
+            disabled={pipelineCount < 2}
+            aria-pressed={splitPipelines}
+            title={
+              pipelineCount < 2
+                ? 'Split by pipeline: needs 2+ pipelines in view'
+                : 'Split by pipeline: one band per pipeline, upstream first'
+            }
+          >
+            <Rows3 size={14} />
+          </button>
+        )}
 
         <span className="toolbar__divider" />
 
@@ -153,6 +214,21 @@ export function Toolbar({ onToast }: ToolbarProps) {
         <button className="btn btn--icon" onClick={() => void refresh()} title="Reload graph from API">
           <RefreshCw size={14} />
         </button>
+
+        {violations.length > 0 && (
+          <button
+            className="btn btn--danger"
+            onClick={selectViolations}
+            title={[
+              'Pipeline boundary: only outputs may feed another pipeline, through a src model.',
+              'Click to select the models involved.',
+              '',
+              ...violations.map((v) => `${v.source} → ${v.target}: ${VIOLATION_LABELS[v.kind]}`),
+            ].join('\n')}
+          >
+            <TriangleAlert size={14} /> {violations.length} boundary
+          </button>
+        )}
       </div>
 
       <div className="toolbar__row">

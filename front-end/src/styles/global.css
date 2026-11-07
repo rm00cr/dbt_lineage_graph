@@ -308,6 +308,148 @@ input {
   letter-spacing: 0.07em;
 }
 
+/* pipelines chip doubles as the pipeline filter */
+
+.pipeline-picker {
+  position: relative;
+}
+
+.stat-chip--button {
+  font: inherit;
+  color: inherit;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.stat-chip--button:hover,
+.stat-chip--open {
+  border-color: var(--accent-ring);
+}
+
+.stat-chip--filtered {
+  background: var(--accent-soft);
+  border-color: var(--accent-ring);
+}
+
+.stat-chip--filtered .stat-chip__value {
+  color: var(--accent-chip-text);
+}
+
+.stat-chip--button .stat-chip__label {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+}
+
+.stat-chip__caret {
+  transition: transform 0.15s ease;
+}
+
+.stat-chip--open .stat-chip__caret {
+  transform: rotate(180deg);
+}
+
+.pipeline-picker__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  min-width: 230px;
+  padding: 6px;
+  border-radius: var(--radius);
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border);
+  box-shadow: var(--shadow-panel);
+  z-index: 40;
+}
+
+.pipeline-picker__head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 4px 8px 6px;
+  font-size: 10.5px;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: var(--text-faint);
+  font-weight: 600;
+}
+
+.pipeline-picker__row {
+  display: flex;
+  align-items: center;
+  border-radius: var(--radius-sm);
+}
+
+.pipeline-picker__row:hover {
+  background: var(--accent-soft);
+}
+
+.pipeline-picker__item {
+  flex: 1;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 7px 8px;
+  background: none;
+  border: none;
+  color: var(--text);
+  font: inherit;
+  font-size: 12.5px;
+  font-family: var(--mono);
+  text-align: left;
+  cursor: pointer;
+}
+
+.pipeline-picker__box {
+  width: 15px;
+  height: 15px;
+  flex: 0 0 auto;
+  display: grid;
+  place-items: center;
+  border-radius: 4px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+}
+
+.pipeline-picker__box--on {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #fff;
+}
+
+.pipeline-picker__link {
+  background: none;
+  border: none;
+  padding: 2px 6px;
+  font: inherit;
+  font-size: 11px;
+  color: var(--accent);
+  cursor: pointer;
+  text-transform: none;
+  letter-spacing: 0;
+}
+
+.pipeline-picker__link:disabled {
+  color: var(--text-faint);
+  cursor: default;
+}
+
+.pipeline-picker__only {
+  margin-right: 4px;
+  opacity: 0;
+}
+
+.pipeline-picker__row:hover .pipeline-picker__only,
+.pipeline-picker__only:focus-visible {
+  opacity: 1;
+}
+
+.pipeline-picker__empty {
+  padding: 8px;
+  font-size: 12px;
+  color: var(--text-faint);
+}
+
 /* ===================================== buttons ============================ */
 
 .btn {
@@ -344,6 +486,12 @@ input {
   background: var(--accent-chip-bg);
   border-color: var(--accent-ring);
   color: var(--accent-chip-text);
+}
+
+.btn--danger {
+  background: color-mix(in srgb, var(--danger) 14%, transparent);
+  border-color: color-mix(in srgb, var(--danger) 45%, transparent);
+  color: var(--danger);
 }
 
 .btn--icon {
@@ -705,6 +853,20 @@ input {
   animation: dash-flow 0.9s linear infinite;
 }
 
+/* cross-pipeline edge that breaks the boundary convention (only OUT -> SRC may cross) */
+.edge--violation .react-flow__edge-path,
+.edge--violation.edge--dim .react-flow__edge-path {
+  stroke: color-mix(in srgb, var(--danger) 75%, transparent);
+  stroke-width: 2;
+  stroke-dasharray: 3 4;
+}
+
+.edge--violation.edge--highlight .react-flow__edge-path {
+  stroke: var(--danger);
+  stroke-width: 2.6;
+  filter: drop-shadow(0 0 6px color-mix(in srgb, var(--danger) 60%, transparent));
+}
+
 @keyframes dash-flow {
   to {
     stroke-dashoffset: -24;
@@ -768,6 +930,7 @@ input {
   width: 268px;
   height: 96px;
   display: flex;
+  flex-direction: column;
   overflow: hidden;
   border-radius: 14px;
   background: var(--node-bg);
@@ -785,6 +948,16 @@ input {
 .node:hover {
   border-color: var(--stage-color);
   transform: translateY(-1px);
+}
+
+.node__main {
+  display: flex;
+  flex: 1 1 auto;
+  min-height: 0;
+}
+
+.node--traced .node__main {
+  flex: 0 0 94px;
 }
 
 .node__accent {
@@ -980,6 +1153,72 @@ input {
   letter-spacing: 0.04em;
   color: var(--text-faint);
   font-weight: 500;
+}
+
+/* dbt groups (domains): horizontal bands across the stage lanes */
+.row-band {
+  position: absolute;
+  border-radius: 16px;
+  border: 1px solid color-mix(in srgb, var(--text-faint) 22%, transparent);
+  background: color-mix(in srgb, var(--text-faint) 4%, transparent);
+  pointer-events: none;
+}
+
+.row-band--ungrouped {
+  border-style: dashed;
+  background: transparent;
+}
+
+.row-band__label {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 56px;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  writing-mode: vertical-rl;
+  transform: rotate(180deg);
+  font-size: 12px;
+  font-weight: 700;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: var(--text-muted, var(--text-faint));
+}
+
+/* pipelines: one box per pipeline around its own grid (split by pipeline) */
+.pipeline-band {
+  position: absolute;
+  border-radius: 22px;
+  border: 1.5px solid color-mix(in srgb, var(--accent) 38%, transparent);
+  background: color-mix(in srgb, var(--accent) 4%, transparent);
+  pointer-events: none;
+}
+
+.pipeline-band__label {
+  position: absolute;
+  top: 0;
+  left: 22px;
+  height: 40px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-size: 14px;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--accent) 80%, var(--text-muted));
+}
+
+.row-band__count {
+  font-size: 11px;
+  letter-spacing: 0.04em;
+  font-weight: 500;
+  color: var(--text-faint);
 }
 
 /* ===================================== legend ============================= */
@@ -1514,4 +1753,305 @@ mark {
 /* spinner used inline (e.g. in the search field) */
 .spin {
   animation: spin 0.85s linear infinite;
+}
+
+/* ============================ column lineage (2.3) ======================== */
+
+.node__cols {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0 6px;
+  border-top: 1px solid var(--border);
+  background: color-mix(in srgb, var(--stage-color) 5%, transparent);
+}
+
+.node__col {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  height: 22px;
+  padding: 0 14px 0 18px;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--text-muted);
+}
+
+.node__col-name {
+  flex: 1;
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.node__col[data-role='root'] {
+  color: var(--accent-chip-text);
+  background: var(--accent-chip-bg);
+  font-weight: 650;
+}
+
+.node__col-hop {
+  font-size: 10px;
+  color: var(--text-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.node__col--more {
+  color: var(--text-faint);
+  font-family: inherit;
+  font-style: italic;
+}
+
+/* column edges: colour = how the value changes on the way */
+.cedge .react-flow__edge-path {
+  stroke: var(--accent);
+  stroke-width: 1.8;
+}
+
+.cedge--rename .react-flow__edge-path {
+  stroke-dasharray: 6 4;
+}
+
+.cedge--transform .react-flow__edge-path {
+  stroke: var(--warn);
+}
+
+.cedge--aggregate .react-flow__edge-path {
+  stroke: var(--stage-out);
+  stroke-width: 2.4;
+}
+
+.cedge-swatch {
+  display: inline-block;
+  width: 18px;
+  height: 0;
+  border-top: 2px solid var(--accent);
+  vertical-align: middle;
+}
+
+.cedge-swatch--rename {
+  border-top-style: dashed;
+}
+
+.cedge-swatch--transform {
+  border-top-color: var(--warn);
+}
+
+.cedge-swatch--aggregate {
+  border-top-color: var(--stage-out);
+  border-top-width: 3px;
+}
+
+/* floating bar while a column is traced */
+.trace-bar {
+  position: absolute;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  z-index: 6;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  max-width: calc(100% - 32px);
+  padding: 7px 8px 7px 14px;
+  border-radius: 99px;
+  background: var(--bg-panel);
+  backdrop-filter: blur(16px);
+  border: 1px solid var(--accent-ring);
+  box-shadow: var(--shadow-panel);
+  font-size: 12.5px;
+}
+
+.trace-bar__target {
+  font-family: var(--mono);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.trace-bar__meta {
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.segmented {
+  display: inline-flex;
+  border: 1px solid var(--border);
+  border-radius: 99px;
+  overflow: hidden;
+  flex: 0 0 auto;
+}
+
+.segmented button {
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  padding: 3px 10px;
+  cursor: pointer;
+}
+
+.segmented button[data-active='true'] {
+  background: var(--accent-chip-bg);
+  color: var(--accent-chip-text);
+}
+
+.segmented button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.toolbar__zones {
+  align-self: center;
+}
+
+.icon-button {
+  display: grid;
+  place-items: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 99px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  cursor: pointer;
+  flex: 0 0 auto;
+}
+
+.icon-button:hover {
+  background: var(--chip-bg);
+  color: var(--text);
+}
+
+/* keep the bar centred in the visible canvas, the overlay already explains the kinds */
+/* with the overlay open: start right of the legend, stop before the zoom controls */
+.trace-bar--with-overlay {
+  left: 340px;
+  transform: none;
+  max-width: calc(100% - min(560px, 46vw) - 340px - 64px);
+}
+
+.trace-bar__legend {
+  display: inline-flex;
+  gap: 8px;
+}
+
+.trace-bar--with-overlay .trace-bar__legend {
+  display: none;
+}
+
+@media (max-width: 900px) {
+  .trace-bar__legend {
+    display: none;
+  }
+}
+
+/* column search results: lineage counts */
+.result__lineage {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  flex: 0 0 auto;
+  font-family: var(--mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.result[data-active='true'] .result__lineage {
+  color: var(--accent-chip-text);
+}
+
+/* schema tab */
+.trace-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 3px;
+  padding: 2px 7px;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--chip-bg);
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 10.5px;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.trace-btn:hover:not(:disabled) {
+  border-color: var(--accent-ring);
+  color: var(--accent-chip-text);
+}
+
+.trace-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.table tbody tr[data-traced='true'] td {
+  background: var(--accent-soft);
+}
+
+.trace-panel {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: var(--radius);
+  border: 1px solid var(--accent-ring);
+  background: var(--accent-soft);
+  font-size: 12.5px;
+}
+
+.trace-panel__head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 8px;
+}
+
+.trace-panel__title {
+  flex: 1;
+  min-width: 0;
+  font-weight: 650;
+}
+
+.trace-hop {
+  display: grid;
+  grid-template-columns: auto 1fr;
+  gap: 2px 8px;
+  align-items: baseline;
+  padding: 5px 0;
+  border-top: 1px solid var(--border);
+}
+
+.trace-hop__path {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  overflow-wrap: anywhere;
+}
+
+.trace-hop__path button {
+  border: 0;
+  padding: 0;
+  background: none;
+  color: inherit;
+  font: inherit;
+  cursor: pointer;
+  text-decoration: underline dotted;
+}
+
+.trace-hop__expr {
+  grid-column: 2;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--text-faint);
+  overflow-wrap: anywhere;
+}
+
+.trace-warning {
+  margin-top: 6px;
+  color: var(--warn);
+  font-size: 11.5px;
 }
