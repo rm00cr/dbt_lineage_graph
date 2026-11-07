@@ -1,5 +1,6 @@
 /**
  * Shareable views: `?model=<id>&tab=schema&layout=lanes&focus=isolate` is restored on load
+ * (`?pipeline=a,b` is read by the store itself, before the first fetch)
  * and kept up to date, so a link can be pasted into a ticket or a chat.
  */
 
@@ -24,6 +25,7 @@ export function useUrlSync() {
   const zoneMode = useExplorerStore((s) => s.zoneMode)
   const splitPipelines = useExplorerStore((s) => s.splitPipelines)
   const focusMode = useExplorerStore((s) => s.focusMode)
+  const pipelines = useExplorerStore((s) => s.filters.pipelines)
   const traceModel = useExplorerStore((s) => s.columnTrace?.modelId ?? null)
   const traceColumn = useExplorerStore((s) => s.columnTrace?.column ?? null)
   const traceDirection = useExplorerStore((s) => s.columnTrace?.direction ?? null)
@@ -86,10 +88,11 @@ export function useUrlSync() {
     set('layout', layoutMode === 'dag' ? null : layoutMode)
     set('zones', layoutMode === 'lanes' && zoneMode !== 'both' ? zoneMode : null)
     set('split', layoutMode === 'lanes' && splitPipelines ? 'pipeline' : null)
+    set('pipeline', pipelines.length ? pipelines.join(',') : null)
     set('focus', focusMode === 'dim' ? null : focusMode)
     set('col', traceModel && traceColumn ? encodeTraceParam(traceModel, traceColumn) : null)
     set('coldir', traceModel && traceDirection !== 'both' ? traceDirection : null)
 
     window.history.replaceState(null, '', url)
-  }, [activeId, overlayTab, layoutMode, zoneMode, splitPipelines, focusMode, traceModel, traceColumn, traceDirection])
+  }, [activeId, overlayTab, layoutMode, zoneMode, splitPipelines, pipelines, focusMode, traceModel, traceColumn, traceDirection])
 }

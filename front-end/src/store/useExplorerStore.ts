@@ -141,6 +141,36 @@ function computeHighlight(
   }
 }
 
+/** `?pipeline=a,b` is read before the first fetch so a shared link loads only those pipelines */
+function pipelinesFromUrl(): string[] {
+  if (typeof window === 'undefined') return []
+  const raw = new URLSearchParams(window.location.search).get('pipeline')
+  return raw ? raw.split(',').map((p) => p.trim()).filter(Boolean) : []
+}
+
+/** offline fallback: apply the same filters the API would */
+function filterMockGraph(filters: Filters): GraphResponse {
+  const nodes = mockGraph.nodes.filter(
+    (n) =>
+      (!filters.pipelines.length || filters.pipelines.includes(n.pipeline)) &&
+      (!filters.stages.length || filters.stages.includes(n.stage)) &&
+      (filters.includeSources || n.resource_type !== 'source'),
+  )
+  const ids = new Set(nodes.map((n) => n.id))
+  const edges = mockGraph.edges.filter((e) => ids.has(e.source) && ids.has(e.target))
+  return {
+    nodes,
+    edges,
+    stats: {
+      ...mockGraph.stats,
+      node_count: nodes.length,
+      edge_count: edges.length,
+      pipelines: mockGraph.stats.pipelines.filter((p) => nodes.some((n) => n.pipeline === p)),
+      stages: mockGraph.stats.stages.filter((s) => nodes.some((n) => n.stage === s)),
+    },
+  }
+}
+
 export const useExplorerStore = create<ExplorerState>((set, get) => ({
   status: 'loading',
   errorMessage: null,
@@ -150,7 +180,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   meta: null,
   index: EMPTY_INDEX,
 
-  filters: { pipelines: [], stages: [], includeSources: true },
+  filters: { pipelines: pipelinesFromUrl(), stages: [], includeSources: true },
   layoutMode: 'dag',
   zoneMode: 'both',
   splitPipelines: false,
@@ -199,10 +229,11 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     } catch (error) {
       // AP-2/AP-3 can keep working offline against the mock graph.
       const message = error instanceof ApiError ? error.message : String(error)
+      const graph = filterMockGraph(filters)
       set({
-        graph: mockGraph,
+        graph,
         meta: null,
-        index: buildIndex(mockGraph.nodes, mockGraph.edges),
+        index: buildIndex(graph.nodes, graph.edges),
         status: 'ready',
         usingMock: true,
         errorMessage: message,
