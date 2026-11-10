@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from app.config import ArtifactPair, PipelinesConfigError, load_pipelines_config, resolve_stage
-from app.loader import LineageGraph, load_graph
+from app.config import (
+    ArtifactPair,
+    Layer,
+    PipelinesConfigError,
+    load_pipelines_config,
+    read_pipelines_config,
+    resolve_stage,
+)
+from app.loader import LineageGraph, load_graph, merge_layer_orders
 
 CONTRACTS = "model.bestand_mfp.int_mfp_contracts"
 SRC_CONTRACTS = "model.bestand_mfp.src_mfp_contracts"
@@ -279,3 +287,92 @@ def test_catalog_stats(graph: LineageGraph) -> None:
     node = graph.nodes[CONTRACTS]
     assert node.row_count == 4_812_004
     assert node.size_bytes == 1_073_741_824
+
+
+STAGING_MARTS = """\
+layers:
+  - {name: staging, label: Staging, folders: [01_staging], prefixes: [stg_]}
+  - intermediate
+  - {name: marts, folders: 03_marts}
+"""
+
+
+def test_layers_are_configurable(tmp_path: Path) -> None:
+    (tmp_path / "pipelines.yaml").write_text(
+        STAGING_MARTS
+        + """\
+pipelines:
+  - {name: a, dir: a}
+  - name: b
+    dir: b
+    layers: [raw, src, out]
+"""
+    )
+    (a, b), default = read_pipelines_config(tmp_path / "pipelines.yaml")
+    assert default == a.layers
+    assert [(layer.name, layer.label, layer.role) for layer in a.layers] == [
+        ("staging", "Staging", "src"), ("intermediate", "intermediate", "int"), ("marts", "marts", "out"),
+    ]
+    assert a.layers[0].folders == ("01_staging",) and a.layers[1].folders == ("intermediate",)
+    assert a.layers[2].folders == ("03_marts",)
+    assert [layer.role for layer in b.layers] == ["src", "int", "out"]  # the role is the position
+
+    def stage(path: str | None, name: str = "x", tags: list[str] | None = None) -> str:
+        return resolve_stage(name=name, resource_type="model", original_file_path=path, tags=tags, layers=a.layers)
+
+    assert stage("models/01_staging/x.sql") == "staging"
+    assert stage("models/staging/x.sql") == "staging"  # the numeric prefix is optional
+    assert stage("models/02_intermediate/x.sql") == "intermediate"
+    assert stage("models/marts/x.sql") == "marts"
+    assert stage("models/01_source/x.sql") == "other"  # the default folders no longer apply
+    assert stage(None, name="stg_orders") == "staging"
+    assert stage(None, name="int_orders") == "other"  # no prefixes configured
+    assert stage(None, tags=["stage:marts"]) == "marts"
+    assert resolve_stage(name="t", resource_type="source", original_file_path=None, layers=a.layers) == "staging"
+
+    for bad, message in (
+        ("layers: [only]", "at least two"),
+        ("layers: [a, a]", "used twice"),
+        ("layers: [a, other]", "reserved"),
+        ("layers: [a, 'b c']", "may only contain"),
+        ("layers: [a, {name: b, colour: red}]", "unknown keys"),
+        ("layers: [a, {name: b, folders: [1]}]", "folders must be"),
+    ):
+        (tmp_path / "bad.yaml").write_text(f"{bad}\npipelines:\n  - {{name: p, dir: p}}\n")
+        with pytest.raises(PipelinesConfigError, match=message):
+            load_pipelines_config(tmp_path / "bad.yaml")
+
+
+def test_custom_layers_drive_stage_role_and_links(tmp_path: Path) -> None:
+    (tmp_path / "pipelines.yaml").write_text(STAGING_MARTS + "pipelines: []\n")
+    _, layers = read_pipelines_config(tmp_path / "pipelines.yaml")
+    up = replace(_project(tmp_path, "up", models=[
+        {"name": "orders", "folder": "03_marts"},
+        {"name": "orders_int", "folder": "02_intermediate"},
+    ]), layers=layers)
+    down = replace(_project(tmp_path, "down", models=[
+        {"name": "stg_orders", "folder": "01_staging", "deps": ["source.dbt_pnc.up.orders"]},
+    ], sources=[{"source_name": "up", "table": "orders", "database": "d", "schema": "s"}]), layers=layers)
+    graph = load_graph([up, down])
+
+    marts = graph.nodes["model.up.orders"]
+    assert (marts.stage, marts.role) == ("marts", "out")
+    assert graph.nodes["model.up.orders_int"].role == "int"
+    source = graph.nodes["source.down.up.orders"]
+    assert (source.stage, source.role) == ("staging", "src")  # sources land in the first layer
+    assert ("model.up.orders", "source.down.up.orders") in graph.edges  # the last layer links
+    assert graph.stages == ["staging", "intermediate", "marts"]
+
+
+def test_stage_order_merges_the_pipelines_layer_orders() -> None:
+    def layers(*names: str) -> tuple[Layer, ...]:
+        roles = ["src", *["int"] * (len(names) - 2), "out"]
+        return tuple(Layer(n, n, r, (n,)) for n, r in zip(names, roles, strict=True))
+
+    assert merge_layer_orders({"a": layers("src", "int", "out"), "b": layers("raw", "src", "core", "out")}) == [
+        "raw", "src", "core", "int", "out", "other",
+    ]
+    # differently named layers interleave by role
+    assert merge_layer_orders({"a": layers("src", "int", "out"), "b": layers("staging", "intermediate", "marts")}) == [
+        "staging", "src", "intermediate", "int", "marts", "out", "other",
+    ]

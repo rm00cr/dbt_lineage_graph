@@ -1,11 +1,13 @@
 /**
  * Layout (AP-2): directed DAG layout via dagre, plus a "stage lanes" layout that lines the
- * nodes up in src / int / out columns (feature 3.2).
+ * nodes up in one column per layer (pipelines.yaml `layers`, default src / int / out), every
+ * pipeline in its own box (feature 3.2).
  */
 
 import dagre from 'dagre'
 
 import type { GraphEdge, GraphNode, Stage } from '../api/types'
+import { orderStages } from './stage'
 
 export const NODE_WIDTH = 268
 export const NODE_HEIGHT = 96
@@ -23,7 +25,7 @@ export interface Positioned {
 
 export interface LaneBox {
   stage: Stage
-  /** the enclosing pipeline band, when split by pipeline */
+  /** the enclosing pipeline band; null with a single pipeline */
   pipeline: string | null
   x: number
   y: number
@@ -36,7 +38,7 @@ export interface LaneBox {
 export interface RowBand {
   /** null = nodes without a group */
   group: string | null
-  /** the enclosing pipeline band, when split by pipeline */
+  /** the enclosing pipeline band; null with a single pipeline */
   pipeline: string | null
   x: number
   y: number
@@ -45,7 +47,7 @@ export interface RowBand {
   count: number
 }
 
-/** Box around one pipeline's own grid (zones layout, split by pipeline). */
+/** Box around one pipeline's own grid (zones layout, 2+ pipelines). */
 export interface PipelineBand {
   pipeline: string
   x: number
@@ -60,17 +62,16 @@ export interface LayoutResult {
   lanes: LaneBox[]
   /** group bands; empty unless group rows are shown */
   rows: RowBand[]
-  /** pipeline bands; empty unless split by pipeline */
+  /** pipeline bands; empty with a single pipeline */
   pipelines: PipelineBand[]
 }
 
 export interface ZoneOptions {
   zones: ZoneMode
-  /** one grid per pipeline, placed left to right by pipeline dependency (needs 2+ pipelines) */
-  splitPipelines: boolean
+  /** the stage columns, left to right (meta `layers`); unknown stages follow, `other` last */
+  stageOrder: Stage[]
 }
 
-const STAGE_SEQUENCE: Stage[] = ['src', 'int', 'out', 'other']
 const LANE_GAP = 140
 const LANE_PADDING = 48
 /** space above the first row for the stage labels */
@@ -101,7 +102,7 @@ export function layoutGraph(
 ): LayoutResult {
   if (nodes.length === 0) return { positions: new Map(), lanes: [], rows: [], pipelines: [] }
   const heightOf = (id: string) => heights?.get(id) ?? NODE_HEIGHT
-  const options: ZoneOptions = { zones: 'both', splitPipelines: false, ...zoneOptions }
+  const options: ZoneOptions = { zones: 'both', ...zoneOptions, stageOrder: zoneOptions.stageOrder ?? ['src', 'int', 'out'] }
   return mode === 'lanes' ? layoutZones(nodes, edges, heightOf, options) : layoutDag(nodes, edges, heightOf)
 }
 
@@ -237,7 +238,7 @@ interface Block {
 }
 
 /**
- * One zone grid, relative to (0, 0). Columns are the stages (src / int / out) or, without
+ * One zone grid, relative to (0, 0). Columns are the stages (layers) or, without
  * stages, the DAG depth; rows are the dbt groups.
  *
  * Inside a stage, nodes are split into sub-columns by intra-stage depth so chains like
@@ -253,6 +254,7 @@ function layoutBlock(
   byStage: boolean,
   grouped: boolean,
   pipeline: string | null,
+  stageOrder: Stage[],
 ): Block {
   // ------------------------------------------------------------------ columns (x)
   const columnOf = new Map<string, string>() // node id -> column key
@@ -262,7 +264,7 @@ function layoutBlock(
 
   if (byStage) {
     const depths = intraStageDepths(nodes, edges)
-    for (const stage of STAGE_SEQUENCE) {
+    for (const stage of orderStages(new Set(nodes.map((n) => n.stage)), stageOrder)) {
       const stageNodes = nodes.filter((n) => n.stage === stage)
       if (stageNodes.length === 0) continue
       const distinct = [...new Set(stageNodes.map((n) => depths.get(n.id) ?? 0))].sort((a, b) => a - b)
@@ -362,7 +364,7 @@ function placeBlock(block: Block, dx: number, dy: number, into: LayoutResult): v
  *  - 'both':   stage columns x group rows
  *  - 'groups': group rows; columns are the DAG depth (longest path), no stage boxes
  *
- * `splitPipelines` gives every pipeline its own grid inside a pipeline band. Assuming the
+ * With 2+ pipelines, every pipeline gets its own grid inside a pipeline band. Assuming the
  * convention that only a pipeline's outputs feed other pipelines, the bands are placed like
  * a DAG: a consumer sits right of the pipelines it reads from (OUT -> SRC reads left to
  * right), and pipelines that do not depend on each other are stacked in the same column.
@@ -371,17 +373,17 @@ function layoutZones(
   nodes: GraphNode[],
   edges: GraphEdge[],
   heightOf: (id: string) => number,
-  { zones, splitPipelines }: ZoneOptions,
+  { zones, stageOrder }: ZoneOptions,
 ): LayoutResult {
   const dagLayout = layoutDag(nodes, edges, heightOf)
   const dagY = (id: string) => dagLayout.positions.get(id)?.y ?? 0
   const byStage = zones !== 'groups'
   const grouped = zones !== 'stages' && nodes.some((n) => n.group)
-  const split = splitPipelines && new Set(nodes.map((n) => n.pipeline)).size > 1
+  const split = new Set(nodes.map((n) => n.pipeline)).size > 1
 
   const result: LayoutResult = { positions: new Map(), lanes: [], rows: [], pipelines: [] }
   if (!split) {
-    placeBlock(layoutBlock(nodes, edges, heightOf, dagY, byStage, grouped, null), 0, 0, result)
+    placeBlock(layoutBlock(nodes, edges, heightOf, dagY, byStage, grouped, null, stageOrder), 0, 0, result)
     return result
   }
 
@@ -393,7 +395,7 @@ function layoutZones(
     const members = byPipeline.get(p)!
     const ids = new Set(members.map((n) => n.id))
     const inner = edges.filter((e) => ids.has(e.source) && ids.has(e.target))
-    blocks.set(p, layoutBlock(members, inner, heightOf, dagY, byStage, grouped, p))
+    blocks.set(p, layoutBlock(members, inner, heightOf, dagY, byStage, grouped, p, stageOrder))
   }
 
   const columnCount = Math.max(...columnOf.values()) + 1

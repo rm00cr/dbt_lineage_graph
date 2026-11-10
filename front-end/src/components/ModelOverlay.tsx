@@ -30,11 +30,10 @@ import { ChangesPanel } from './Compare'
 import { SchemaTable } from './SchemaTable'
 import {
   MATERIALIZATION_ICONS,
-  STAGE_LABELS,
   copyToClipboard,
   formatBytes,
   formatCount,
-  useStageColor,
+  useStages,
 } from './visual'
 
 interface ModelOverlayProps {
@@ -56,7 +55,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
   const [copied, setCopied] = useState(false)
   // stacked execution modes: the Code tab's side-by-side view needs a wider panel
   const [codeWide, setCodeWide] = useState(false)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
   // state comparison: what changed on this node (null when not comparing or unchanged)
   const change = useExplorerStore((s) => (s.activeId ? s.compare?.changes.get(s.activeId) : undefined) ?? null)
   // stacked execution modes: which mode the panel shows (front, or a ghost's back mode)
@@ -70,7 +69,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
     void openModel(id)
   }
 
-  const color = stageColor(detail?.stage ?? 'other')
+  const color = stageColor(detail ?? 'other')
 
   const copyRunCommand = async () => {
     if (!detail?.dbt_run_command) return
@@ -110,7 +109,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
             </span>
           )}
           <span className="node__badge node__badge--stage" style={{ ['--stage-color' as string]: color }}>
-            {STAGE_LABELS[detail?.stage ?? 'other']}
+            {stageLabel(detail?.stage ?? 'other')}
           </span>
           {detail && (
             <span className="node__badge">
@@ -319,7 +318,7 @@ function DependencySection({
   emptyText: string
   onPick: (id: string) => void
 }) {
-  const stageColor = useStageColor()
+  const { color: stageColor } = useStages()
 
   return (
     <div className="section">
@@ -337,7 +336,7 @@ function DependencySection({
               <button key={node.id} className="dep" onClick={() => onPick(node.id)} title={node.id}>
                 <span
                   className="result__dot"
-                  style={{ background: stageColor(node.stage), color: stageColor(node.stage) }}
+                  style={{ background: stageColor(node), color: stageColor(node) }}
                 />
                 <span className="dep__name">{node.name}</span>
                 <span className="dep__badge">

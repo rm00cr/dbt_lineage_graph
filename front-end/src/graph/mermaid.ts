@@ -10,8 +10,9 @@
  *   - cross-pipeline edges dashed; in a comparison added / removed edges coloured
  */
 
-import type { ChangeStatus, GraphEdge, GraphNode, Materialization, Stage } from '../api/types'
+import type { ChangeStatus, GraphEdge, GraphNode, Materialization, StageRole } from '../api/types'
 import { CHANGE_PALETTES } from './diff'
+import { roleOf } from './stage'
 
 export interface MermaidOptions {
   direction?: 'LR' | 'TB'
@@ -30,8 +31,8 @@ const SHAPES: Record<Materialization, [string, string]> = {
   other: ['[', ']'],
 }
 
-// light-theme stage colours (see STAGE_PALETTES.light in components/visual.tsx)
-const STAGE_STYLES: Record<Stage, string> = {
+// light-theme stage colours by role (see STAGE_PALETTES.light in components/visual.tsx)
+const STAGE_STYLES: Record<StageRole, string> = {
   src: 'fill:#ecfeff,stroke:#0e7490,color:#0f172a',
   int: 'fill:#f5f3ff,stroke:#6d28d9,color:#0f172a',
   out: 'fill:#fff7ed,stroke:#c2410c,color:#0f172a',
@@ -102,8 +103,8 @@ export function toMermaid(nodes: GraphNode[], edges: GraphEdge[], options: Merma
     index++
   }
 
-  // node colours: one classDef per stage (or change), then the class assignments
-  const classOf = (node: GraphNode) => (byChange ? (node.change ?? 'unchanged') : node.stage)
+  // node colours: one classDef per stage role (or change), then the class assignments
+  const classOf = (node: GraphNode) => (byChange ? (node.change ?? 'unchanged') : roleOf(node))
   const styles: Record<string, string> = byChange ? CHANGE_STYLES : STAGE_STYLES
   const members = new Map<string, string[]>()
   for (const node of nodes) {

@@ -19,6 +19,15 @@ dbt:
   prepare:
     - run --empty --full-refresh
 
+# The layers (stages) of a pipeline, in flow order: the first imports (dbt sources and other
+# pipelines' outputs), the last is the public interface (the only models other pipelines may
+# link to). `folders` are the folder names below models/ (default: the name). A pipeline can
+# override them with its own `layers:` (see finance_controlling).
+layers:
+  - {name: src, label: Source, folders: [01_source]}
+  - {name: int, label: Intermediate, folders: [02_intermediate]}
+  - {name: out, label: Output, folders: [03_output]}
+
 pipelines:
   # Portfolio. full: full daily export; incremental: change feed (CDC) instead;
   # monthly_close: full + month-end snapshot and the monthly portfolio output.
@@ -50,13 +59,18 @@ pipelines:
       large_loss_watch:
         vars: {include_reinsurance: false, large_loss_threshold: 250000}
 
-  # P&L, reads bestand_mfp + schaden_claims outputs. actuals: booked figures;
+  # P&L, reads bestand_mfp + schaden_claims outputs. Laid out the dbt-labs way:
+  # models/staging -> intermediate -> marts. actuals: booked figures;
   # plan_vs_actual: adds the plan and reads bestand_mfp's month-end portfolio (only linked
   # while bestand_mfp shows monthly_close); flat_allocation: shared costs split equally.
   - name: finance_controlling
     project_dir: finance_controlling
     profiles_dir: finance_controlling
     dir: artifacts/finance_controlling
+    layers:
+      - {name: staging, label: Staging, prefixes: [stg_]}
+      - {name: intermediate, label: Intermediate, prefixes: [int_]}
+      - {name: marts, label: Marts, prefixes: [mart_]}
     default_mode: actuals
     execution_modes:
       actuals:

@@ -51,6 +51,16 @@ describe('boundaryViolations', () => {
     expect([...v.values()]).toEqual(['skips-src', 'skips-src'])
   })
 
+  it('uses the role of configured layers, not their names', () => {
+    const custom = [
+      { ...node('a_marts', 'marts', 'a'), role: 'out' as const },
+      { ...node('b_staging', 'staging', 'b'), role: 'src' as const },
+      { ...node('b_core', 'core', 'b'), role: 'int' as const },
+    ]
+    expect(boundaryViolations(custom, [edge('a_marts', 'b_staging')]).size).toBe(0)
+    expect([...boundaryViolations(custom, [edge('a_marts', 'b_core')]).values()]).toEqual(['skips-src'])
+  })
+
   it('never flags dbt sources (external tables)', () => {
     expect(boundaryViolations(nodes, [edge('a_raw', 'b_int')]).size).toBe(0)
   })

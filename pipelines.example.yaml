@@ -2,9 +2,8 @@
 # Copy this file, adjust the paths and start the API with:
 #   PIPELINES_CONFIG=/path/to/pipelines.yaml uv run lineage-api
 #
-# One entry per pipeline = one dbt project, laid out as
-#   models/01_source  ->  models/02_intermediate  ->  models/03_output
-# with its own manifest.json + catalog.json (`dbt docs generate`).
+# One entry per pipeline = one dbt project, laid out in layers (see `layers:` below), with its
+# own manifest.json + catalog.json (`dbt docs generate`).
 #
 # Keys per entry:
 #   name         required; the pipeline's identity, shown in the UI. Unique; letters, digits,
@@ -31,6 +30,7 @@
 #                            default: <dir>/<mode>/  (or <project_dir>/target/<mode>/)
 #                  manifest / catalog   explicit paths, like at pipeline level
 #   default_mode the mode shown at start; default: the first one
+#   layers       optional; this pipeline's own layers, replacing the top-level `layers:`
 # Relative paths resolve against the folder of this file; ~ is expanded.
 #
 # Pipelines are connected by table name: when a pipeline declares another pipeline's output
@@ -42,6 +42,20 @@
 # dbt:
 #   command: uv run --frozen --project {here}/dbt-env dbt
 #   prepare: [run --empty --full-refresh]
+
+# The layers (stages, the columns of the lanes layout) in flow order. The first layer imports
+# (dbt sources and other pipelines' outputs land there), the last one is the pipeline's public
+# interface (the only models other pipelines link to); anything between is internal.
+#   name      required; the stage id shown in the UI (letters, digits, _ and -; not "other")
+#   label     optional display name; default: the name
+#   folders   folder names below models/; default: [name]. A numeric prefix (01_) is optional.
+#   prefixes  optional model name prefixes, for models outside the folders
+# A bare name is shorthand for {name: <name>}. Without `layers:` the default is src / int /
+# out (folders source|staging, intermediate, output|marts; prefixes src_|stg_, int_, out_|mart_).
+layers:
+  - {name: src, label: Source, folders: [01_source], prefixes: [src_, stg_]}
+  - {name: int, label: Intermediate, folders: [02_intermediate], prefixes: [int_]}
+  - {name: out, label: Output, folders: [03_output], prefixes: [out_, mart_]}
 
 pipelines:
   # Execution modes: artifacts/bestand_mfp/full/ and artifacts/bestand_mfp/incremental/,
@@ -63,5 +77,10 @@ pipelines:
     project_dir: ~/projects/pnc/schaden_claims
 
   # Explicit paths. No catalog: the graph and SQL still work, the Schema tab has no types.
+  # Laid out dbt-labs style: its own layers replace the top-level ones.
   - name: finance_controlling
     manifest: /data/dbt/finance_controlling/manifest.json
+    layers:
+      - {name: staging, prefixes: [stg_]}
+      - intermediate
+      - marts

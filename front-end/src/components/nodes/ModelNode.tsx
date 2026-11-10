@@ -59,7 +59,7 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
     <div
       className={`node${compact ? ' node--compact' : ''}${rows.length > 0 ? ' node--traced' : ''}`}
       style={{
-        ['--stage-color' as string]: stageColor(node.stage),
+        ['--stage-color' as string]: stageColor(node),
         ...(cardHeight ? { height: cardHeight } : {}),
         ...(stacked ? { position: 'absolute', top: STACK_HEAD, left: 0 } : {}),
       }}
@@ -150,7 +150,7 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
       style={{
         width: NODE_WIDTH,
         height: (cardHeight ?? NODE_HEIGHT) + STACK_HEAD,
-        ['--stage-color' as string]: stageColor(node.stage),
+        ['--stage-color' as string]: stageColor(node),
       }}
       data-dimmed={dimmed}
       data-ghost={ghost || undefined}
@@ -188,7 +188,7 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
           key={depth}
           className="stack__layer"
           style={{
-            ['--stage-color' as string]: stageColor(node.stage),
+            ['--stage-color' as string]: stageColor(node),
             top: STACK_HEAD - depth * STACK_OFFSET,
             left: depth * STACK_OFFSET,
             height: cardHeight ?? NODE_HEIGHT,

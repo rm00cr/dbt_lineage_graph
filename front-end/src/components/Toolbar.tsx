@@ -17,7 +17,6 @@ import {
   Maximize2,
   MousePointerSquareDashed,
   RefreshCw,
-  Rows3,
   TriangleAlert,
   Workflow,
   X,
@@ -28,13 +27,13 @@ import { VIOLATION_LABELS, boundaryViolations } from '../graph/boundary'
 import type { ZoneMode } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { CompareBar } from './Compare'
-import { STAGE_LABELS, copyToClipboard, useStageColor } from './visual'
+import { copyToClipboard, useStages } from './visual'
 
 const FOCUS_LABEL = { off: 'Focus off', dim: 'Focus: dim', isolate: 'Focus: isolate' } as const
 const FOCUS_ICON = { off: EyeOff, dim: Eye, isolate: Crosshair } as const
 
 const ZONE_OPTIONS: { mode: ZoneMode; label: string; title: string }[] = [
-  { mode: 'stages', label: 'Stages', title: 'Stage columns only (src / int / out)' },
+  { mode: 'stages', label: 'Stages', title: 'Stage columns only (one per layer)' },
   { mode: 'both', label: 'Stages × Groups', title: 'Stage columns, one row per dbt group' },
   { mode: 'groups', label: 'Groups', title: 'One row per dbt group, columns by DAG depth' },
 ]
@@ -49,9 +48,6 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const zoneMode = useExplorerStore((s) => s.zoneMode)
   const setZoneMode = useExplorerStore((s) => s.setZoneMode)
   const hasGroups = useExplorerStore((s) => s.graph?.nodes.some((n) => n.group) ?? false)
-  const splitPipelines = useExplorerStore((s) => s.splitPipelines)
-  const setSplitPipelines = useExplorerStore((s) => s.setSplitPipelines)
-  const pipelineCount = useExplorerStore((s) => s.graph?.stats.pipelines.length ?? 0)
   const graph = useExplorerStore((s) => s.graph)
   const select = useExplorerStore((s) => s.select)
   const violations = useMemo(() => {
@@ -85,7 +81,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const refresh = useExplorerStore((s) => s.refresh)
 
   const [showFilters, setShowFilters] = useState(false)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
   const { fitView } = useReactFlow()
 
   const FocusIcon = FOCUS_ICON[focusMode]
@@ -151,21 +147,6 @@ export function Toolbar({ onToast }: ToolbarProps) {
               )
             })}
           </div>
-        )}
-        {layoutMode === 'lanes' && (
-          <button
-            className={`btn btn--icon ${splitPipelines && pipelineCount > 1 ? 'btn--active' : ''}`}
-            onClick={() => setSplitPipelines(!splitPipelines)}
-            disabled={pipelineCount < 2}
-            aria-pressed={splitPipelines}
-            title={
-              pipelineCount < 2
-                ? 'Split by pipeline: needs 2+ pipelines in view'
-                : 'Split by pipeline: one band per pipeline, upstream first'
-            }
-          >
-            <Rows3 size={14} />
-          </button>
         )}
 
         <span className="toolbar__divider" />
@@ -296,11 +277,11 @@ export function Toolbar({ onToast }: ToolbarProps) {
               onClick={() => toggleStage(stage)}
               style={
                 filters.stages.includes(stage)
-                  ? { color: stageColor(stage as 'src'), borderColor: stageColor(stage as 'src') }
+                  ? { color: stageColor(stage), borderColor: stageColor(stage) }
                   : undefined
               }
             >
-              {STAGE_LABELS[stage as 'src'] ?? stage}
+              {stageLabel(stage)}
             </button>
           ))}
 

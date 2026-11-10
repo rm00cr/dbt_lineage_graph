@@ -30,7 +30,7 @@ import { visibleSubgraph } from '../graph/visible'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { useTheme } from '../theme/useTheme'
 import { ModelNode, type ModelNodeType } from './nodes/ModelNode'
-import { STAGE_LABELS, useChangeColor, useStageColor } from './visual'
+import { useChangeColor, useStages } from './visual'
 
 const NODE_TYPES = { model: ModelNode }
 const PULSE_MS = 1900
@@ -39,7 +39,7 @@ export function GraphCanvas() {
   const graph = useExplorerStore((s) => s.graph)
   const layoutMode = useExplorerStore((s) => s.layoutMode)
   const zoneMode = useExplorerStore((s) => s.zoneMode)
-  const splitPipelines = useExplorerStore((s) => s.splitPipelines)
+  const layers = useExplorerStore((s) => s.meta?.layers)
   const focusMode = useExplorerStore((s) => s.focusMode)
   const showMiniMap = useExplorerStore((s) => s.showMiniMap)
   const selectionDrag = useExplorerStore((s) => s.selectionDrag)
@@ -59,7 +59,7 @@ export function GraphCanvas() {
   const { setCenter, fitView, fitBounds, getNodesBounds } = useReactFlow()
   const canvasRef = useRef<HTMLDivElement>(null)
   const theme = useTheme((s) => s.resolved)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
   const changeColor = useChangeColor()
 
   const [dragged, setDragged] = useState<Map<string, XYPosition>>(new Map())
@@ -83,8 +83,11 @@ export function GraphCanvas() {
 
   const layout = useMemo(
     () =>
-      layoutGraph(graph?.nodes ?? [], graph?.edges ?? [], layoutMode, heights, { zones: zoneMode, splitPipelines }),
-    [graph, layoutMode, heights, zoneMode, splitPipelines],
+      layoutGraph(graph?.nodes ?? [], graph?.edges ?? [], layoutMode, heights, {
+        zones: zoneMode,
+        stageOrder: layers?.map((l) => l.name),
+      }),
+    [graph, layoutMode, heights, zoneMode, layers],
   )
 
   /**
@@ -111,7 +114,7 @@ export function GraphCanvas() {
     void fitBounds({ ...bounds, width: (bounds.width * width) / (width - covered) }, { duration: 650, padding: 0.12 })
   }, [fitView, fitBounds, getNodesBounds])
 
-  const layoutSignature = `${layoutMode}:${layoutMode === 'lanes' ? `${zoneMode}:${splitPipelines}` : ''}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
+  const layoutSignature = `${layoutMode}:${layoutMode === 'lanes' ? zoneMode : ''}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
   useEffect(() => {
     setDragged(new Map())
     const timer = window.setTimeout(frameView, 60)
@@ -340,7 +343,7 @@ export function GraphCanvas() {
             maskColor={theme === 'light' ? 'rgba(226, 232, 240, 0.62)' : 'rgba(8, 11, 18, 0.72)'}
             nodeColor={(node) => {
               const data = (node.data as { node: GraphNode }).node
-              return comparing ? changeColor(data.change) : stageColor(data.stage)
+              return comparing ? changeColor(data.change) : stageColor(data)
             }}
             nodeStrokeWidth={0}
             style={{ width: 190, height: 130 }}
@@ -393,7 +396,7 @@ export function GraphCanvas() {
                 }}
               >
                 <div className="lane__label" style={{ ['--stage-color' as string]: stageColor(lane.stage) }}>
-                  {STAGE_LABELS[lane.stage]}
+                  {stageLabel(lane.stage)}
                   <span className="lane__count">{lane.count}</span>
                 </div>
               </div>
