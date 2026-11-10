@@ -12,6 +12,7 @@ dependencies = [
     "sqlglot>=30.29,<31",
     "python-multipart>=0.0.33",
     "pyyaml>=6.0",
+    "python-dotenv>=1.0",
 ]
 
 [project.scripts]

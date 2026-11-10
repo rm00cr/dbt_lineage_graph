@@ -1,8 +1,19 @@
 #!/usr/bin/env bash
 # Starts backend (uv) and frontend (vite) together. Ctrl+C stops both.
+#
+#   ./dev.sh                         pipelines from $PIPELINES_CONFIG, back-end/.env,
+#                                    or fixtures/pipelines.yaml (in that order)
+#   ./dev.sh path/to/pipelines.yaml  use this pipelines config
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+BACKEND_ARGS=(--port 8000 --reload)
+if [ $# -gt 0 ]; then
+  [ -f "$1" ] || { echo "pipelines config not found: $1"; exit 1; }
+  # absolute, because the backend runs from back-end/
+  BACKEND_ARGS+=(--config "$(cd "$(dirname "$1")" && pwd)/$(basename "$1")")
+fi
 
 # This machine has no system-wide node; a user-local install is used if present.
 if ! command -v node >/dev/null 2>&1 && [ -x "$HOME/.local/node/bin/node" ]; then
@@ -13,7 +24,7 @@ command -v uv   >/dev/null 2>&1 || { echo "uv not found — https://docs.astral.
 command -v node >/dev/null 2>&1 || { echo "node not found (needs >= 18)"; exit 1; }
 
 echo "→ backend  http://127.0.0.1:8000  (docs: /docs)"
-(cd "$ROOT/back-end" && uv run lineage-api --port 8000 --reload) &
+(cd "$ROOT/back-end" && uv run lineage-api "${BACKEND_ARGS[@]}") &
 BACKEND_PID=$!
 
 if [ ! -d "$ROOT/front-end/node_modules" ]; then

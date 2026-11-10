@@ -124,10 +124,16 @@ export function CompareDialog() {
   const loading = useExplorerStore((s) => s.compareLoading)
   const error = useExplorerStore((s) => s.compareError)
   const startCompare = useExplorerStore((s) => s.startCompare)
+  const pipelines = useExplorerStore((s) => s.meta?.pipelines ?? [])
+  const filtered = useExplorerStore((s) => s.filters.pipelines)
 
   const [manifest, setManifest] = useState<File | null>(null)
   const [catalog, setCatalog] = useState<File | null>(null)
   const [label, setLabel] = useState('')
+  // which running pipeline the upload replaces: all projects share one dbt project name
+  const [pipelineChoice, setPipelineChoice] = useState<string | null>(null)
+  const pipeline =
+    pipelineChoice ?? (filtered.length === 1 && pipelines.includes(filtered[0]) ? filtered[0] : pipelines[0] ?? '')
 
   if (!open) return null
 
@@ -140,7 +146,7 @@ export function CompareDialog() {
   const submit = async (event: React.FormEvent) => {
     event.preventDefault()
     if (!manifest || loading) return
-    const ok = await startCompare(manifest, catalog, label.trim() || undefined)
+    const ok = await startCompare(manifest, catalog, label.trim() || undefined, pipeline || undefined)
     if (ok) {
       setManifest(null)
       setCatalog(null)
@@ -175,8 +181,8 @@ export function CompareDialog() {
 
         <p className="modal__text">
           Upload the dbt artifacts of one pipeline in a development state, e.g. after{' '}
-          <code>dbt docs generate</code> on your branch. They replace the running pipeline with the same dbt
-          project name, the other pipelines stay as they are. The graph then shows what changes{' '}
+          <code>dbt docs generate</code> on your branch. They replace the pipeline you choose, the other
+          pipelines stay as they are. The graph then shows what changes{' '}
           <span className="diff-word diff-word--added">add</span>,{' '}
           <span className="diff-word diff-word--modified">modify</span> and{' '}
           <span className="diff-word diff-word--removed">remove</span>.
@@ -196,6 +202,19 @@ export function CompareDialog() {
           onFile={setCatalog}
           onFiles={takeBoth}
         />
+
+        {pipelines.length > 0 && (
+          <label className="modal__field">
+            <span>Pipeline it replaces</span>
+            <select className="input" value={pipeline} onChange={(event) => setPipelineChoice(event.target.value)}>
+              {pipelines.map((name) => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        )}
 
         <label className="modal__field">
           <span>Name of this state</span>

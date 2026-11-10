@@ -79,11 +79,13 @@ export const api = {
   model: (id: string, state?: string) => get<ModelDetail>(`/api/model/${encodeURIComponent(id)}`, { state }),
 
   /** compare the running state with an uploaded manifest (+ catalog) */
-  diff: (manifest: File, catalog?: File | null, label?: string) => {
+  /** `pipeline`: the pipelines.yaml name of the pipeline the upload replaces */
+  diff: (manifest: File, catalog?: File | null, label?: string, pipeline?: string) => {
     const form = new FormData()
     form.append('manifest', manifest)
     if (catalog) form.append('catalog', catalog)
     if (label) form.append('label', label)
+    if (pipeline) form.append('pipeline', pipeline)
     return request<DiffResponse>('/api/diff', undefined, { method: 'POST', body: form })
   },
 

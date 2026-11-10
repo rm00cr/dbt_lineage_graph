@@ -282,14 +282,20 @@ class GraphService:
         manifest: bytes,
         catalog: bytes | None = None,
         label: str = "uploaded state",
+        pipeline: str | None = None,
     ) -> DiffResponse:
         """Compare the running graph (base) with another state of one pipeline (head).
 
         An upload is one dbt project = one pipeline. The head graph is the running pipelines
-        with that pipeline's artifacts swapped for the upload (matched on the manifest's
-        ``project_name``), built by the same loader - so pipeline names from pipelines.yaml
-        and the links between pipelines stay as they are, and only real changes show. A
-        project that is not running yet is added as a new pipeline.
+        with that pipeline's artifacts swapped for the upload, built by the same loader - so
+        pipeline names from pipelines.yaml and the links between pipelines stay as they are,
+        and only real changes show.
+
+        Which pipeline it replaces: ``pipeline`` (its pipelines.yaml name) when given - an
+        unknown name is added as a new pipeline. Without it, the running pipeline with the
+        manifest's ``project_name``; since projects usually share one name (``dbt_pnc``), that
+        must match exactly one pipeline, else the caller has to say which. No match at all ->
+        the upload is shown as a new pipeline.
 
         The head graph is kept in memory under the returned ``state_id`` so the overlay can
         load the head version of a node (``/api/model/{id}?state=...``).
@@ -307,15 +313,30 @@ class GraphService:
 
         upload = LoadedArtifacts(manifest=manifest_data, catalog=catalog_data, source=f"upload:{label}")
         running = read_artifacts(self.settings.artifacts)
-        position = next((i for i, item in enumerate(running) if item.project_name == upload.project_name), None)
+        pipelines = ", ".join(item.name or item.project_name for item in running) or "none"
+        pipeline = (pipeline or "").strip() or None
 
         warnings: list[str] = []
-        if position is None:
-            pipelines = ", ".join(item.name or item.project_name for item in running) or "none"
-            warnings.append(
+        if pipeline is not None:
+            matches = [i for i, item in enumerate(running) if item.name == pipeline]
+            missing = f"pipeline '{pipeline}' is not running ({pipelines}): it is shown as a new pipeline."
+        else:
+            matches = [i for i, item in enumerate(running) if item.project_name == upload.project_name]
+            if len(matches) > 1:
+                names = ", ".join(running[i].name or running[i].project_name for i in matches)
+                raise ArtifactError(
+                    f"dbt project '{upload.project_name}' matches several running pipelines "
+                    f"({names}): choose which pipeline the upload replaces."
+                )
+            missing = (
                 f"dbt project '{upload.project_name}' is not one of the running pipelines "
                 f"({pipelines}): it is shown as a new pipeline."
             )
+        position = matches[0] if matches else None
+
+        if position is None:
+            upload.name = pipeline or upload.project_name
+            warnings.append(missing)
             head_items = [*running, upload]
             compare_columns = catalog_data is not None
         else:
@@ -335,8 +356,7 @@ class GraphService:
         self.states[state_id] = head
         while len(self.states) > MAX_COMPARE_STATES:
             self.states.popitem(last=False)
-        pipeline = upload.name or upload.project_name
-        return self._diff_response(state_id, head, diff, label, pipeline)
+        return self._diff_response(state_id, head, diff, label, upload.name or upload.project_name)
 
     def get_state(self, state_id: str) -> LineageGraph:
         try:

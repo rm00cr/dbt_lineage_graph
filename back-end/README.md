@@ -25,7 +25,8 @@ uv run ruff check .
 A **pipeline is one dbt project** with its own `manifest.json` + `catalog.json`, laid out as
 `models/01_source` → `02_intermediate` → `03_output` (src / int / out). The pipelines to load
 are listed in a YAML file; relative paths resolve against the YAML's folder. `name` is
-optional and defaults to the manifest's `project_name`:
+required. It identifies the pipeline, because all dbt projects share the `project_name`
+`dbt_pnc`, and node ids are scoped by it (`model.dbt_pnc.x` → `model.<name>.x`):
 
 ```yaml
 # pipelines.yaml
@@ -47,8 +48,12 @@ Output table names are assumed unique (details: `../contract.md` §1.0).
 | `BQ_CONSOLE_PROJECT` | node's `database` | GCP project used for BigQuery deeplinks |
 | `CORS_ORIGINS` | Vite dev servers | comma-separated allowed origins |
 
+The variables can also go in `back-end/.env` (template: `.env.example`), which
+`lineage-api` loads at startup. Precedence: `--config` > shell environment > `.env` >
+default. The API prints the pipelines config it uses when it starts.
+
 ```bash
-PIPELINES_CONFIG=~/pnc/pipelines.yaml uv run lineage-api
+uv run lineage-api --config ~/pnc/pipelines.yaml       # or: PIPELINES_CONFIG=... uv run lineage-api
 ```
 
 After a fresh `dbt docs generate` you can reload without a restart: `curl -X POST localhost:8000/api/reload`.

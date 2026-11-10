@@ -29,7 +29,7 @@ Which pipelines exist and where their artifacts are is declared in a YAML file
 
 ```yaml
 pipelines:
-  - name: bestand_mfp                    # optional, default: manifest project_name
+  - name: bestand_mfp                    # required, unique: the pipeline's identity
     dir: bestand_mfp                     # manifest.json (+ catalog.json) inside
   - name: schaden_claims
     manifest: /ci/claims/target/manifest.json
@@ -62,8 +62,9 @@ Configurable through `STAGE_FOLDERS` / `STAGE_PREFIXES` in `back-end/app/config.
 
 ### 1.2 Pipeline
 
-The `name` of the node's entry in the pipelines YAML, else the `metadata.project_name` of
-its manifest (see 1.0). `config.meta.pipeline` on a single node overrides both. Used for *lineage across pipelines* (2.4).
+The `name` of the pipeline's entry in the pipelines YAML (see 1.0). The dbt
+`metadata.project_name` is **not** used, because every project is called `dbt_pnc`.
+`config.meta.pipeline` on a single node overrides it. Used for *lineage across pipelines* (2.4).
 
 ### 1.2b Group (domain)
 
@@ -89,8 +90,16 @@ fixtures follow the convention
 
 ### 1.3 Node ids
 
-dbt `unique_id`, e.g. `model.bestand_mfp.int_mfp_contracts`,
-`source.bestand_mfp.raw_mfp.contracts`. Ids are URL-encoded in `/api/model/{id}`.
+The dbt `unique_id` with its project segment replaced by the pipeline name. All projects
+share one `project_name`, so the raw ids would collide:
+
+| in the manifest of pipeline `bestand_mfp` | API id |
+|---|---|
+| `model.dbt_pnc.int_mfp_contracts` | `model.bestand_mfp.int_mfp_contracts` |
+| `source.dbt_pnc.raw_mfp.contracts` | `source.bestand_mfp.raw_mfp.contracts` |
+| `model.dbt_utils.helper` (installed package) | `model.bestand_mfp.dbt_utils.helper` |
+
+Ids are URL-encoded in `/api/model/{id}`.
 
 ---
 
@@ -271,14 +280,19 @@ parseable (the error is included); `skipped` = no compiled SQL.
 ### 2.7 `POST /api/diff` — state comparison
 
 `multipart/form-data`: `manifest` (file, required), `catalog` (file, optional), `label`
-(text, optional, defaults to the manifest file name). The running graph is the **base**.
+(text, optional, defaults to the manifest file name), `pipeline` (text, optional: the
+`pipelines.yaml` name of the pipeline the upload replaces). The running graph is the **base**.
 
 An upload is **one pipeline** (one dbt project). The **head** is the running pipelines with
-the one whose manifest has the same `metadata.project_name` swapped for the upload, built by
-the normal loader: the pipeline keeps its name from `pipelines.yaml`, and the links between
-pipelines (by output table name, 1.2) are re-made, so a renamed or dropped output shows up as
-a change in the consuming pipeline too. A project that is not running is added as a new
-pipeline (with a warning).
+one of them swapped for the upload, built by the normal loader: the pipeline keeps its name
+from `pipelines.yaml`, and the links between pipelines (by output table name, 1.2) are
+re-made, so a renamed or dropped output shows up as a change in the consuming pipeline too.
+
+Which pipeline is swapped: the one named by `pipeline`; an unknown name is added as a new
+pipeline (with a warning). Without `pipeline`, the one whose manifest has the same
+`metadata.project_name` - since pipelines usually share one project name (1.1), that is a
+`422` when it matches more than one. No match -> a new pipeline named after the project
+(with a warning).
 
 ```jsonc
 {

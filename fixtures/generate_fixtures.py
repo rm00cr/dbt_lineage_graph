@@ -6,6 +6,7 @@ The fixture models a small PnC (property & casualty) analytics setup with two pi
 its own dbt project with its own manifest.json + catalog.json, laid out as
 models/01_source, models/02_intermediate, models/03_output. `schaden_claims` reads outputs of
 `bestand_mfp` by declaring them as dbt sources; the backend stitches them by table name.
+Both projects are called `dbt_pnc` (as in production); pipelines.yaml names them.
 
 Output: <out-dir>/<pipeline>/{manifest,catalog}.json and <out-dir>/pipelines.yaml
 
@@ -24,6 +25,9 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+# Like production: every pipeline is a dbt project with the SAME project_name; the
+# pipeline identity lives only in pipelines.yaml (`name`).
+DBT_PROJECT = "dbt_pnc"
 DATABASE = "pnc-analytics-prd"
 RAW_DATABASE = "pnc-raw-prd"
 DBT_VERSION = "1.8.7"
@@ -1075,13 +1079,13 @@ def _source_node(project: str, uid: str, *, source_name: str, table: str, databa
 
 
 def build_project(pipeline: str, tag: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
-    """Artifacts of ONE pipeline = one dbt project (`project_name` == pipeline name).
+    """Artifacts of ONE pipeline = one dbt project (`project_name` is always DBT_PROJECT).
 
     Layout: models/01_source, models/02_intermediate, models/03_output. Outputs of other
     pipelines are imported as dbt sources (source_name = the upstream pipeline), so this
     manifest never references a node of another project, exactly like separate real projects.
     """
-    project = f"{pipeline}{tag}"
+    project = DBT_PROJECT
     by_name = {m["name"]: m for m in MODELS}
     manifest_nodes: dict[str, Any] = {}
     manifest_sources: dict[str, Any] = {}
@@ -1207,7 +1211,7 @@ def build_project(pipeline: str, tag: str = "") -> tuple[dict[str, Any], dict[st
         "generated_at": GENERATED_AT,
         "invocation_id": "9f1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
         "project_name": project,
-        "project_id": project.replace("_", "")[:32].ljust(32, "0"),
+        "project_id": f"{pipeline}{tag}".replace("_", "")[:32].ljust(32, "0"),
         "adapter_type": "bigquery",
         "env": {},
     }
@@ -1262,7 +1266,7 @@ def main() -> None:
         tag = "" if suffix == 0 else f"_c{suffix}"
         for pipeline in PIPELINES:
             manifest, catalog = build_project(pipeline, tag)
-            project = manifest["metadata"]["project_name"]
+            project = f"{pipeline}{tag}"  # pipeline name: folder + pipelines.yaml entry
             target = out_dir / project
             target.mkdir(exist_ok=True)
             (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")

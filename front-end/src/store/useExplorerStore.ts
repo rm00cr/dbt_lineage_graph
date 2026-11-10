@@ -126,7 +126,7 @@ interface ExplorerState {
   clearColumnTrace: () => void
 
   setCompareDialogOpen: (open: boolean) => void
-  startCompare: (manifest: File, catalog?: File | null, label?: string) => Promise<boolean>
+  startCompare: (manifest: File, catalog?: File | null, label?: string, pipeline?: string) => Promise<boolean>
   exitCompare: () => Promise<void>
   selectChanges: () => void
 }
@@ -439,14 +439,14 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   // ------------------------------------------------------------------ state comparison
   setCompareDialogOpen: (open) => set({ compareDialogOpen: open, compareError: open ? get().compareError : null }),
 
-  startCompare: async (manifest, catalog, label) => {
+  startCompare: async (manifest, catalog, label, pipeline) => {
     if (get().usingMock) {
       set({ compareError: 'Comparing needs the backend: start it with `uv run lineage-api`.' })
       return false
     }
     set({ compareLoading: true, compareError: null })
     try {
-      const response = await api.diff(manifest, catalog, label)
+      const response = await api.diff(manifest, catalog, label, pipeline)
       set({
         compare: {
           stateId: response.state_id,

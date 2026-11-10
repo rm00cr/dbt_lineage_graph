@@ -3,7 +3,8 @@
 The head state is fixtures/dev_state/: a dev version of the bestand_mfp pipeline built by
 fixtures/generate_dev_state.py (its docstring lists the intended changes). It also
 re-targets every model to a dev database / schema with dev compiled SQL: none of that may
-show up as a change. An upload replaces one pipeline, the others stay as they are.
+show up as a change. An upload replaces one pipeline, the others stay as they are. All
+pipelines share the dbt project name `dbt_pnc`, so an upload names the pipeline it replaces.
 """
 
 from __future__ import annotations
@@ -38,7 +39,7 @@ def _swap(settings: Settings, manifest: dict, catalog: dict | None) -> LineageGr
     """The running pipelines with bestand_mfp swapped for the given artifacts."""
     items = read_artifacts(settings.artifacts)
     for item in items:
-        if item.project_name == "bestand_mfp":
+        if item.name == "bestand_mfp":
             item.manifest, item.catalog = manifest, catalog
     return build_graph(items)
 
@@ -132,7 +133,15 @@ def test_loaded_artifacts_project_name() -> None:
 # ------------------------------------------------------------------------- HTTP
 
 
-def _upload(client: TestClient, manifest: bytes, catalog: bytes | None = None, **form: str):
+def _upload(
+    client: TestClient,
+    manifest: bytes,
+    catalog: bytes | None = None,
+    pipeline: str | None = "bestand_mfp",
+    **form: str,
+):
+    if pipeline is not None:
+        form["pipeline"] = pipeline
     files = {"manifest": ("manifest.json", manifest, "application/json")}
     if catalog is not None:
         files["catalog"] = ("catalog.json", catalog, "application/json")
@@ -201,33 +210,59 @@ def test_diff_without_catalog(client: TestClient, dev_files: tuple[bytes, bytes]
     assert body["summary"]["modified"] == 3  # out_mfp_contracts only changed a column type
 
 
-def test_unknown_project_is_a_new_pipeline(
-    client: TestClient, graph: LineageGraph, dev_files: tuple[bytes, bytes]
-) -> None:
-    manifest = json.loads(dev_files[0])
+def _other_project(manifest: dict, project: str) -> dict:
+    """The dev manifest as a different dbt project, with its own ids and table names:
+    pipelines are linked by output table name, which must be unique across pipelines (a
+    copy of bestand_mfp's tables would re-wire schaden_claims)."""
+    old = manifest["metadata"]["project_name"]
     renamed = copy.deepcopy(manifest)
-    renamed["metadata"]["project_name"] = "finance_controlling"
-    # its own ids and table names: pipelines are linked by output table name, which must be
-    # unique across pipelines (a copy of bestand_mfp's tables would re-wire schaden_claims)
+    renamed["metadata"]["project_name"] = project
     renamed["nodes"] = {
-        k.replace("bestand_mfp", "finance_controlling"): {
+        k.replace(f".{old}.", f".{project}."): {
             **v,
-            "unique_id": k.replace("bestand_mfp", "finance_controlling"),
+            "unique_id": k.replace(f".{old}.", f".{project}."),
             "name": "fc_" + v["name"],
             "alias": "fc_" + (v.get("alias") or v["name"]),
         }
         for k, v in manifest["nodes"].items()
     }
     renamed["sources"] = {}
-    body = _upload(client, json.dumps(renamed).encode()).json()
+    return renamed
+
+
+def _assert_all_added(body: dict, graph: LineageGraph, manifest: dict) -> None:
+    assert body["summary"]["removed"] == 0 and body["summary"]["modified"] == 0
+    assert body["summary"]["unchanged"] == len(graph.nodes)
+    assert body["summary"]["added"] == sum(1 for n in manifest["nodes"].values() if n["resource_type"] == "model")
+
+
+def test_unknown_project_is_a_new_pipeline(
+    client: TestClient, graph: LineageGraph, dev_files: tuple[bytes, bytes]
+) -> None:
+    renamed = _other_project(json.loads(dev_files[0]), "finance_controlling")
+    body = _upload(client, json.dumps(renamed).encode(), pipeline=None).json()
 
     assert body["pipeline"] == "finance_controlling"
     assert "not one of the running pipelines (bestand_mfp, schaden_claims)" in body["warnings"][0]
-    assert body["summary"]["removed"] == 0 and body["summary"]["modified"] == 0
-    assert body["summary"]["unchanged"] == len(graph.nodes)
-    assert body["summary"]["added"] == sum(
-        1 for n in renamed["nodes"].values() if n["resource_type"] == "model"
-    )
+    _assert_all_added(body, graph, renamed)
+
+
+def test_unknown_pipeline_name_is_a_new_pipeline(
+    client: TestClient, graph: LineageGraph, dev_files: tuple[bytes, bytes]
+) -> None:
+    renamed = _other_project(json.loads(dev_files[0]), "dbt_pnc_fc")
+    body = _upload(client, json.dumps(renamed).encode(), pipeline="finance").json()
+
+    assert body["pipeline"] == "finance"
+    assert "pipeline 'finance' is not running (bestand_mfp, schaden_claims)" in body["warnings"][0]
+    _assert_all_added(body, graph, renamed)
+
+
+def test_ambiguous_project_name_needs_a_pipeline(client: TestClient, dev_files: tuple[bytes, bytes]) -> None:
+    # every running pipeline is the dbt project dbt_pnc: the upload has to say which one
+    response = _upload(client, dev_files[0], pipeline=None)
+    assert response.status_code == 422
+    assert "matches several running pipelines (bestand_mfp, schaden_claims)" in response.json()["detail"]
 
 
 @pytest.mark.parametrize(

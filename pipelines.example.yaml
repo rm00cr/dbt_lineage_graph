@@ -7,8 +7,9 @@
 # with its own manifest.json + catalog.json (`dbt docs generate`).
 #
 # Keys per entry:
-#   name      optional; the pipeline name shown in the UI. Default: the manifest's
-#             metadata.project_name. Must be unique.
+#   name      required; the pipeline's identity, shown in the UI. Unique; letters, digits,
+#             _ and -. The dbt project_name is NOT used (all projects are called dbt_pnc);
+#             node ids are scoped by this name: model.dbt_pnc.x -> model.<name>.x
 #   dir       folder holding manifest.json and catalog.json
 #   manifest  explicit path to manifest.json (instead of, or overriding, dir)
 #   catalog   explicit path to catalog.json; optional (without it there are no column
@@ -29,6 +30,6 @@ pipelines:
     manifest: ~/projects/pnc/schaden_claims/target/manifest.json
     catalog: ~/projects/pnc/schaden_claims/target/catalog.json
 
-  # No name: the pipeline is named after the manifest's project_name.
   # No catalog: the graph and SQL still work, the Schema tab has no types.
-  - manifest: /data/dbt/finance_controlling/manifest.json
+  - name: finance_controlling
+    manifest: /data/dbt/finance_controlling/manifest.json

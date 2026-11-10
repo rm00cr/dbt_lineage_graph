@@ -24,7 +24,7 @@ def test_graph_loads_models_and_sources(graph: LineageGraph) -> None:
     assert sum(1 for n in graph.nodes.values() if n.resource_type == "source") == 9
     assert graph.catalog_loaded is True
     assert graph.adapter_type == "bigquery"
-    assert graph.project_names == ["bestand_mfp", "schaden_claims"]
+    assert graph.project_names == ["dbt_pnc"]  # every project has the same name
 
 
 def test_stage_derivation(graph: LineageGraph) -> None:
@@ -119,12 +119,14 @@ def test_cross_pipeline_edges_exist(graph: LineageGraph) -> None:
 # ---------------------------------------------------------------- multi-project stitching
 
 
-def _project(tmp: Path, project: str, *, models: list[dict[str, Any]],
-             sources: list[dict[str, Any]] = ()) -> ArtifactPair:
+def _project(tmp: Path, pipeline: str, *, models: list[dict[str, Any]],
+             sources: list[dict[str, Any]] = (), project: str = "dbt_pnc") -> ArtifactPair:
+    """A minimal dbt project. Like production, every project is called `dbt_pnc`; the
+    pipeline is identified by the name it gets in pipelines.yaml."""
     nodes = {
         f"model.{project}.{m['name']}": {
             "resource_type": "model", "name": m["name"], "alias": m["name"],
-            "database": m.get("database", f"{project}-prd"), "schema": "s",
+            "database": m.get("database", f"{pipeline}-prd"), "schema": "s",
             "original_file_path": f"models/{m['folder']}/{m['name']}.sql",
             "config": {"materialized": "table"}, "depends_on": {"nodes": m.get("deps", [])},
         }
@@ -137,11 +139,38 @@ def _project(tmp: Path, project: str, *, models: list[dict[str, Any]],
         }
         for s in sources
     }
-    folder = tmp / project
+    folder = tmp / pipeline
     folder.mkdir()
     manifest = {"metadata": {"project_name": project}, "nodes": nodes, "sources": srcs}
     (folder / "manifest.json").write_text(json.dumps(manifest))
-    return ArtifactPair(manifest=folder / "manifest.json")
+    return ArtifactPair(name=pipeline, manifest=folder / "manifest.json")
+
+
+def test_same_project_name_gives_separate_pipelines(tmp_path: Path) -> None:
+    """All real projects are called `dbt_pnc`: the YAML name keeps them apart, and node ids
+    are scoped by it so nothing is overwritten."""
+    a = _project(tmp_path, "bestand", models=[{"name": "out_x", "folder": "03_output"},
+                                              {"name": "int_y", "folder": "02_intermediate"}])
+    b = _project(tmp_path, "claims", models=[
+        {"name": "int_y", "folder": "02_intermediate"},  # same model name in both projects
+        {"name": "out_z", "folder": "03_output", "deps": ["model.dbt_pnc.int_y"]},
+    ])
+    graph = load_graph([a, b])
+
+    assert graph.pipelines == ["bestand", "claims"]
+    assert graph.project_names == ["dbt_pnc"]
+    assert {"model.bestand.int_y", "model.claims.int_y"} <= set(graph.nodes)
+    assert len(graph.nodes) == 4
+    assert graph.nodes["model.claims.int_y"].pipeline == "claims"
+    # refs inside a manifest follow the scoping: claims' out_z reads claims' int_y
+    assert graph.nodes["model.claims.out_z"].depends_on == ["model.claims.int_y"]
+    assert ("model.bestand.int_y", "model.claims.out_z") not in graph.edges
+
+
+def test_duplicate_pipeline_name_is_rejected(tmp_path: Path) -> None:
+    a = _project(tmp_path, "p", models=[])
+    with pytest.raises(ValueError, match="configured twice"):
+        load_graph([a, a])
 
 
 def test_pipelines_are_stitched_by_table_name_only(tmp_path: Path) -> None:
@@ -154,12 +183,14 @@ def test_pipelines_are_stitched_by_table_name_only(tmp_path: Path) -> None:
         # another GCP project and dataset than where `up` deploys: only the name counts
         sources=[{"source_name": "up", "table": "OUT_ORDERS", "database": "x-exp", "schema": "y"},
                  {"source_name": "raw", "table": "unrelated", "database": "raw", "schema": "r"}],
-        models=[{"name": "src_orders", "folder": "01_source", "deps": ["source.down.up.OUT_ORDERS"]}],
+        models=[{"name": "src_orders", "folder": "01_source",
+                 "deps": ["source.dbt_pnc.up.OUT_ORDERS"]}],
     )
     graph = load_graph([upstream, downstream])
 
     assert graph.pipelines == ["down", "up"]
     assert ("model.up.out_orders", "source.down.up.OUT_ORDERS") in graph.edges
+    assert ("source.down.up.OUT_ORDERS", "model.down.src_orders") in graph.edges
     assert graph.nodes["source.down.raw.unrelated"].depends_on == []
 
 
@@ -178,30 +209,26 @@ def test_pipelines_yaml(tmp_path: Path) -> None:
     absolute = (tmp_path / "elsewhere" / "manifest.json").resolve()
     (tmp_path / "pipelines.yaml").write_text(
         "pipelines:\n"
-        "  - name: Portfolio\n"
+        "  - name: portfolio\n"
         "    dir: one\n"
-        f"  - manifest: '{absolute.as_posix()}'\n"
+        "  - name: claims\n"
+        f"    manifest: '{absolute.as_posix()}'\n"
     )
     first, second = load_pipelines_config(tmp_path / "pipelines.yaml")
-    assert first.name == "Portfolio" and second.name is None
+    assert (first.name, second.name) == ("portfolio", "claims")
     assert first.manifest == (tmp_path / "one" / "manifest.json").resolve()
     assert first.catalog == (tmp_path / "one" / "catalog.json").resolve()
     assert second.manifest == absolute and second.catalog is None
 
-    (tmp_path / "bad.yaml").write_text("pipelines:\n  - catalog: c.json\n")
-    with pytest.raises(PipelinesConfigError):
-        load_pipelines_config(tmp_path / "bad.yaml")
-
-    (tmp_path / "dupe.yaml").write_text("pipelines:\n  - {name: a, dir: x}\n  - {name: a, dir: y}\n")
-    with pytest.raises(PipelinesConfigError, match="used twice"):
-        load_pipelines_config(tmp_path / "dupe.yaml")
-
-
-def test_pipeline_name_from_yaml_overrides_project_name(tmp_path: Path) -> None:
-    pair = _project(tmp_path, "dbt_proj", models=[{"name": "out_x", "folder": "03_output"}])
-    graph = load_graph([ArtifactPair(manifest=pair.manifest, name="Portfolio")])
-    assert graph.nodes["model.dbt_proj.out_x"].pipeline == "Portfolio"
-    assert graph.pipelines == ["Portfolio"] and graph.project_names == ["dbt_proj"]
+    for bad, message in (
+        ("  - {name: a, catalog: c.json}\n", "needs 'dir' or 'manifest'"),
+        ("  - {dir: x}\n", "needs a 'name'"),
+        ("  - {name: 'a.b', dir: x}\n", "may only contain"),
+        ("  - {name: a, dir: x}\n  - {name: a, dir: y}\n", "used twice"),
+    ):
+        (tmp_path / "bad.yaml").write_text("pipelines:\n" + bad)
+        with pytest.raises(PipelinesConfigError, match=message):
+            load_pipelines_config(tmp_path / "bad.yaml")
 
 
 def test_code_is_loaded(graph: LineageGraph) -> None:

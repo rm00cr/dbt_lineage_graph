@@ -30,7 +30,8 @@ down, so either side can be worked on alone.
 ## Quick start
 
 ```bash
-./dev.sh          # starts both: API on :8000, UI on http://localhost:5173
+./dev.sh                         # starts both: API on :8000, UI on http://localhost:5173
+./dev.sh path/to/pipelines.yaml  # same, with your own pipelines (see pipelines.example.yaml)
 ```
 
 Or separately:
@@ -72,7 +73,7 @@ cd front-end && npm test
 | Zoom to fit | `Z` |
 | Share a view | the URL carries `?model=…&tab=…&layout=…&focus=…&select=…` |
 | Switch theme | sun / monitor / moon in the top bar — light, follow the system, dark (remembered per browser) |
-| Compare with a dev state | **Compare** in the top bar: upload one pipeline's `manifest.json` (+ optional `catalog.json`) from a dev state; it replaces the running pipeline with the same dbt project name. Nodes and edges turn green (added), yellow (modified) or red (removed); a changed node opens on a **Changes** tab with the field, column and SQL diff. **Select changes** + focus mode shows what the changes affect. Try it with `fixtures/dev_state/` (a dev version of `bestand_mfp`) |
+| Compare with a dev state | **Compare** in the top bar: upload one pipeline's `manifest.json` (+ optional `catalog.json`) from a dev state and pick the pipeline it replaces. Nodes and edges turn green (added), yellow (modified) or red (removed); a changed node opens on a **Changes** tab with the field, column and SQL diff. **Select changes** + focus mode shows what the changes affect. Try it with `fixtures/dev_state/` (a dev version of `bestand_mfp`) |
 
 ---
 

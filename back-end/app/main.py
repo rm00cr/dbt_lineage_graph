@@ -132,6 +132,10 @@ async def diff_state(
     manifest: Annotated[UploadFile, File(description="manifest.json of the state to compare")],
     catalog: Annotated[UploadFile | None, File(description="catalog.json of that state (optional)")] = None,
     label: Annotated[str | None, Form(description="name shown for the uploaded state")] = None,
+    pipeline: Annotated[
+        str | None,
+        Form(description="pipelines.yaml name of the pipeline the upload replaces (default: match on project_name)"),
+    ] = None,
 ) -> DiffResponse:
     """Compare the running state with an uploaded one: every node and edge gets a `change`."""
     manifest_bytes = await manifest.read()
@@ -141,6 +145,7 @@ async def diff_state(
             manifest_bytes,
             catalog_bytes or None,
             label=(label or "").strip() or manifest.filename or "uploaded state",
+            pipeline=pipeline,
         )
     except ArtifactError as error:
         raise HTTPException(status_code=422, detail=str(error)) from None

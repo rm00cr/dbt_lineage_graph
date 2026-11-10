@@ -13,13 +13,18 @@ Which pipelines exist and where their artifacts live is declared in a YAML file
 (see ``fixtures/pipelines.yaml``)::
 
     pipelines:
-      - name: bestand_mfp                 # optional, default: manifest metadata.project_name
+      - name: bestand_mfp                 # required, unique: the pipeline's identity
         dir: bestand_mfp                  # expects manifest.json (+ catalog.json) inside
       - name: schaden_claims
         manifest: /ci/claims/target/manifest.json
         catalog: /ci/claims/target/catalog.json    # optional
 
-Relative paths resolve against the YAML file's folder. Pipeline names must be unique.
+Relative paths resolve against the YAML file's folder.
+
+The pipeline is identified by name only, never by the dbt project_name: in practice
+every project has the same one (dbt_pnc). Node ids are scoped by it
+(model.dbt_pnc.x -> model.<name>.x), so the name must be unique and id-safe
+(letters, digits, _, -).
 
 Environment variables
 ---------------------
@@ -67,16 +72,16 @@ STAGE_FOLDERS: dict[str, str] = {
 STAGE_ORDER: list[str] = ["src", "int", "out", "other"]
 
 _ORDERING_PREFIX = re.compile(r"^\d+[_-]")
+_PIPELINE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 @dataclass(frozen=True)
 class ArtifactPair:
-    """One pipeline (= one dbt project): its manifest and (optionally) its catalog."""
+    """One pipeline (= one dbt project): its name, manifest and (optionally) catalog."""
 
+    name: str  # the pipeline's identity (pipelines.yaml `name`)
     manifest: Path
     catalog: Path | None = None
-    # pipeline name; None -> the manifest's `metadata.project_name`
-    name: str | None = None
 
     @property
     def exists(self) -> bool:
@@ -107,12 +112,17 @@ def load_pipelines_config(path: Path) -> list[ArtifactPair]:
         if manifest is None:
             raise PipelinesConfigError(f"{path}: pipeline #{position} needs 'dir' or 'manifest'")
         catalog = _resolve(base, entry.get("catalog")) or (folder / "catalog.json" if folder else None)
-        name = str(entry["name"]).strip() if entry.get("name") else None
-        if name and name in names:
+        name = str(entry.get("name") or "").strip()
+        if not name:
+            raise PipelinesConfigError(f"{path}: pipeline #{position} needs a 'name'")
+        if not _PIPELINE_NAME.match(name):
+            raise PipelinesConfigError(
+                f"{path}: pipeline name {name!r} may only contain letters, digits, '_' and '-'"
+            )
+        if name in names:
             raise PipelinesConfigError(f"{path}: pipeline name {name!r} is used twice")
-        if name:
-            names.add(name)
-        pairs.append(ArtifactPair(manifest=manifest, catalog=catalog, name=name))
+        names.add(name)
+        pairs.append(ArtifactPair(name=name, manifest=manifest, catalog=catalog))
     return pairs
 
 

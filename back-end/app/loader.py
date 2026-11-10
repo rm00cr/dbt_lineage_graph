@@ -191,7 +191,7 @@ class LoadedArtifacts:
 
     manifest: dict[str, Any]
     catalog: dict[str, Any] | None = None
-    # pipeline name from pipelines.yaml; None -> the manifest's project_name
+    # pipeline name from pipelines.yaml (the pipeline identity); None -> project_name
     name: str | None = None
     # where it came from, listed in /api/health
     source: str = "upload"
@@ -202,10 +202,19 @@ class LoadedArtifacts:
 
 
 def read_artifacts(pairs: Iterable[ArtifactPair]) -> list[LoadedArtifacts]:
-    """Read the configured pipelines' manifest (+ catalog) files; missing ones are skipped."""
+    """Read the configured pipelines' manifest (+ catalog) files; missing ones are skipped.
+
+    The pipeline *identity* is `pair.name` from pipelines.yaml, never the dbt
+    `project_name`: in practice every project is called the same (`dbt_pnc`).
+    """
     loaded: list[LoadedArtifacts] = []
+    seen: set[str] = set()
     for pair in pairs:
+        if pair.name in seen:
+            raise ValueError(f"pipeline name {pair.name!r} is configured twice")
+        seen.add(pair.name)
         if not pair.exists:
+            log.warning("pipeline %r: manifest not found at %s", pair.name, pair.manifest)
             continue
         loaded.append(
             LoadedArtifacts(
@@ -219,7 +228,7 @@ def read_artifacts(pairs: Iterable[ArtifactPair]) -> list[LoadedArtifacts]:
 
 
 def load_graph(pairs: Iterable[ArtifactPair]) -> LineageGraph:
-    """Load one or many dbt projects into a single merged lineage graph."""
+    """Load the configured pipelines into a single merged lineage graph."""
     return build_graph(read_artifacts(pairs))
 
 
@@ -231,30 +240,46 @@ def build_graph(artifacts: Iterable[LoadedArtifacts]) -> LineageGraph:
         if item.catalog:
             graph.catalog_loaded = True
         graph.artifacts.append(item.source)
-        _ingest(graph, item.manifest, item.catalog, item.name)
+        _ingest(graph, item.manifest, item.catalog, item.name or item.project_name)
     _link(graph)
     return graph
+
+
+def _scope_id(unique_id: str, project: str, pipeline: str) -> str:
+    """Node ids are scoped by pipeline, because dbt unique_ids are not unique across
+    pipelines (all projects share one `project_name`):
+
+        model.dbt_pnc.int_x        -> model.<pipeline>.int_x
+        source.dbt_pnc.raw.t       -> source.<pipeline>.raw.t
+        model.dbt_utils.helper     -> model.<pipeline>.dbt_utils.helper   (package nodes)
+    """
+    kind, _, rest = unique_id.partition(".")
+    package, _, name = rest.partition(".")
+    if package == project and name:
+        return f"{kind}.{pipeline}.{name}"
+    return f"{kind}.{pipeline}.{rest}"
 
 
 def _ingest(
     graph: LineageGraph,
     manifest: dict[str, Any],
     catalog: dict[str, Any] | None,
-    pipeline_name: str | None = None,
+    pipeline: str,
 ) -> None:
+    """Add one pipeline; its nodes get pipeline-scoped ids (`_scope_id`)."""
     metadata = manifest.get("metadata") or {}
-    project = metadata.get("project_name") or "dbt"
-    if project in graph.project_names:
-        log.warning("project %r is configured twice; later nodes overwrite earlier ones", project)
-    else:
+    project = (metadata.get("project_name") or "dbt")
+    if project not in graph.project_names:
         graph.project_names.append(project)
-    pipeline = pipeline_name or project  # name from pipelines.yaml, else the dbt project
     graph.adapter_type = graph.adapter_type or metadata.get("adapter_type")
     graph.dbt_version = graph.dbt_version or metadata.get("dbt_version")
     graph.generated_at = graph.generated_at or metadata.get("generated_at")
 
     catalog_nodes = (catalog or {}).get("nodes") or {}
     catalog_sources = (catalog or {}).get("sources") or {}
+
+    own_ids = {*(manifest.get("nodes") or {}), *(manifest.get("sources") or {})}
+    id_map = {uid: _scope_id(uid, project, pipeline) for uid in own_ids}
 
     # ------------------------------------------------------------------ models
     for node_id, node in (manifest.get("nodes") or {}).items():
@@ -267,8 +292,8 @@ def _ingest(
         meta = {**(node.get("meta") or {}), **(config.get("meta") or {})}
         tags = sorted({*(node.get("tags") or []), *(config.get("tags") or [])})
 
-        graph.nodes[node_id] = LineageNode(
-            id=node_id,
+        graph.nodes[id_map.get(node_id, node_id)] = LineageNode(
+            id=id_map.get(node_id, node_id),
             name=node.get("name") or node_id.split(".")[-1],
             stage=resolve_stage(
                 name=node.get("name") or "",
@@ -293,7 +318,7 @@ def _ingest(
             columns=_merge_columns(node.get("columns"), catalog_entry),
             row_count=row_count,
             size_bytes=size_bytes,
-            depends_on=list((node.get("depends_on") or {}).get("nodes") or []),
+            depends_on=[id_map.get(d, d) for d in (node.get("depends_on") or {}).get("nodes") or []],
         )
 
     # ----------------------------------------------------------------- sources
@@ -304,8 +329,8 @@ def _ingest(
         identifier = node.get("identifier") or node.get("name") or ""
         display_name = f"{source_name}.{identifier}" if source_name else identifier
 
-        graph.nodes[node_id] = LineageNode(
-            id=node_id,
+        graph.nodes[id_map.get(node_id, node_id)] = LineageNode(
+            id=id_map.get(node_id, node_id),
             name=display_name,
             stage="src",
             materialization="source",

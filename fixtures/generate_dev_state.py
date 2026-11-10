@@ -27,11 +27,13 @@ HERE = Path(__file__).resolve().parent
 BASE = HERE / "bestand_mfp"
 OUT = HERE / "dev_state"
 
-P = "model.bestand_mfp."
 
 
 def build(manifest: dict, catalog: dict) -> tuple[dict, dict]:
     manifest, catalog = copy.deepcopy(manifest), copy.deepcopy(catalog)
+    # raw dbt ids carry the dbt project_name (shared by all pipelines, e.g. dbt_pnc)
+    project = manifest["metadata"]["project_name"]
+    P = f"model.{project}."
     nodes, cat_nodes = manifest["nodes"], catalog["nodes"]
     manifest["metadata"]["generated_at"] = "2026-11-10T09:30:00Z"
     catalog["metadata"]["generated_at"] = "2026-11-10T09:30:00Z"
@@ -77,7 +79,7 @@ def build(manifest: dict, catalog: dict) -> tuple[dict, dict]:
     first["type"] = "INT64" if first.get("type") != "INT64" else "STRING"
 
     # modified: a source moved
-    tariffs = manifest["sources"]["source.bestand_mfp.raw_mfp.tariffs"]
+    tariffs = manifest["sources"][f"source.{project}.raw_mfp.tariffs"]
     tariffs["schema"] = "raw_mfp_v2"
 
     # added
