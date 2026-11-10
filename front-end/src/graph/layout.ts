@@ -90,6 +90,8 @@ export interface RowBand {
 
 /** Box for one model sub-folder inside a stage (folders zone mode). */
 export interface FolderBand {
+  /** identity for collapsing, see `folderKey` in collapse.ts */
+  key: string
   stage: Stage
   /** null = models directly in the stage folder */
   folder: string | null
@@ -149,7 +151,7 @@ const PIPE_PADDING = 18
 const PIPE_GAP = 48
 const PIPE_COLUMN_GAP = 170
 /** folder boxes: label strip on top, inner side padding, vertical gap between boxes */
-const FOLDER_HEADER = 30
+const FOLDER_HEADER = 62
 const FOLDER_PADDING = 16
 const FOLDER_GAP = 16
 
@@ -485,6 +487,7 @@ function layoutFolderBlock(
       const bottom = stack(members, y + FOLDER_HEADER, columnOffset, laneX)
       const height = bottom - y + FOLDER_PADDING
       folders.push({
+        key: `${pipeline ?? ''}|${stage}|${key === UNGROUPED ? '' : key}`,
         stage,
         folder: key === UNGROUPED ? null : key,
         pipeline,
