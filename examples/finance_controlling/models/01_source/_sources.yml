@@ -1,0 +1,95 @@
+version: 2
+
+sources:
+  - name: raw_finance
+    description: Exports of the general ledger and the planning tool.
+    database: "{{ var('raw_database', target.database) }}"
+    schema: raw_finance
+    loader: ingestion-platform
+    tables:
+      - name: expenses
+        description: Booked operating expenses from the general ledger.
+        columns:
+          - {name: expense_id, data_type: STRING, description: Booking key.}
+          - {name: cost_center_id, data_type: STRING, description: Booked cost center.}
+          - {name: booking_date, data_type: DATE, description: Booking date.}
+          - {name: product_code, data_type: STRING, description: "Product, null for shared costs."}
+          - {name: expense_type, data_type: STRING, description: "ACQ (acquisition) | ADM (administration) | CLM (claims handling)."}
+          - {name: amount, data_type: NUMERIC, description: Amount in CHF.}
+          - {name: load_ts, data_type: TIMESTAMP, description: Technical load timestamp.}
+
+      - name: cost_centers
+        description: Cost center master data.
+        columns:
+          - {name: cost_center_id, data_type: STRING, description: Cost center key.}
+          - {name: cost_center_name, data_type: STRING, description: Name.}
+          - {name: department, data_type: STRING, description: Owning department.}
+          - {name: is_active, data_type: BOOLEAN, description: Still in use.}
+
+      - name: premium_plan
+        description: Premium and ratio plan per product and month - plan vs. actual only.
+        config:
+          enabled: "{{ var('include_plan') | as_bool }}"
+        columns:
+          - {name: plan_month, data_type: DATE, description: First day of the planned month.}
+          - {name: product_code, data_type: STRING, description: Product.}
+          - {name: planned_premium_chf, data_type: NUMERIC, description: Planned written premium.}
+          - {name: planned_loss_ratio, data_type: NUMERIC, description: Planned loss ratio.}
+          - {name: planned_expense_ratio, data_type: NUMERIC, description: Planned expense ratio.}
+
+  - name: mfp_output
+    description: Public outputs of the bestand_mfp pipeline.
+    database: "{{ var('mfp_database', target.database) }}"
+    schema: mfp_output
+    tables:
+      - name: out_mfp_premium_report
+        description: Premium per product and month (bestand_mfp).
+        columns:
+          - {name: reporting_month, data_type: DATE}
+          - {name: product_code, data_type: STRING}
+          - {name: contract_count, data_type: INTEGER}
+          - {name: technical_premium_chf, data_type: NUMERIC}
+          - {name: annual_premium_chf, data_type: NUMERIC}
+          - {name: premium_adequacy_ratio, data_type: NUMERIC}
+      - name: out_mfp_portfolio_monthly
+        description: >
+          Closed month-end portfolio (bestand_mfp) - only produced in bestand_mfp's
+          monthly_close mode, read here in plan vs. actual.
+        config:
+          enabled: "{{ var('include_plan') | as_bool }}"
+        columns:
+          - {name: reporting_month, data_type: DATE}
+          - {name: product_code, data_type: STRING}
+          - {name: canton, data_type: STRING}
+          - {name: contract_count, data_type: INTEGER}
+          - {name: sum_insured_chf, data_type: NUMERIC}
+          - {name: technical_premium_chf, data_type: NUMERIC}
+          - {name: written_premium_chf, data_type: NUMERIC}
+
+  - name: claims_output
+    description: Public outputs of the schaden_claims pipeline.
+    database: "{{ var('claims_database', target.database) }}"
+    schema: claims_output
+    tables:
+      - name: out_claims_kpi_daily
+        description: Daily claims KPIs (schaden_claims).
+        columns:
+          - {name: snapshot_date, data_type: DATE}
+          - {name: product_code, data_type: STRING}
+          - {name: canton, data_type: STRING}
+          - {name: claim_count, data_type: INTEGER}
+          - {name: paid_chf, data_type: NUMERIC}
+          - {name: reserve_chf, data_type: NUMERIC}
+          - {name: written_premium_chf, data_type: NUMERIC}
+          - {name: loss_ratio, data_type: NUMERIC}
+      - name: out_pnc_combined_ratio
+        description: Combined ratio per product (schaden_claims).
+        columns:
+          - {name: product_code, data_type: STRING}
+          - {name: incurred_chf, data_type: NUMERIC}
+          - {name: written_premium_chf, data_type: NUMERIC}
+          - {name: technical_premium_chf, data_type: NUMERIC}
+          - {name: premium_adequacy_ratio, data_type: NUMERIC}
+          - {name: loss_ratio, data_type: NUMERIC}
+          - {name: expense_ratio, data_type: NUMERIC}
+          - {name: combined_ratio, data_type: NUMERIC}

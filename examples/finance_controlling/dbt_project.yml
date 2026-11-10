@@ -1,0 +1,37 @@
+# finance_controlling - P&L per product: premium (bestand_mfp), claims (schaden_claims) and
+# expenses. Reads the other pipelines' outputs as dbt sources.
+name: dbt_pnc
+version: "1.0.0"
+config-version: 2
+profile: dbt_pnc
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  send_anonymous_usage_stats: false
+
+# Execution modes (pipelines.yaml) are combinations of these vars:
+#   include_plan    true: plan vs. actual - adds the premium plan and compares it with the
+#                   month-end portfolio of bestand_mfp (out_mfp_portfolio_monthly, which only
+#                   exists in bestand_mfp's monthly_close mode)
+#   expense_alloc   how shared expenses are allocated to products: premium | flat
+vars:
+  include_plan: false
+  expense_alloc: premium
+
+on-run-start:
+  - "{{ create_empty_sources() }}"
+
+models:
+  dbt_pnc:
+    01_source:
+      +schema: fin_source
+      +materialized: view
+    02_intermediate:
+      +schema: fin_intermediate
+      +materialized: table
+    03_output:
+      +schema: fin_output
+      +materialized: table

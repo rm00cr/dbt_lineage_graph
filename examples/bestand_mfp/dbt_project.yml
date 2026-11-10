@@ -1,0 +1,37 @@
+# bestand_mfp - the MFP policy portfolio (Bestand): contracts, partners, coverages, premium.
+# Like every PnC pipeline the project is called dbt_pnc; pipelines.yaml gives it its name.
+name: dbt_pnc
+version: "1.0.0"
+config-version: 2
+profile: dbt_pnc
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  send_anonymous_usage_stats: false
+
+# Execution modes (pipelines.yaml) are combinations of these vars:
+#   full_mode     true:  rebuild contracts from the full daily export (raw_mfp.contracts)
+#                 false: apply the change feed only (raw_mfp.contract_changes), incremental
+#   monthly_mode  true:  month-end close - adds the month-end snapshot and the monthly
+#                        portfolio output; the premium report reads the snapshot
+vars:
+  full_mode: true
+  monthly_mode: false
+
+on-run-start:
+  - "{{ create_empty_sources() }}"
+
+models:
+  dbt_pnc:
+    01_source:
+      +schema: mfp_source
+      +materialized: view
+    02_intermediate:
+      +schema: mfp_intermediate
+      +materialized: table
+    03_output:
+      +schema: mfp_output
+      +materialized: table

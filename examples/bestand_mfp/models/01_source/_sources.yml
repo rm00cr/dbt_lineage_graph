@@ -1,0 +1,71 @@
+version: 2
+
+sources:
+  - name: raw_mfp
+    description: Raw exports of the MFP policy administration system, loaded by the ingestion platform.
+    # BigQuery: the raw data lives in its own GCP project
+    database: "{{ var('raw_database', target.database) }}"
+    schema: raw_mfp
+    loader: ingestion-platform
+    tables:
+      - name: contracts
+        description: Contract header versions - daily full export. Read in full mode only.
+        config:
+          enabled: "{{ var('full_mode') | as_bool }}"
+        columns:
+          - {name: contract_id, data_type: STRING, description: Technical contract key from MFP.}
+          - {name: partner_id, data_type: STRING, description: Policy holder reference.}
+          - {name: product_code, data_type: STRING, description: "PnC product code, e.g. MOT, HOU, LIA."}
+          - {name: valid_from, data_type: DATE, description: Start of the contract version.}
+          - {name: valid_to, data_type: DATE, description: "End of the contract version, 9999-12-31 if open."}
+          - {name: status_code, data_type: STRING, description: "Raw status code: A, C, S."}
+          - {name: annual_premium, data_type: NUMERIC, description: Gross annual premium in CHF.}
+          - {name: load_ts, data_type: TIMESTAMP, description: Technical load timestamp.}
+
+      - name: contract_changes
+        description: Change feed of contract versions (CDC) - read in incremental mode only.
+        config:
+          enabled: "{{ (not var('full_mode')) | as_bool }}"
+        columns:
+          - {name: contract_id, data_type: STRING, description: Technical contract key from MFP.}
+          - {name: partner_id, data_type: STRING, description: Policy holder reference.}
+          - {name: product_code, data_type: STRING, description: PnC product code.}
+          - {name: valid_from, data_type: DATE, description: Start of the contract version.}
+          - {name: valid_to, data_type: DATE, description: "End of the contract version, 9999-12-31 if open."}
+          - {name: status_code, data_type: STRING, description: "Raw status code: A, C, S."}
+          - {name: annual_premium, data_type: NUMERIC, description: Gross annual premium in CHF.}
+          - {name: change_type, data_type: STRING, description: "I = insert, U = update, D = delete."}
+          - {name: change_ts, data_type: TIMESTAMP, description: When the change happened in MFP.}
+
+      - name: partners
+        description: Partner / policy holder master data.
+        columns:
+          - {name: partner_id, data_type: STRING, description: Technical partner key.}
+          - {name: partner_type, data_type: STRING, description: "P = person, C = company."}
+          - {name: birth_date, data_type: DATE, description: Birth date for natural persons.}
+          - {name: postal_code, data_type: STRING, description: Postal code of the main address.}
+          - {name: canton, data_type: STRING, description: Swiss canton code.}
+          - {name: language_code, data_type: STRING, description: Correspondence language.}
+          - {name: load_ts, data_type: TIMESTAMP, description: Technical load timestamp.}
+
+      - name: coverages
+        description: Coverage lines per contract (one row per covered risk).
+        columns:
+          - {name: coverage_id, data_type: STRING, description: Technical coverage key.}
+          - {name: contract_id, data_type: STRING, description: Parent contract.}
+          - {name: risk_code, data_type: STRING, description: "Covered risk, e.g. THEFT, FIRE, GLASS."}
+          - {name: sum_insured, data_type: NUMERIC, description: Sum insured in CHF.}
+          - {name: deductible, data_type: NUMERIC, description: Deductible in CHF.}
+          - {name: tariff_code, data_type: STRING, description: Applied tariff.}
+          - {name: valid_from, data_type: DATE, description: Start of the coverage version.}
+          - {name: load_ts, data_type: TIMESTAMP, description: Technical load timestamp.}
+
+      - name: tariffs
+        description: Tariff master data incl. factors per risk and region.
+        columns:
+          - {name: tariff_code, data_type: STRING, description: Tariff key.}
+          - {name: risk_code, data_type: STRING, description: Risk the tariff applies to.}
+          - {name: region_factor, data_type: NUMERIC, description: Regional loading factor.}
+          - {name: base_rate, data_type: NUMERIC, description: Base rate per 1000 CHF sum insured.}
+          - {name: valid_from, data_type: DATE, description: Start of validity.}
+          - {name: load_ts, data_type: TIMESTAMP, description: Technical load timestamp.}

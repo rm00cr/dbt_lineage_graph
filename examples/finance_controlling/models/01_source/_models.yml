@@ -1,0 +1,33 @@
+version: 2
+
+models:
+  - name: src_fin_expenses
+    description: Booked expenses with harmonised expense types and booking month.
+    config: {group: finance, tags: [finance, staging], meta: {execution_mode: daily}}
+    columns:
+      - {name: expense_id, description: Booking key., data_tests: [unique, not_null]}
+      - {name: expense_type, description: "acquisition | administration | claims_handling | other."}
+
+  - name: src_fin_cost_centers
+    description: Active cost centers.
+    config: {group: finance, tags: [finance, staging, reference], meta: {execution_mode: weekly}}
+
+  - name: src_fin_mfp_premium
+    description: Monthly earned premium per product from bestand_mfp (annual premium / 12).
+    config: {group: finance, tags: [finance, staging, cross-pipeline], meta: {execution_mode: daily}}
+
+  - name: src_fin_claims_kpi
+    description: Month-end claims figures per product from schaden_claims.
+    config: {group: finance, tags: [finance, staging, cross-pipeline], meta: {execution_mode: daily}}
+
+  - name: src_fin_combined_ratio
+    description: Combined ratio per product from schaden_claims (flat expense assumption).
+    config: {group: finance, tags: [finance, staging, cross-pipeline], meta: {execution_mode: monthly}}
+
+  - name: src_fin_premium_plan
+    description: Plan vs. actual only - the premium and ratio plan.
+    config: {group: planning, tags: [finance, staging, plan], meta: {execution_mode: monthly}}
+
+  - name: src_fin_mfp_portfolio_monthly
+    description: Plan vs. actual only - the closed month-end portfolio of bestand_mfp.
+    config: {group: planning, tags: [finance, staging, cross-pipeline, plan], meta: {execution_mode: monthly}}

@@ -24,3 +24,15 @@ dist/
 
 # TS build info
 *.tsbuildinfo
+
+# dbt output of backend-run `dbt docs generate` (copied from here to the artifact folders)
+.dbt_target_*/
+
+# example dbt projects: generated artifacts, empty DuckDB files, dbt output
+examples/artifacts/
+examples/*/target/
+examples/**/logs/
+examples/**/.user.yml
+examples/*/dbt_packages/
+*.duckdb
+*.duckdb.wal

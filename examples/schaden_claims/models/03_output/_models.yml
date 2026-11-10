@@ -1,0 +1,26 @@
+version: 2
+
+models:
+  - name: out_claims_kpi_daily
+    description: Daily claims KPIs per product and canton. Read by finance_controlling.
+    config: {group: claims, tags: [claims, kpi, public], meta: {execution_mode: daily}}
+    columns:
+      - {name: loss_ratio, description: (paid + reserve) / written premium.}
+
+  - name: out_claims_reserve_report
+    description: Reserves and payments per loss year, product and status (gross).
+    config: {group: claims, tags: [claims, reserving], meta: {execution_mode: monthly}}
+
+  - name: out_claims_large_losses
+    description: Claims with a reserve above the large-loss threshold.
+    config: {group: claims, tags: [claims, alerting, pii], meta: {execution_mode: hourly}}
+
+  - name: out_pnc_combined_ratio
+    description: Combined ratio per product (loss ratio + flat expense ratio). Read by finance_controlling.
+    config: {group: finance, tags: [claims, kpi, public], meta: {execution_mode: monthly}}
+    columns:
+      - {name: combined_ratio, description: loss ratio + expense ratio; > 1 means an underwriting loss.}
+
+  - name: out_claims_ri_report
+    description: Net of reinsurance only - recoveries per product.
+    config: {group: reinsurance, tags: [claims, reinsurance, public], meta: {execution_mode: monthly}}

@@ -7,29 +7,61 @@
 # with its own manifest.json + catalog.json (`dbt docs generate`).
 #
 # Keys per entry:
-#   name      required; the pipeline's identity, shown in the UI. Unique; letters, digits,
-#             _ and -. The dbt project_name is NOT used (all projects are called dbt_pnc);
-#             node ids are scoped by this name: model.dbt_pnc.x -> model.<name>.x
-#   dir       folder holding manifest.json and catalog.json
-#   manifest  explicit path to manifest.json (instead of, or overriding, dir)
-#   catalog   explicit path to catalog.json; optional (without it there are no column
-#             types or row counts)
+#   name         required; the pipeline's identity, shown in the UI. Unique; letters, digits,
+#                _ and -. The dbt project_name is NOT used (all projects are called dbt_pnc);
+#                node ids are scoped by this name: model.dbt_pnc.x -> model.<name>.x
+#   dir          folder holding manifest.json and catalog.json
+#   manifest     explicit path to manifest.json (instead of, or overriding, dir)
+#   catalog      explicit path to catalog.json; optional (without it there are no column
+#                types or row counts)
+#   project_dir  the dbt project (folder with dbt_project.yml). Without dir/manifest the
+#                artifacts are read from where dbt writes them: <project_dir>/target/.
+#                Also lets the backend run `dbt docs generate` itself: at startup for missing
+#                artifacts, when switching to a mode that has none, and on demand (button in
+#                the pipeline picker). Existing artifacts are reused, never rebuilt on their own.
+#   profiles_dir optional, passed to dbt as --profiles-dir
+#   target       optional, passed to dbt as --target
+#   prepare      optional dbt commands run before `docs generate` (same flags/vars), e.g.
+#                [run --empty]; overrides the default from the `dbt:` block, [] for none
+#   execution_modes
+#                named combinations of dbt vars, each with its own artifacts. The UI shows
+#                one mode per pipeline and has a dropdown to switch. Per mode:
+#                  vars      the dbt vars of this mode (dbt --vars)
+#                  dir       folder with its manifest.json + catalog.json;
+#                            default: <dir>/<mode>/  (or <project_dir>/target/<mode>/)
+#                  manifest / catalog   explicit paths, like at pipeline level
+#   default_mode the mode shown at start; default: the first one
 # Relative paths resolve against the folder of this file; ~ is expanded.
 #
 # Pipelines are connected by table name: when a pipeline declares another pipeline's output
 # table as a dbt source, the two are linked. Output table names must be unique across all
 # pipelines.
 
+# Optional: how the backend calls dbt (default: `dbt` on PATH; env DBT_EXECUTABLE wins) and
+# what every pipeline runs before `docs generate`. {here} = the folder of this file.
+# dbt:
+#   command: uv run --frozen --project {here}/dbt-env dbt
+#   prepare: [run --empty --full-refresh]
+
 pipelines:
-  # Short form: a folder with manifest.json + catalog.json inside.
+  # Execution modes: artifacts/bestand_mfp/full/ and artifacts/bestand_mfp/incremental/,
+  # each holding the manifest.json + catalog.json of `dbt docs generate --vars '<vars>'`.
   - name: bestand_mfp
-    dir: artifacts/bestand_mfp
+    dir: artifacts/bestand_mfp          # parent of the mode folders
+    project_dir: ~/projects/pnc/bestand_mfp   # optional: lets the backend generate the modes
+    default_mode: full
+    execution_modes:
+      full:
+        vars: {full_mode: true, monthly_mode: false}
+      incremental:
+        vars: {full_mode: false, monthly_mode: true}
+        dir: artifacts/bestand_mfp/incremental   # optional, this is the default anyway
 
-  # Explicit paths, e.g. straight from a dbt project's target/ folder.
+  # The dbt project itself: reads ~/projects/pnc/schaden_claims/target/manifest.json + catalog.json
+  # (generated there by the backend if missing; regenerate from the pipeline picker)
   - name: schaden_claims
-    manifest: ~/projects/pnc/schaden_claims/target/manifest.json
-    catalog: ~/projects/pnc/schaden_claims/target/catalog.json
+    project_dir: ~/projects/pnc/schaden_claims
 
-  # No catalog: the graph and SQL still work, the Schema tab has no types.
+  # Explicit paths. No catalog: the graph and SQL still work, the Schema tab has no types.
   - name: finance_controlling
     manifest: /data/dbt/finance_controlling/manifest.json

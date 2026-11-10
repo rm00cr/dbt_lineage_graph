@@ -1,0 +1,56 @@
+version: 2
+
+models:
+  - name: src_mfp_contracts
+    description: Cleaned contract versions from the full export - renamed, typed, technical records removed.
+    config: {group: contract, tags: [mfp, staging], meta: {execution_mode: daily}}
+    columns:
+      - {name: contract_id, description: Technical contract key., data_tests: [not_null]}
+      - {name: partner_id, description: Policy holder reference.}
+      - {name: product_code, description: PnC product code.}
+      - {name: valid_from, description: Start of the contract version.}
+      - {name: valid_to, description: "End of the contract version, null if open."}
+      - {name: contract_status, description: "Harmonised status: active | cancelled | suspended | unknown."}
+      - {name: annual_premium_chf, description: Gross annual premium in CHF.}
+      - {name: _loaded_at, description: Technical load timestamp.}
+
+  - name: src_mfp_contract_changes
+    description: Cleaned contract change feed (CDC). Replaces src_mfp_contracts in incremental mode.
+    config: {group: contract, tags: [mfp, staging, cdc], meta: {execution_mode: hourly}}
+    columns:
+      - {name: contract_id, description: Technical contract key., data_tests: [not_null]}
+      - {name: contract_status, description: "Harmonised status: active | cancelled | suspended | unknown."}
+      - {name: is_deleted, description: The contract version was deleted in MFP.}
+      - {name: _loaded_at, description: When the change happened in MFP.}
+
+  - name: src_mfp_partners
+    description: Cleaned partner master data incl. derived age.
+    config: {group: partner, tags: [mfp, staging, pii], meta: {execution_mode: daily}}
+    columns:
+      - {name: partner_id, description: Technical partner key., data_tests: [unique, not_null]}
+      - {name: partner_type, description: person | company.}
+      - {name: birth_date, description: Birth date for natural persons.}
+      - {name: age_years, description: Age in completed years.}
+      - {name: postal_code, description: Postal code of the main address.}
+      - {name: canton, description: Swiss canton code.}
+      - {name: language_code, description: "Correspondence language, lower case."}
+
+  - name: src_mfp_coverages
+    description: Cleaned coverage lines per contract; zero sums insured are dropped.
+    config: {group: contract, tags: [mfp, staging], meta: {execution_mode: daily}}
+    columns:
+      - {name: coverage_id, description: Technical coverage key., data_tests: [not_null]}
+      - {name: contract_id, description: Parent contract.}
+      - {name: risk_code, description: Covered risk.}
+      - {name: sum_insured_chf, description: Sum insured in CHF.}
+      - {name: deductible_chf, description: Deductible in CHF.}
+      - {name: tariff_code, description: Applied tariff.}
+
+  - name: src_mfp_tariffs
+    description: Tariff reference data, deduplicated on (tariff_code, risk_code, valid_from).
+    config: {group: premium, tags: [mfp, staging, reference], meta: {execution_mode: weekly}}
+    columns:
+      - {name: tariff_code, description: Tariff key.}
+      - {name: risk_code, description: Risk the tariff applies to.}
+      - {name: region_factor, description: Regional loading factor.}
+      - {name: base_rate, description: Base rate per 1000 CHF sum insured.}

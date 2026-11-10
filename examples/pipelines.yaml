@@ -1,0 +1,67 @@
+# Example setup: three real dbt projects (no data) the backend builds itself.
+#
+#   ./dev.sh examples/pipelines.yaml
+#
+# On first start every pipeline's default mode is generated in the background (watch the
+# task indicator in the top bar); other modes are generated when you pick them in the
+# pipeline picker. Generated artifacts land in examples/artifacts/ and are reused.
+#
+#   bestand_mfp ──▶ schaden_claims ──▶ finance_controlling
+#        └───────────────────────────────────▲
+#
+# See examples/README.md.
+
+dbt:
+  # dbt-core 1.x + dbt-duckdb from examples/pyproject.toml; uv creates the env on first use
+  command: uv run --frozen --project {here} dbt
+  # no data: create the declared sources as empty tables, build every model with zero rows,
+  # so `docs generate` writes a full catalog (column types). Remove for real warehouses.
+  prepare:
+    - run --empty --full-refresh
+
+pipelines:
+  # Portfolio. full: full daily export; incremental: change feed (CDC) instead;
+  # monthly_close: full + month-end snapshot and the monthly portfolio output.
+  - name: bestand_mfp
+    project_dir: bestand_mfp
+    profiles_dir: bestand_mfp
+    dir: artifacts/bestand_mfp
+    default_mode: full
+    execution_modes:
+      full:
+        vars: {full_mode: true, monthly_mode: false}
+      incremental:
+        vars: {full_mode: false, monthly_mode: false}
+      monthly_close:
+        vars: {full_mode: true, monthly_mode: true}
+
+  # Claims, reads bestand_mfp outputs. gross: as booked; net_of_ri: net of reinsurance
+  # recoveries (extra source + models); large_loss_watch: gross with a lower large-loss bar.
+  - name: schaden_claims
+    project_dir: schaden_claims
+    profiles_dir: schaden_claims
+    dir: artifacts/schaden_claims
+    default_mode: gross
+    execution_modes:
+      gross:
+        vars: {include_reinsurance: false}
+      net_of_ri:
+        vars: {include_reinsurance: true}
+      large_loss_watch:
+        vars: {include_reinsurance: false, large_loss_threshold: 250000}
+
+  # P&L, reads bestand_mfp + schaden_claims outputs. actuals: booked figures;
+  # plan_vs_actual: adds the plan and reads bestand_mfp's month-end portfolio (only linked
+  # while bestand_mfp shows monthly_close); flat_allocation: shared costs split equally.
+  - name: finance_controlling
+    project_dir: finance_controlling
+    profiles_dir: finance_controlling
+    dir: artifacts/finance_controlling
+    default_mode: actuals
+    execution_modes:
+      actuals:
+        vars: {include_plan: false, expense_alloc: premium}
+      plan_vs_actual:
+        vars: {include_plan: true, expense_alloc: premium}
+      flat_allocation:
+        vars: {include_plan: false, expense_alloc: flat}

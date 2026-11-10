@@ -9,10 +9,12 @@
 import type {
   ColumnLineageResponse,
   DiffResponse,
+  GenerationJob,
   GraphResponse,
   LineageStatusResponse,
   MetaResponse,
   ModelDetail,
+  PipelineInfo,
   SearchResponse,
   TraceDirection,
 } from './types'
@@ -67,6 +69,28 @@ async function request<T>(path: string, params?: Params, init?: RequestInit): Pr
 
 export const api = {
   meta: () => get<MetaResponse>('/api/meta'),
+
+  /** configured pipelines with their execution modes and the one that is shown */
+  pipelines: () => get<PipelineInfo[]>('/api/pipelines'),
+
+  /** show another execution mode of a pipeline (server-side: every endpoint follows it) */
+  setPipelineMode: (name: string, mode: string) =>
+    request<PipelineInfo>(`/api/pipelines/${encodeURIComponent(name)}/mode`, undefined, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode }),
+    }),
+
+  /** regenerate a pipeline's artifacts in the background (`mode`: default the shown one) */
+  generatePipeline: (name: string, mode?: string | null) =>
+    request<PipelineInfo>(`/api/pipelines/${encodeURIComponent(name)}/generate`, undefined, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ mode: mode ?? null }),
+    }),
+
+  /** background dbt runs, newest first */
+  jobs: () => get<GenerationJob[]>('/api/jobs'),
 
   graph: (options: { pipeline?: string[]; stage?: string[]; includeSources?: boolean } = {}) =>
     get<GraphResponse>('/api/graph', {

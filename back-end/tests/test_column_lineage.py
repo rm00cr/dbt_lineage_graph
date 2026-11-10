@@ -164,6 +164,31 @@ def test_ephemeral_cte_is_kept_as_a_hop() -> None:
     }
 
 
+def test_partly_documented_columns_are_completed_from_the_sql() -> None:
+    # an ephemeral model never reaches the catalog: its only columns are the documented ones
+    eph = _model(
+        "eph_orders",
+        f"select order_id, customer_id, amount from `{DB}`.raw.orders",
+        [ORDERS.id],
+        columns=["amount"],
+        materialization="ephemeral",
+    )
+    sql = f"""
+        with __dbt__cte__eph_orders as (
+            select order_id, customer_id, amount from `{DB}`.raw.orders
+        )
+        select e.customer_id, sum(e.amount) as revenue
+        from __dbt__cte__eph_orders as e
+        group by 1
+    """
+    index = _build(ORDERS, eph, _model("m", sql, [eph.id]))
+    assert index.models["model.p.m"].status == "ok", index.models["model.p.m"]
+    assert _edges(index, "m") == {
+        ("eph_orders", "customer_id->customer_id"): "passthrough",
+        ("eph_orders", "amount->revenue"): "aggregate",
+    }
+
+
 def test_unknown_relation_marks_model_partial() -> None:
     sql = f"select o.order_id, x.flag from `{DB}`.raw.orders o join `{DB}`.raw.unknown x using (order_id)"
     index = _build(ORDERS, _model("m", sql, [ORDERS.id]))

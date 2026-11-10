@@ -1,0 +1,36 @@
+version: 2
+
+models:
+  - name: out_mfp_portfolio_daily
+    description: Daily portfolio KPIs per product, canton and risk. Read by schaden_claims.
+    config: {group: contract, tags: [mfp, kpi, public], meta: {execution_mode: daily}}
+    columns:
+      - {name: snapshot_date, description: Day the snapshot was taken.}
+      - {name: contract_count, description: Active contracts.}
+      - {name: written_premium_chf, description: Gross written premium in CHF.}
+
+  - name: out_mfp_premium_report
+    description: >
+      Premium adequacy per product and month (written vs. technical premium). In month-end
+      close it reports the frozen month-end snapshot. Read by schaden_claims and finance_controlling.
+    config: {group: premium, tags: [mfp, pricing, public], meta: {execution_mode: daily}}
+    columns:
+      - {name: reporting_month, description: First day of the reported month.}
+      - {name: premium_adequacy_ratio, description: Written / technical premium; < 1 means under-priced.}
+
+  - name: out_mfp_customer_360
+    description: One row per policy holder with their contracts and total premium.
+    config: {group: partner, tags: [mfp, crm, pii], meta: {execution_mode: daily}}
+    columns:
+      - {name: partner_id, description: Technical partner key., data_tests: [unique]}
+      - {name: product_codes, description: "Products held, comma separated."}
+
+  - name: out_mfp_contracts
+    description: Current contracts - the portfolio interface for other pipelines. Read by schaden_claims.
+    config: {group: contract, tags: [mfp, public], meta: {execution_mode: daily}}
+    columns:
+      - {name: contract_id, description: Technical contract key., data_tests: [unique, not_null]}
+
+  - name: out_mfp_portfolio_monthly
+    description: Month-end close only - the closed portfolio per month. Read by finance_controlling (plan vs. actual).
+    config: {group: premium, tags: [mfp, month-end, public], meta: {execution_mode: monthly}}
