@@ -12,23 +12,56 @@
 
 ## 1. Conventions
 
+### 1.0 Pipelines and layers — the model this tool assumes
+
+A **pipeline is one dbt project**, delivered as its own `manifest.json` + `catalog.json`
+(`dbt docs generate`). Every pipeline is laid out in three layers:
+
+```
+models/
+├── 01_source/        src  imports: raw sources and other pipelines' outputs
+├── 02_intermediate/  int  internal to the pipeline
+└── 03_output/        out  the pipeline's public interface
+```
+
+Which pipelines exist and where their artifacts are is declared in a YAML file
+(`PIPELINES_CONFIG`, default `fixtures/pipelines.yaml`):
+
+```yaml
+pipelines:
+  - dir: bestand_mfp                     # manifest.json (+ catalog.json) inside
+  - manifest: /ci/claims/target/manifest.json
+    catalog: /ci/claims/target/catalog.json
+```
+
+**Across pipelines.** A pipeline reads another pipeline's output by declaring that table
+as a dbt **source** (in `01_source`). Separate manifests do not reference each other, so the
+backend links them on the **table name only** (source `identifier` = model `alias`). Database
+and dataset are ignored on purpose, because pipelines are deployed to different GCP projects /
+datasets. **Assumption: output table names are unique across all pipelines.** If a name still
+matches several models, `out` models win; if that is still ambiguous, the source stays
+unlinked and the backend logs a warning. The resulting edge is
+`upstream out model -> imported source (src)`, with `cross_pipeline: true`.
+Column lineage maps the columns of that edge 1:1 (`passthrough`).
+
 ### 1.1 Stages (`src` | `int` | `out` | `other`)
 
-Resolved by the backend in this order (open point #1 from the kick-off, now decided):
+Resolved by the backend in this order:
 
 1. dbt **sources** → always `src`
-2. **name prefix**: `src_` → `src`, `int_` → `int`, `out_` → `out`
-3. **folder** in `original_file_path`: `staging`/`source` → `src`, `intermediate` → `int`,
-   `marts`/`output`/`out` → `out`
+2. **layer folder** in `original_file_path`, ignoring a numeric prefix: `01_source` →
+   `src`, `02_intermediate` → `int`, `03_output` → `out` (also `staging`, `marts`, …)
+3. **name prefix** for models outside the layer folders: `src_`/`stg_` → `src`, `int_` →
+   `int`, `out_`/`mart_` → `out`
 4. **dbt tag** `stage:<src|int|out>` if present
 5. fallback → `other`
 
-Configurable through `STAGE_PREFIXES` / `STAGE_FOLDERS` in `back-end/app/config.py`.
+Configurable through `STAGE_FOLDERS` / `STAGE_PREFIXES` in `back-end/app/config.py`.
 
 ### 1.2 Pipeline
 
-`config.meta.pipeline` of the dbt node, else the first path segment under `models/`
-(e.g. `models/bestand_mfp/...` → `bestand_mfp`). Used for *lineage across pipelines* (2.4).
+The `metadata.project_name` of the manifest the node came from (see 1.0).
+`config.meta.pipeline` on a node overrides it. Used for *lineage across pipelines* (2.4).
 
 ### 1.2b Group (domain)
 
@@ -49,12 +82,13 @@ Only a pipeline's outputs may feed another pipeline, imported through a src mode
 cross-pipeline edges must be `out -> src`. The frontend flags the rest
 (`front-end/src/graph/boundary.ts`): `internal` (upstream is not an `out` model) and
 `skips-src` (an output read by a non-`src` model). Edges from dbt sources never count. The
-fixtures follow the convention (`out_mfp_* -> src_claims_mfp_*`).
+fixtures follow the convention
+(`out_mfp_* -> source bestand_mfp.out_mfp_* -> src_claims_mfp_*`).
 
 ### 1.3 Node ids
 
-dbt `unique_id`, e.g. `model.pnc_analytics.int_mfp_contracts`,
-`source.pnc_analytics.raw_mfp.contracts`. Ids are URL-encoded in `/api/model/{id}`.
+dbt `unique_id`, e.g. `model.bestand_mfp.int_mfp_contracts`,
+`source.bestand_mfp.raw_mfp.contracts`. Ids are URL-encoded in `/api/model/{id}`.
 
 ---
 
@@ -80,7 +114,7 @@ Query params (all optional): `pipeline` (repeatable), `stage` (repeatable), `inc
 {
   "nodes": [
     {
-      "id": "model.pnc_analytics.int_mfp_contracts",
+      "id": "model.bestand_mfp.int_mfp_contracts",
       "name": "int_mfp_contracts",
       "stage": "int",                       // src | int | out | other
       "materialization": "table",           // table | view | incremental | ephemeral | source
@@ -96,9 +130,9 @@ Query params (all optional): `pipeline` (repeatable), `stage` (repeatable), `inc
   ],
   "edges": [
     {
-      "id": "model.pnc_analytics.src_mfp_contracts->model.pnc_analytics.int_mfp_contracts",
-      "source": "model.pnc_analytics.src_mfp_contracts",
-      "target": "model.pnc_analytics.int_mfp_contracts",
+      "id": "model.bestand_mfp.src_mfp_contracts->model.bestand_mfp.int_mfp_contracts",
+      "source": "model.bestand_mfp.src_mfp_contracts",
+      "target": "model.bestand_mfp.int_mfp_contracts",
       "cross_pipeline": false
     }
   ],
@@ -116,7 +150,7 @@ Query params (all optional): `pipeline` (repeatable), `stage` (repeatable), `inc
 
 ```jsonc
 {
-  "id": "model.pnc_analytics.int_mfp_contracts",
+  "id": "model.bestand_mfp.int_mfp_contracts",
   "name": "int_mfp_contracts",
   "stage": "int",
   "materialization": "table",
@@ -127,12 +161,12 @@ Query params (all optional): `pipeline` (repeatable), `stage` (repeatable), `inc
   "schema_name": "mfp_intermediate",
   "database": "pnc-analytics-prd",
   "alias": "int_mfp_contracts",
-  "original_file_path": "models/bestand_mfp/intermediate/int_mfp_contracts.sql",
+  "original_file_path": "models/02_intermediate/int_mfp_contracts.sql",
   "execution_mode": "daily",
   "compiled_code": "select …",              // null for sources
   "raw_code": "{{ config(…) }} select …",   // null for sources
   "dependencies": [                          // direct upstreams, 1.3
-    { "id": "model.pnc_analytics.src_mfp_contracts", "name": "src_mfp_contracts",
+    { "id": "model.bestand_mfp.src_mfp_contracts", "name": "src_mfp_contracts",
       "stage": "src", "materialization": "view", "pipeline": "bestand_mfp",
       "resource_type": "model" }
   ],
@@ -160,7 +194,7 @@ Query params (all optional): `pipeline` (repeatable), `stage` (repeatable), `inc
 {
   "query": "contrcts",
   "results": [
-    { "id": "model.pnc_analytics.int_mfp_contracts", "name": "int_mfp_contracts",
+    { "id": "model.bestand_mfp.int_mfp_contracts", "name": "int_mfp_contracts",
       "stage": "int", "materialization": "table", "pipeline": "bestand_mfp",
       "resource_type": "model", "score": 0.93, "matched_on": "name" }
   ]
@@ -173,7 +207,7 @@ Query params (all optional): `pipeline` (repeatable), `stage` (repeatable), `inc
 {
   "query": "premium",
   "results": [
-    { "id": "model.pnc_analytics.out_mfp_premium_report", "name": "out_mfp_premium_report",
+    { "id": "model.bestand_mfp.out_mfp_premium_report", "name": "out_mfp_premium_report",
       "stage": "out", "materialization": "table", "pipeline": "bestand_mfp",
       "resource_type": "model", "score": 1.0, "matched_on": "column",
       "column": { "name": "annual_premium_chf", "type": "NUMERIC", "description": "…", "index": 4 } }
@@ -192,7 +226,7 @@ because `/api/model/{id:path}` already swallows slashes. 404 for an unknown mode
 
 ```jsonc
 {
-  "root": { "model_id": "model.pnc_analytics.out_pnc_combined_ratio",
+  "root": { "model_id": "model.schaden_claims.out_pnc_combined_ratio",
             "model_name": "out_pnc_combined_ratio", "column": "incurred_chf",
             "type": "NUMERIC", "distance": 0 },
   "direction": "up",
@@ -200,8 +234,8 @@ because `/api/model/{id:path}` already swallows slashes. 404 for an unknown mode
   "nodes": [ /* same shape as root; distance = hops from the root */ ],
   "edges": [
     { "id": "model…int_claims_loss_ratio.paid_chf->model…out_pnc_combined_ratio.incurred_chf",
-      "source_model": "model.pnc_analytics.int_claims_loss_ratio", "source_column": "paid_chf",
-      "target_model": "model.pnc_analytics.out_pnc_combined_ratio", "target_column": "incurred_chf",
+      "source_model": "model.schaden_claims.int_claims_loss_ratio", "source_column": "paid_chf",
+      "target_model": "model.schaden_claims.out_pnc_combined_ratio", "target_column": "incurred_chf",
       "kind": "aggregate",                    // passthrough | rename | transform | aggregate
       "expression": "sum(`l`.`paid_chf` + `l`.`reserve_chf`)" }   // first non-trivial SQL on the path
   ],

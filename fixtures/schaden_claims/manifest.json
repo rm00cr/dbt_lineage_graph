@@ -1,0 +1,1606 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/manifest/v12.json",
+    "dbt_version": "1.8.7",
+    "generated_at": "2026-10-27T21:14:09.482173Z",
+    "invocation_id": "9f1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
+    "project_name": "schaden_claims",
+    "project_id": "schadenclaims0000000000000000000",
+    "adapter_type": "bigquery",
+    "env": {}
+  },
+  "nodes": {
+    "model.schaden_claims.src_claims_cases": {
+      "unique_id": "model.schaden_claims.src_claims_cases",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "src_claims_cases",
+      "alias": "src_claims_cases",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_source",
+      "path": "01_source/src_claims_cases.sql",
+      "original_file_path": "models/01_source/src_claims_cases.sql",
+      "description": "Cleaned claim cases with harmonised status and reporting delay.",
+      "tags": [
+        "claims",
+        "staging"
+      ],
+      "group": "claims",
+      "config": {
+        "enabled": true,
+        "group": "claims",
+        "materialized": "view",
+        "schema": "source",
+        "tags": [
+          "claims",
+          "staging"
+        ],
+        "meta": {
+          "execution_mode": "hourly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "hourly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.schaden_claims.raw_claims.claims"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "raw_claims",
+          "claims"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    claim_id,\n    contract_id,\n    risk_code,\n    loss_date,\n    report_date,\n    date_diff(report_date, loss_date, day)  as reporting_delay_days,\n    lower(claim_status)                     as claim_status,\n    reserve_amount                          as reserve_chf,\n    load_ts                                 as _loaded_at\nfrom {{ source('raw_claims', 'claims') }}\nwhere loss_date is not null",
+      "compiled_code": "select\n    claim_id,\n    contract_id,\n    risk_code,\n    loss_date,\n    report_date,\n    date_diff(report_date, loss_date, day)  as reporting_delay_days,\n    lower(claim_status)                     as claim_status,\n    reserve_amount                          as reserve_chf,\n    load_ts                                 as _loaded_at\nfrom `pnc-raw-prd`.raw_claims.claims\nwhere loss_date is not null\n",
+      "columns": {
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Technical claim key.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Contract the claim was reported on.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Affected risk.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_date": {
+          "name": "loss_date",
+          "description": "Date of loss.",
+          "meta": {},
+          "tags": []
+        },
+        "report_date": {
+          "name": "report_date",
+          "description": "Date the claim was reported.",
+          "meta": {},
+          "tags": []
+        },
+        "reporting_delay_days": {
+          "name": "reporting_delay_days",
+          "description": "Days between loss and report.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_status": {
+          "name": "claim_status",
+          "description": "open | closed | reopened.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_chf": {
+          "name": "reserve_chf",
+          "description": "Case reserve in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "_loaded_at": {
+          "name": "_loaded_at",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000002e9e7af9830cce5c"
+      }
+    },
+    "model.schaden_claims.src_claims_payments": {
+      "unique_id": "model.schaden_claims.src_claims_payments",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "src_claims_payments",
+      "alias": "src_claims_payments",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_source",
+      "path": "01_source/src_claims_payments.sql",
+      "original_file_path": "models/01_source/src_claims_payments.sql",
+      "description": "Cleaned claim payments with signed amounts per payment type.",
+      "tags": [
+        "claims",
+        "staging"
+      ],
+      "group": "claims",
+      "config": {
+        "enabled": true,
+        "group": "claims",
+        "materialized": "view",
+        "schema": "source",
+        "tags": [
+          "claims",
+          "staging"
+        ],
+        "meta": {
+          "execution_mode": "hourly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "hourly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.schaden_claims.raw_claims.payments"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "raw_claims",
+          "payments"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    payment_id,\n    claim_id,\n    payment_date,\n    upper(payment_type)                                        as payment_type,\n    case when upper(payment_type) = 'RECOVERY'\n         then -abs(amount) else abs(amount) end                as amount_chf,\n    load_ts                                                    as _loaded_at\nfrom {{ source('raw_claims', 'payments') }}",
+      "compiled_code": "select\n    payment_id,\n    claim_id,\n    payment_date,\n    upper(payment_type)                                        as payment_type,\n    case when upper(payment_type) = 'RECOVERY'\n         then -abs(amount) else abs(amount) end                as amount_chf,\n    load_ts                                                    as _loaded_at\nfrom `pnc-raw-prd`.raw_claims.payments\n",
+      "columns": {
+        "payment_id": {
+          "name": "payment_id",
+          "description": "Technical payment key.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Parent claim.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_date": {
+          "name": "payment_date",
+          "description": "Value date of the payment.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_type": {
+          "name": "payment_type",
+          "description": "INDEMNITY | EXPENSE | RECOVERY.",
+          "meta": {},
+          "tags": []
+        },
+        "amount_chf": {
+          "name": "amount_chf",
+          "description": "Signed amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "_loaded_at": {
+          "name": "_loaded_at",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000001a474e87669b7ba0"
+      }
+    },
+    "model.schaden_claims.src_claims_mfp_contracts": {
+      "unique_id": "model.schaden_claims.src_claims_mfp_contracts",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "src_claims_mfp_contracts",
+      "alias": "src_claims_mfp_contracts",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_source",
+      "path": "01_source/src_claims_mfp_contracts.sql",
+      "original_file_path": "models/01_source/src_claims_mfp_contracts.sql",
+      "description": "Contract attributes imported from the portfolio pipeline (out_mfp_contracts).",
+      "tags": [
+        "claims",
+        "staging",
+        "cross-pipeline"
+      ],
+      "group": "claims",
+      "config": {
+        "enabled": true,
+        "group": "claims",
+        "materialized": "view",
+        "schema": "source",
+        "tags": [
+          "claims",
+          "staging",
+          "cross-pipeline"
+        ],
+        "meta": {
+          "execution_mode": "hourly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "hourly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.schaden_claims.bestand_mfp.out_mfp_contracts"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "bestand_mfp",
+          "out_mfp_contracts"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    contract_id,\n    partner_id,\n    product_code,\n    canton,\n    annual_premium_chf\nfrom {{ source('bestand_mfp', 'out_mfp_contracts') }}\nwhere contract_status = 'active'",
+      "compiled_code": "select\n    contract_id,\n    partner_id,\n    product_code,\n    canton,\n    annual_premium_chf\nfrom `pnc-analytics-prd`.mfp_output.out_mfp_contracts\nwhere contract_status = 'active'\n",
+      "columns": {
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Technical contract key.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Policy holder reference.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Written annual premium in CHF.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "000000000000000000000000000000000000000000000000734da023181673e1"
+      }
+    },
+    "model.schaden_claims.src_claims_mfp_portfolio": {
+      "unique_id": "model.schaden_claims.src_claims_mfp_portfolio",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "src_claims_mfp_portfolio",
+      "alias": "src_claims_mfp_portfolio",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_source",
+      "path": "01_source/src_claims_mfp_portfolio.sql",
+      "original_file_path": "models/01_source/src_claims_mfp_portfolio.sql",
+      "description": "Today's portfolio snapshot imported from the portfolio pipeline (out_mfp_portfolio_daily).",
+      "tags": [
+        "claims",
+        "staging",
+        "cross-pipeline"
+      ],
+      "group": "claims",
+      "config": {
+        "enabled": true,
+        "group": "claims",
+        "materialized": "view",
+        "schema": "source",
+        "tags": [
+          "claims",
+          "staging",
+          "cross-pipeline"
+        ],
+        "meta": {
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.schaden_claims.bestand_mfp.out_mfp_portfolio_daily"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "bestand_mfp",
+          "out_mfp_portfolio_daily"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    product_code,\n    canton,\n    risk_code,\n    written_premium_chf\nfrom {{ source('bestand_mfp', 'out_mfp_portfolio_daily') }}\nwhere snapshot_date = current_date()",
+      "compiled_code": "select\n    product_code,\n    canton,\n    risk_code,\n    written_premium_chf\nfrom `pnc-analytics-prd`.mfp_output.out_mfp_portfolio_daily\nwhere snapshot_date = current_date()\n",
+      "columns": {
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Covered risk.",
+          "meta": {},
+          "tags": []
+        },
+        "written_premium_chf": {
+          "name": "written_premium_chf",
+          "description": "Written premium in CHF.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "00000000000000000000000000000000000000000000000026ec5304330c90bc"
+      }
+    },
+    "model.schaden_claims.src_claims_mfp_premium": {
+      "unique_id": "model.schaden_claims.src_claims_mfp_premium",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "src_claims_mfp_premium",
+      "alias": "src_claims_mfp_premium",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_source",
+      "path": "01_source/src_claims_mfp_premium.sql",
+      "original_file_path": "models/01_source/src_claims_mfp_premium.sql",
+      "description": "Premium reconciliation imported from the portfolio pipeline (out_mfp_premium_report).",
+      "tags": [
+        "claims",
+        "staging",
+        "finance",
+        "cross-pipeline"
+      ],
+      "group": "finance",
+      "config": {
+        "enabled": true,
+        "group": "finance",
+        "materialized": "view",
+        "schema": "source",
+        "tags": [
+          "claims",
+          "staging",
+          "finance",
+          "cross-pipeline"
+        ],
+        "meta": {
+          "execution_mode": "monthly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "monthly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "source.schaden_claims.bestand_mfp.out_mfp_premium_report"
+        ]
+      },
+      "refs": [],
+      "sources": [
+        [
+          "bestand_mfp",
+          "out_mfp_premium_report"
+        ]
+      ],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='view') }}\n\nselect\n    product_code,\n    technical_premium_chf,\n    annual_premium_chf,\n    premium_adequacy_ratio\nfrom {{ source('bestand_mfp', 'out_mfp_premium_report') }}\nwhere reporting_month = date_trunc(current_date(), month)",
+      "compiled_code": "select\n    product_code,\n    technical_premium_chf,\n    annual_premium_chf,\n    premium_adequacy_ratio\nfrom `pnc-analytics-prd`.mfp_output.out_mfp_premium_report\nwhere reporting_month = date_trunc(current_date(), month)\n",
+      "columns": {
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "technical_premium_chf": {
+          "name": "technical_premium_chf",
+          "description": "Technical premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Written premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "premium_adequacy_ratio": {
+          "name": "premium_adequacy_ratio",
+          "description": "Technical / written premium.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "000000000000000000000000000000000000000000000000424ab53e3bf5fc7d"
+      }
+    },
+    "model.schaden_claims.int_claims_cases": {
+      "unique_id": "model.schaden_claims.int_claims_cases",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "int_claims_cases",
+      "alias": "int_claims_cases",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_intermediate",
+      "path": "02_intermediate/int_claims_cases.sql",
+      "original_file_path": "models/02_intermediate/int_claims_cases.sql",
+      "description": "Claim cases enriched with contract attributes from the portfolio pipeline.",
+      "tags": [
+        "claims",
+        "core",
+        "cross-pipeline"
+      ],
+      "group": "claims",
+      "config": {
+        "enabled": true,
+        "group": "claims",
+        "materialized": "table",
+        "schema": "intermediate",
+        "tags": [
+          "claims",
+          "core",
+          "cross-pipeline"
+        ],
+        "meta": {
+          "execution_mode": "hourly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "hourly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.schaden_claims.src_claims_cases",
+          "model.schaden_claims.src_claims_mfp_contracts"
+        ]
+      },
+      "refs": [
+        {
+          "name": "src_claims_cases",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "src_claims_mfp_contracts",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nselect\n    cl.claim_id,\n    cl.contract_id,\n    cl.risk_code,\n    cl.loss_date,\n    cl.report_date,\n    cl.reporting_delay_days,\n    cl.claim_status,\n    cl.reserve_chf,\n    c.product_code,\n    c.canton,\n    c.partner_id,\n    c.annual_premium_chf\nfrom {{ ref('src_claims_cases') }} cl\nleft join {{ ref('src_claims_mfp_contracts') }} c using (contract_id)",
+      "compiled_code": "select\n    cl.claim_id,\n    cl.contract_id,\n    cl.risk_code,\n    cl.loss_date,\n    cl.report_date,\n    cl.reporting_delay_days,\n    cl.claim_status,\n    cl.reserve_chf,\n    c.product_code,\n    c.canton,\n    c.partner_id,\n    c.annual_premium_chf\nfrom `pnc-analytics-prd`.claims_source.src_claims_cases cl\nleft join `pnc-analytics-prd`.claims_source.src_claims_mfp_contracts c using (contract_id)\n",
+      "columns": {
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Technical claim key.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Contract the claim was reported on.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Affected risk.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_date": {
+          "name": "loss_date",
+          "description": "Date of loss.",
+          "meta": {},
+          "tags": []
+        },
+        "report_date": {
+          "name": "report_date",
+          "description": "Date the claim was reported.",
+          "meta": {},
+          "tags": []
+        },
+        "reporting_delay_days": {
+          "name": "reporting_delay_days",
+          "description": "Days between loss and report.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_status": {
+          "name": "claim_status",
+          "description": "open | closed | reopened.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_chf": {
+          "name": "reserve_chf",
+          "description": "Case reserve in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code of the contract.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Policy holder reference.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Written premium of the contract.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000000bd48d8071555b10"
+      }
+    },
+    "model.schaden_claims.int_claims_payments": {
+      "unique_id": "model.schaden_claims.int_claims_payments",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "int_claims_payments",
+      "alias": "int_claims_payments",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_intermediate",
+      "path": "02_intermediate/int_claims_payments.sql",
+      "original_file_path": "models/02_intermediate/int_claims_payments.sql",
+      "description": "Payments aggregated per claim and payment type, incrementally loaded.",
+      "tags": [
+        "claims",
+        "core"
+      ],
+      "group": "claims",
+      "config": {
+        "enabled": true,
+        "group": "claims",
+        "materialized": "incremental",
+        "schema": "intermediate",
+        "tags": [
+          "claims",
+          "core"
+        ],
+        "meta": {
+          "execution_mode": "hourly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "hourly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.schaden_claims.src_claims_payments"
+        ]
+      },
+      "refs": [
+        {
+          "name": "src_claims_payments",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='incremental', unique_key='claim_id') }}\n\nselect\n    claim_id,\n    payment_type,\n    count(*)            as payment_count,\n    sum(amount_chf)     as paid_chf,\n    max(payment_date)   as last_payment_date\nfrom {{ ref('src_claims_payments') }}\n{% if is_incremental() %}\nwhere payment_date >= date_sub(current_date(), interval 7 day)\n{% endif %}\ngroup by 1, 2",
+      "compiled_code": "select\n    claim_id,\n    payment_type,\n    count(*)            as payment_count,\n    sum(amount_chf)     as paid_chf,\n    max(payment_date)   as last_payment_date\nfrom `pnc-analytics-prd`.claims_source.src_claims_payments\ngroup by 1, 2\n",
+      "columns": {
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Parent claim.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_type": {
+          "name": "payment_type",
+          "description": "INDEMNITY | EXPENSE | RECOVERY.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_count": {
+          "name": "payment_count",
+          "description": "Number of payments.",
+          "meta": {},
+          "tags": []
+        },
+        "paid_chf": {
+          "name": "paid_chf",
+          "description": "Signed paid amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "last_payment_date": {
+          "name": "last_payment_date",
+          "description": "Most recent payment.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000004caade293124c00b"
+      }
+    },
+    "model.schaden_claims.int_claims_loss_ratio": {
+      "unique_id": "model.schaden_claims.int_claims_loss_ratio",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "int_claims_loss_ratio",
+      "alias": "int_claims_loss_ratio",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_intermediate",
+      "path": "02_intermediate/int_claims_loss_ratio.sql",
+      "original_file_path": "models/02_intermediate/int_claims_loss_ratio.sql",
+      "description": "Loss ratio per product and canton, combining claims with the portfolio snapshot.",
+      "tags": [
+        "claims",
+        "core",
+        "cross-pipeline"
+      ],
+      "group": "claims",
+      "config": {
+        "enabled": true,
+        "group": "claims",
+        "materialized": "table",
+        "schema": "intermediate",
+        "tags": [
+          "claims",
+          "core",
+          "cross-pipeline"
+        ],
+        "meta": {
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.schaden_claims.int_claims_cases",
+          "model.schaden_claims.int_claims_payments",
+          "model.schaden_claims.src_claims_mfp_portfolio"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_claims_cases",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "int_claims_payments",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "src_claims_mfp_portfolio",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nwith claims as (\n    select\n        cs.product_code,\n        cs.canton,\n        cs.risk_code,\n        count(distinct cs.claim_id)                as claim_count,\n        sum(cs.reserve_chf)                        as reserve_chf,\n        sum(coalesce(pm.paid_chf, 0))              as paid_chf\n    from {{ ref('int_claims_cases') }} cs\n    left join {{ ref('int_claims_payments') }} pm using (claim_id)\n    group by 1, 2, 3\n),\n\nportfolio as (\n    select product_code, canton, risk_code, sum(written_premium_chf) as written_premium_chf\n    from {{ ref('src_claims_mfp_portfolio') }}\n    group by 1, 2, 3\n)\n\nselect\n    c.product_code,\n    c.canton,\n    c.risk_code,\n    c.claim_count,\n    c.paid_chf,\n    c.reserve_chf,\n    p.written_premium_chf,\n    safe_divide(c.paid_chf + c.reserve_chf, p.written_premium_chf) as loss_ratio\nfrom claims c\nleft join portfolio p using (product_code, canton, risk_code)",
+      "compiled_code": "with claims as (\n    select\n        cs.product_code,\n        cs.canton,\n        cs.risk_code,\n        count(distinct cs.claim_id)                as claim_count,\n        sum(cs.reserve_chf)                        as reserve_chf,\n        sum(coalesce(pm.paid_chf, 0))              as paid_chf\n    from `pnc-analytics-prd`.claims_intermediate.int_claims_cases cs\n    left join `pnc-analytics-prd`.claims_intermediate.int_claims_payments pm using (claim_id)\n    group by 1, 2, 3\n),\nportfolio as (\n    select product_code, canton, risk_code, sum(written_premium_chf) as written_premium_chf\n    from `pnc-analytics-prd`.claims_source.src_claims_mfp_portfolio\n    group by 1, 2, 3\n)\nselect\n    c.product_code,\n    c.canton,\n    c.risk_code,\n    c.claim_count,\n    c.paid_chf,\n    c.reserve_chf,\n    p.written_premium_chf,\n    safe_divide(c.paid_chf + c.reserve_chf, p.written_premium_chf) as loss_ratio\nfrom claims c\nleft join portfolio p using (product_code, canton, risk_code)\n",
+      "columns": {
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Covered risk.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_count": {
+          "name": "claim_count",
+          "description": "Number of claims.",
+          "meta": {},
+          "tags": []
+        },
+        "paid_chf": {
+          "name": "paid_chf",
+          "description": "Paid amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_chf": {
+          "name": "reserve_chf",
+          "description": "Outstanding reserves in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "written_premium_chf": {
+          "name": "written_premium_chf",
+          "description": "Written premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_ratio": {
+          "name": "loss_ratio",
+          "description": "(paid + reserve) / written premium.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000004446ae942ac269b1"
+      }
+    },
+    "model.schaden_claims.out_claims_kpi_daily": {
+      "unique_id": "model.schaden_claims.out_claims_kpi_daily",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "out_claims_kpi_daily",
+      "alias": "out_claims_kpi_daily",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_output",
+      "path": "03_output/out_claims_kpi_daily.sql",
+      "original_file_path": "models/03_output/out_claims_kpi_daily.sql",
+      "description": "Daily claims KPI table for the management dashboard.",
+      "tags": [
+        "claims",
+        "mart",
+        "reporting"
+      ],
+      "group": "claims",
+      "config": {
+        "enabled": true,
+        "group": "claims",
+        "materialized": "incremental",
+        "schema": "output",
+        "tags": [
+          "claims",
+          "mart",
+          "reporting"
+        ],
+        "meta": {
+          "execution_mode": "daily",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "daily"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.schaden_claims.int_claims_loss_ratio"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_claims_loss_ratio",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='incremental', unique_key='snapshot_date') }}\n\nselect\n    current_date()                  as snapshot_date,\n    product_code,\n    canton,\n    sum(claim_count)                as claim_count,\n    sum(paid_chf)                   as paid_chf,\n    sum(reserve_chf)                as reserve_chf,\n    safe_divide(sum(paid_chf) + sum(reserve_chf),\n                sum(written_premium_chf)) as loss_ratio\nfrom {{ ref('int_claims_loss_ratio') }}\ngroup by 1, 2, 3",
+      "compiled_code": "select\n    current_date()                  as snapshot_date,\n    product_code,\n    canton,\n    sum(claim_count)                as claim_count,\n    sum(paid_chf)                   as paid_chf,\n    sum(reserve_chf)                as reserve_chf,\n    safe_divide(sum(paid_chf) + sum(reserve_chf),\n                sum(written_premium_chf)) as loss_ratio\nfrom `pnc-analytics-prd`.claims_intermediate.int_claims_loss_ratio\ngroup by 1, 2, 3\n",
+      "columns": {
+        "snapshot_date": {
+          "name": "snapshot_date",
+          "description": "Snapshot day.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_count": {
+          "name": "claim_count",
+          "description": "Number of claims.",
+          "meta": {},
+          "tags": []
+        },
+        "paid_chf": {
+          "name": "paid_chf",
+          "description": "Paid amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_chf": {
+          "name": "reserve_chf",
+          "description": "Outstanding reserves in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_ratio": {
+          "name": "loss_ratio",
+          "description": "Loss ratio.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000003f6b1d4da1b3449b"
+      }
+    },
+    "model.schaden_claims.out_claims_reserve_report": {
+      "unique_id": "model.schaden_claims.out_claims_reserve_report",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "out_claims_reserve_report",
+      "alias": "out_claims_reserve_report",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_output",
+      "path": "03_output/out_claims_reserve_report.sql",
+      "original_file_path": "models/03_output/out_claims_reserve_report.sql",
+      "description": "Reserve development per loss year for the actuarial department.",
+      "tags": [
+        "claims",
+        "mart",
+        "actuarial"
+      ],
+      "group": "claims",
+      "config": {
+        "enabled": true,
+        "group": "claims",
+        "materialized": "table",
+        "schema": "output",
+        "tags": [
+          "claims",
+          "mart",
+          "actuarial"
+        ],
+        "meta": {
+          "execution_mode": "monthly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "monthly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.schaden_claims.int_claims_cases",
+          "model.schaden_claims.int_claims_payments"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_claims_cases",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "int_claims_payments",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nselect\n    extract(year from cs.loss_date)      as loss_year,\n    cs.product_code,\n    cs.claim_status,\n    count(distinct cs.claim_id)          as claim_count,\n    sum(cs.reserve_chf)                  as reserve_chf,\n    sum(coalesce(pm.paid_chf, 0))        as paid_chf,\n    avg(cs.reporting_delay_days)         as avg_reporting_delay_days\nfrom {{ ref('int_claims_cases') }} cs\nleft join {{ ref('int_claims_payments') }} pm using (claim_id)\ngroup by 1, 2, 3",
+      "compiled_code": "select\n    extract(year from cs.loss_date)      as loss_year,\n    cs.product_code,\n    cs.claim_status,\n    count(distinct cs.claim_id)          as claim_count,\n    sum(cs.reserve_chf)                  as reserve_chf,\n    sum(coalesce(pm.paid_chf, 0))        as paid_chf,\n    avg(cs.reporting_delay_days)         as avg_reporting_delay_days\nfrom `pnc-analytics-prd`.claims_intermediate.int_claims_cases cs\nleft join `pnc-analytics-prd`.claims_intermediate.int_claims_payments pm using (claim_id)\ngroup by 1, 2, 3\n",
+      "columns": {
+        "loss_year": {
+          "name": "loss_year",
+          "description": "Year of loss.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_status": {
+          "name": "claim_status",
+          "description": "open | closed | reopened.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_count": {
+          "name": "claim_count",
+          "description": "Number of claims.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_chf": {
+          "name": "reserve_chf",
+          "description": "Outstanding reserves in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "paid_chf": {
+          "name": "paid_chf",
+          "description": "Paid amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "avg_reporting_delay_days": {
+          "name": "avg_reporting_delay_days",
+          "description": "Average reporting delay.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000004e26bf8afa0aee43"
+      }
+    },
+    "model.schaden_claims.out_pnc_combined_ratio": {
+      "unique_id": "model.schaden_claims.out_pnc_combined_ratio",
+      "resource_type": "model",
+      "package_name": "schaden_claims",
+      "name": "out_pnc_combined_ratio",
+      "alias": "out_pnc_combined_ratio",
+      "database": "pnc-analytics-prd",
+      "schema": "claims_output",
+      "path": "03_output/out_pnc_combined_ratio.sql",
+      "original_file_path": "models/03_output/out_pnc_combined_ratio.sql",
+      "description": "Combined ratio per product: joins the claims loss ratio with the premium report.",
+      "tags": [
+        "claims",
+        "mfp",
+        "mart",
+        "finance",
+        "cross-pipeline"
+      ],
+      "group": "finance",
+      "config": {
+        "enabled": true,
+        "group": "finance",
+        "materialized": "table",
+        "schema": "output",
+        "tags": [
+          "claims",
+          "mfp",
+          "mart",
+          "finance",
+          "cross-pipeline"
+        ],
+        "meta": {
+          "execution_mode": "monthly",
+          "owner": "pnc-analytics"
+        }
+      },
+      "meta": {
+        "execution_mode": "monthly"
+      },
+      "depends_on": {
+        "macros": [],
+        "nodes": [
+          "model.schaden_claims.int_claims_loss_ratio",
+          "model.schaden_claims.src_claims_mfp_premium"
+        ]
+      },
+      "refs": [
+        {
+          "name": "int_claims_loss_ratio",
+          "package": null,
+          "version": null
+        },
+        {
+          "name": "src_claims_mfp_premium",
+          "package": null,
+          "version": null
+        }
+      ],
+      "sources": [],
+      "compiled": true,
+      "raw_code": "{{ config(materialized='table') }}\n\nwith loss as (\n    select product_code,\n           sum(paid_chf + reserve_chf) as incurred_chf,\n           sum(written_premium_chf)    as written_premium_chf\n    from {{ ref('int_claims_loss_ratio') }}\n    group by 1\n),\n\npremium as (\n    select product_code, technical_premium_chf, annual_premium_chf, premium_adequacy_ratio\n    from {{ ref('src_claims_mfp_premium') }}\n)\n\nselect\n    l.product_code,\n    l.incurred_chf,\n    l.written_premium_chf,\n    p.technical_premium_chf,\n    p.premium_adequacy_ratio,\n    safe_divide(l.incurred_chf, l.written_premium_chf)              as loss_ratio,\n    safe_divide(l.incurred_chf * 0.28, l.written_premium_chf)       as expense_ratio,\n    safe_divide(l.incurred_chf * 1.28, l.written_premium_chf)       as combined_ratio\nfrom loss l\nleft join premium p using (product_code)",
+      "compiled_code": "with loss as (\n    select product_code,\n           sum(paid_chf + reserve_chf) as incurred_chf,\n           sum(written_premium_chf)    as written_premium_chf\n    from `pnc-analytics-prd`.claims_intermediate.int_claims_loss_ratio\n    group by 1\n),\npremium as (\n    select product_code, technical_premium_chf, annual_premium_chf, premium_adequacy_ratio\n    from `pnc-analytics-prd`.claims_source.src_claims_mfp_premium\n)\nselect\n    l.product_code,\n    l.incurred_chf,\n    l.written_premium_chf,\n    p.technical_premium_chf,\n    p.premium_adequacy_ratio,\n    safe_divide(l.incurred_chf, l.written_premium_chf)              as loss_ratio,\n    safe_divide(l.incurred_chf * 0.28, l.written_premium_chf)       as expense_ratio,\n    safe_divide(l.incurred_chf * 1.28, l.written_premium_chf)       as combined_ratio\nfrom loss l\nleft join premium p using (product_code)\n",
+      "columns": {
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "incurred_chf": {
+          "name": "incurred_chf",
+          "description": "Incurred claims in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "written_premium_chf": {
+          "name": "written_premium_chf",
+          "description": "Written premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "technical_premium_chf": {
+          "name": "technical_premium_chf",
+          "description": "Technical premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "premium_adequacy_ratio": {
+          "name": "premium_adequacy_ratio",
+          "description": "Technical / written premium.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_ratio": {
+          "name": "loss_ratio",
+          "description": "Incurred / written premium.",
+          "meta": {},
+          "tags": []
+        },
+        "expense_ratio": {
+          "name": "expense_ratio",
+          "description": "Expenses / written premium.",
+          "meta": {},
+          "tags": []
+        },
+        "combined_ratio": {
+          "name": "combined_ratio",
+          "description": "Loss ratio + expense ratio.",
+          "meta": {},
+          "tags": []
+        }
+      },
+      "checksum": {
+        "name": "sha256",
+        "checksum": "0000000000000000000000000000000000000000000000004a02fdcbaad87e46"
+      }
+    }
+  },
+  "sources": {
+    "source.schaden_claims.raw_claims.claims": {
+      "unique_id": "source.schaden_claims.raw_claims.claims",
+      "resource_type": "source",
+      "package_name": "schaden_claims",
+      "name": "claims",
+      "source_name": "raw_claims",
+      "identifier": "claims",
+      "database": "pnc-raw-prd",
+      "schema": "raw_claims",
+      "description": "Raw claim cases from the claims handling system.",
+      "original_file_path": "models/01_source/_sources.yml",
+      "path": "01_source/_sources.yml",
+      "tags": [
+        "source",
+        "raw_claims"
+      ],
+      "meta": {
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Technical claim key.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Contract the claim was reported on.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Affected risk.",
+          "meta": {},
+          "tags": []
+        },
+        "loss_date": {
+          "name": "loss_date",
+          "description": "Date of loss.",
+          "meta": {},
+          "tags": []
+        },
+        "report_date": {
+          "name": "report_date",
+          "description": "Date the claim was reported.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_status": {
+          "name": "claim_status",
+          "description": "Raw status, e.g. OPEN, CLOSED, REOPENED.",
+          "meta": {},
+          "tags": []
+        },
+        "reserve_amount": {
+          "name": "reserve_amount",
+          "description": "Current case reserve in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "load_ts": {
+          "name": "load_ts",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    },
+    "source.schaden_claims.raw_claims.payments": {
+      "unique_id": "source.schaden_claims.raw_claims.payments",
+      "resource_type": "source",
+      "package_name": "schaden_claims",
+      "name": "payments",
+      "source_name": "raw_claims",
+      "identifier": "payments",
+      "database": "pnc-raw-prd",
+      "schema": "raw_claims",
+      "description": "Raw claim payment transactions (indemnity, expenses, recoveries).",
+      "original_file_path": "models/01_source/_sources.yml",
+      "path": "01_source/_sources.yml",
+      "tags": [
+        "source",
+        "raw_claims"
+      ],
+      "meta": {
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "payment_id": {
+          "name": "payment_id",
+          "description": "Technical payment key.",
+          "meta": {},
+          "tags": []
+        },
+        "claim_id": {
+          "name": "claim_id",
+          "description": "Parent claim.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_date": {
+          "name": "payment_date",
+          "description": "Value date of the payment.",
+          "meta": {},
+          "tags": []
+        },
+        "payment_type": {
+          "name": "payment_type",
+          "description": "INDEMNITY | EXPENSE | RECOVERY.",
+          "meta": {},
+          "tags": []
+        },
+        "amount": {
+          "name": "amount",
+          "description": "Signed amount in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "load_ts": {
+          "name": "load_ts",
+          "description": "Technical load timestamp.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    },
+    "source.schaden_claims.bestand_mfp.out_mfp_contracts": {
+      "unique_id": "source.schaden_claims.bestand_mfp.out_mfp_contracts",
+      "resource_type": "source",
+      "package_name": "schaden_claims",
+      "name": "out_mfp_contracts",
+      "source_name": "bestand_mfp",
+      "identifier": "out_mfp_contracts",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_output",
+      "description": "Output of pipeline bestand_mfp: Public contract dimension: the interface other pipelines read contract attributes from.",
+      "original_file_path": "models/01_source/_sources.yml",
+      "path": "01_source/_sources.yml",
+      "tags": [
+        "source",
+        "cross-pipeline"
+      ],
+      "meta": {
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "contract_id": {
+          "name": "contract_id",
+          "description": "Technical contract key.",
+          "meta": {},
+          "tags": []
+        },
+        "partner_id": {
+          "name": "partner_id",
+          "description": "Policy holder reference.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_status": {
+          "name": "contract_status",
+          "description": "active | cancelled | suspended.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Written annual premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_from": {
+          "name": "valid_from",
+          "description": "Start of the contract version.",
+          "meta": {},
+          "tags": []
+        },
+        "valid_to": {
+          "name": "valid_to",
+          "description": "End of the contract version.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    },
+    "source.schaden_claims.bestand_mfp.out_mfp_portfolio_daily": {
+      "unique_id": "source.schaden_claims.bestand_mfp.out_mfp_portfolio_daily",
+      "resource_type": "source",
+      "package_name": "schaden_claims",
+      "name": "out_mfp_portfolio_daily",
+      "source_name": "bestand_mfp",
+      "identifier": "out_mfp_portfolio_daily",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_output",
+      "description": "Output of pipeline bestand_mfp: Daily portfolio snapshot per product, canton and risk. Feeds the portfolio dashboard.",
+      "original_file_path": "models/01_source/_sources.yml",
+      "path": "01_source/_sources.yml",
+      "tags": [
+        "source",
+        "cross-pipeline"
+      ],
+      "meta": {
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "snapshot_date": {
+          "name": "snapshot_date",
+          "description": "Snapshot day.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "canton": {
+          "name": "canton",
+          "description": "Swiss canton code.",
+          "meta": {},
+          "tags": []
+        },
+        "risk_code": {
+          "name": "risk_code",
+          "description": "Covered risk.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_count": {
+          "name": "contract_count",
+          "description": "Distinct active contracts.",
+          "meta": {},
+          "tags": []
+        },
+        "coverage_count": {
+          "name": "coverage_count",
+          "description": "Number of coverage lines.",
+          "meta": {},
+          "tags": []
+        },
+        "sum_insured_chf": {
+          "name": "sum_insured_chf",
+          "description": "Total sum insured in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "technical_premium_chf": {
+          "name": "technical_premium_chf",
+          "description": "Total technical premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "written_premium_chf": {
+          "name": "written_premium_chf",
+          "description": "Total written premium in CHF.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    },
+    "source.schaden_claims.bestand_mfp.out_mfp_premium_report": {
+      "unique_id": "source.schaden_claims.bestand_mfp.out_mfp_premium_report",
+      "resource_type": "source",
+      "package_name": "schaden_claims",
+      "name": "out_mfp_premium_report",
+      "source_name": "bestand_mfp",
+      "identifier": "out_mfp_premium_report",
+      "database": "pnc-analytics-prd",
+      "schema": "mfp_output",
+      "description": "Output of pipeline bestand_mfp: Monthly premium reconciliation: technical vs. written premium per product.",
+      "original_file_path": "models/01_source/_sources.yml",
+      "path": "01_source/_sources.yml",
+      "tags": [
+        "source",
+        "cross-pipeline"
+      ],
+      "meta": {
+        "owner": "data-platform"
+      },
+      "source_meta": {},
+      "loader": "airflow",
+      "columns": {
+        "reporting_month": {
+          "name": "reporting_month",
+          "description": "First day of the reporting month.",
+          "meta": {},
+          "tags": []
+        },
+        "product_code": {
+          "name": "product_code",
+          "description": "PnC product code.",
+          "meta": {},
+          "tags": []
+        },
+        "contract_count": {
+          "name": "contract_count",
+          "description": "Distinct contracts.",
+          "meta": {},
+          "tags": []
+        },
+        "technical_premium_chf": {
+          "name": "technical_premium_chf",
+          "description": "Technical premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "annual_premium_chf": {
+          "name": "annual_premium_chf",
+          "description": "Written premium in CHF.",
+          "meta": {},
+          "tags": []
+        },
+        "premium_adequacy_ratio": {
+          "name": "premium_adequacy_ratio",
+          "description": "Technical / written premium.",
+          "meta": {},
+          "tags": []
+        }
+      }
+    }
+  },
+  "macros": {},
+  "exposures": {},
+  "metrics": {},
+  "groups": {
+    "group.schaden_claims.claims": {
+      "name": "claims",
+      "resource_type": "group",
+      "package_name": "schaden_claims",
+      "path": "groups.yml",
+      "original_file_path": "models/groups.yml",
+      "unique_id": "group.schaden_claims.claims",
+      "owner": {
+        "name": "Claims Analytics",
+        "email": null
+      }
+    },
+    "group.schaden_claims.finance": {
+      "name": "finance",
+      "resource_type": "group",
+      "package_name": "schaden_claims",
+      "path": "groups.yml",
+      "original_file_path": "models/groups.yml",
+      "unique_id": "group.schaden_claims.finance",
+      "owner": {
+        "name": "Finance Controlling",
+        "email": null
+      }
+    }
+  },
+  "selectors": {},
+  "docs": {},
+  "parent_map": {
+    "source.schaden_claims.raw_claims.claims": [],
+    "source.schaden_claims.raw_claims.payments": [],
+    "model.schaden_claims.src_claims_cases": [
+      "source.schaden_claims.raw_claims.claims"
+    ],
+    "model.schaden_claims.src_claims_payments": [
+      "source.schaden_claims.raw_claims.payments"
+    ],
+    "source.schaden_claims.bestand_mfp.out_mfp_contracts": [],
+    "model.schaden_claims.src_claims_mfp_contracts": [
+      "source.schaden_claims.bestand_mfp.out_mfp_contracts"
+    ],
+    "source.schaden_claims.bestand_mfp.out_mfp_portfolio_daily": [],
+    "model.schaden_claims.src_claims_mfp_portfolio": [
+      "source.schaden_claims.bestand_mfp.out_mfp_portfolio_daily"
+    ],
+    "source.schaden_claims.bestand_mfp.out_mfp_premium_report": [],
+    "model.schaden_claims.src_claims_mfp_premium": [
+      "source.schaden_claims.bestand_mfp.out_mfp_premium_report"
+    ],
+    "model.schaden_claims.int_claims_cases": [
+      "model.schaden_claims.src_claims_cases",
+      "model.schaden_claims.src_claims_mfp_contracts"
+    ],
+    "model.schaden_claims.int_claims_payments": [
+      "model.schaden_claims.src_claims_payments"
+    ],
+    "model.schaden_claims.int_claims_loss_ratio": [
+      "model.schaden_claims.int_claims_cases",
+      "model.schaden_claims.int_claims_payments",
+      "model.schaden_claims.src_claims_mfp_portfolio"
+    ],
+    "model.schaden_claims.out_claims_kpi_daily": [
+      "model.schaden_claims.int_claims_loss_ratio"
+    ],
+    "model.schaden_claims.out_claims_reserve_report": [
+      "model.schaden_claims.int_claims_cases",
+      "model.schaden_claims.int_claims_payments"
+    ],
+    "model.schaden_claims.out_pnc_combined_ratio": [
+      "model.schaden_claims.int_claims_loss_ratio",
+      "model.schaden_claims.src_claims_mfp_premium"
+    ]
+  },
+  "child_map": {
+    "source.schaden_claims.raw_claims.claims": [
+      "model.schaden_claims.src_claims_cases"
+    ],
+    "source.schaden_claims.raw_claims.payments": [
+      "model.schaden_claims.src_claims_payments"
+    ],
+    "source.schaden_claims.bestand_mfp.out_mfp_contracts": [
+      "model.schaden_claims.src_claims_mfp_contracts"
+    ],
+    "source.schaden_claims.bestand_mfp.out_mfp_portfolio_daily": [
+      "model.schaden_claims.src_claims_mfp_portfolio"
+    ],
+    "source.schaden_claims.bestand_mfp.out_mfp_premium_report": [
+      "model.schaden_claims.src_claims_mfp_premium"
+    ],
+    "model.schaden_claims.src_claims_cases": [
+      "model.schaden_claims.int_claims_cases"
+    ],
+    "model.schaden_claims.src_claims_mfp_contracts": [
+      "model.schaden_claims.int_claims_cases"
+    ],
+    "model.schaden_claims.src_claims_payments": [
+      "model.schaden_claims.int_claims_payments"
+    ],
+    "model.schaden_claims.int_claims_cases": [
+      "model.schaden_claims.int_claims_loss_ratio",
+      "model.schaden_claims.out_claims_reserve_report"
+    ],
+    "model.schaden_claims.int_claims_payments": [
+      "model.schaden_claims.int_claims_loss_ratio",
+      "model.schaden_claims.out_claims_reserve_report"
+    ],
+    "model.schaden_claims.src_claims_mfp_portfolio": [
+      "model.schaden_claims.int_claims_loss_ratio"
+    ],
+    "model.schaden_claims.int_claims_loss_ratio": [
+      "model.schaden_claims.out_claims_kpi_daily",
+      "model.schaden_claims.out_pnc_combined_ratio"
+    ],
+    "model.schaden_claims.src_claims_mfp_premium": [
+      "model.schaden_claims.out_pnc_combined_ratio"
+    ],
+    "model.schaden_claims.out_claims_kpi_daily": [],
+    "model.schaden_claims.out_claims_reserve_report": [],
+    "model.schaden_claims.out_pnc_combined_ratio": []
+  },
+  "disabled": {}
+}

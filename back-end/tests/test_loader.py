@@ -2,29 +2,35 @@
 
 from __future__ import annotations
 
-from app.config import resolve_stage
-from app.loader import LineageGraph
+import json
+from pathlib import Path
+from typing import Any
 
-CONTRACTS = "model.pnc_analytics.int_mfp_contracts"
-SRC_CONTRACTS = "model.pnc_analytics.src_mfp_contracts"
-RAW_CONTRACTS = "source.pnc_analytics.raw_mfp.contracts"
-PREMIUM_CALC = "model.pnc_analytics.int_mfp_premium_calc"
-CLAIMS_CASES = "model.pnc_analytics.int_claims_cases"
+import pytest
+
+from app.config import ArtifactPair, PipelinesConfigError, load_pipelines_config, resolve_stage
+from app.loader import LineageGraph, load_graph
+
+CONTRACTS = "model.bestand_mfp.int_mfp_contracts"
+SRC_CONTRACTS = "model.bestand_mfp.src_mfp_contracts"
+RAW_CONTRACTS = "source.bestand_mfp.raw_mfp.contracts"
+PREMIUM_CALC = "model.bestand_mfp.int_mfp_premium_calc"
+CLAIMS_CASES = "model.schaden_claims.int_claims_cases"
 
 
 def test_graph_loads_models_and_sources(graph: LineageGraph) -> None:
-    assert len(graph.nodes) == 29  # 23 models + 6 sources
+    assert len(graph.nodes) == 32  # 23 models + 6 raw sources + 3 imported outputs
     assert sum(1 for n in graph.nodes.values() if n.resource_type == "model") == 23
-    assert sum(1 for n in graph.nodes.values() if n.resource_type == "source") == 6
+    assert sum(1 for n in graph.nodes.values() if n.resource_type == "source") == 9
     assert graph.catalog_loaded is True
     assert graph.adapter_type == "bigquery"
-    assert graph.project_names == ["pnc_analytics"]
+    assert graph.project_names == ["bestand_mfp", "schaden_claims"]
 
 
 def test_stage_derivation(graph: LineageGraph) -> None:
     assert graph.nodes[SRC_CONTRACTS].stage == "src"
     assert graph.nodes[CONTRACTS].stage == "int"
-    assert graph.nodes["model.pnc_analytics.out_mfp_portfolio_daily"].stage == "out"
+    assert graph.nodes["model.bestand_mfp.out_mfp_portfolio_daily"].stage == "out"
     assert graph.nodes[RAW_CONTRACTS].stage == "src"
     assert graph.stages == ["src", "int", "out"]
 
@@ -35,6 +41,15 @@ def test_dbt_groups(graph: LineageGraph) -> None:
     # sources have no dbt group: inherited from their consumers (raw contracts -> src_mfp_contracts)
     assert graph.nodes[RAW_CONTRACTS].group == "contract"
     assert graph.groups == ["claims", "contract", "finance", "partner", "premium"]
+
+
+def test_layer_folders_define_the_stage() -> None:
+    for folder, stage in (("01_source", "src"), ("02_intermediate", "int"), ("03_output", "out")):
+        assert resolve_stage(name="anything", resource_type="model",
+                             original_file_path=f"models/{folder}/sub/anything.sql") == stage
+    # the folder wins over a misleading name prefix
+    assert resolve_stage(name="src_helper", resource_type="model",
+                         original_file_path="models/02_intermediate/src_helper.sql") == "int"
 
 
 def test_stage_fallbacks() -> None:
@@ -54,7 +69,7 @@ def test_stage_fallbacks() -> None:
 def test_materialization_and_pipeline(graph: LineageGraph) -> None:
     assert graph.nodes[CONTRACTS].materialization == "table"
     assert graph.nodes[SRC_CONTRACTS].materialization == "view"
-    assert graph.nodes["model.pnc_analytics.int_mfp_coverages"].materialization == "incremental"
+    assert graph.nodes["model.bestand_mfp.int_mfp_coverages"].materialization == "incremental"
     assert graph.nodes[PREMIUM_CALC].materialization == "ephemeral"
     assert graph.nodes[RAW_CONTRACTS].materialization == "source"
     assert graph.nodes[CONTRACTS].pipeline == "bestand_mfp"
@@ -64,14 +79,14 @@ def test_materialization_and_pipeline(graph: LineageGraph) -> None:
 
 def test_dependencies_and_inverted_dependents(graph: LineageGraph) -> None:
     node = graph.nodes[CONTRACTS]
-    assert node.depends_on == [SRC_CONTRACTS, "model.pnc_analytics.src_mfp_partners"]
+    assert node.depends_on == [SRC_CONTRACTS, "model.bestand_mfp.src_mfp_partners"]
     assert CONTRACTS in graph.nodes[SRC_CONTRACTS].dependents
     # dependents are the inverted depends_on relation
     assert set(node.dependents) == {
-        "model.pnc_analytics.int_mfp_contract_coverage",
-        "model.pnc_analytics.out_mfp_customer_360",
-        "model.pnc_analytics.out_mfp_premium_report",
-        "model.pnc_analytics.out_mfp_contracts",
+        "model.bestand_mfp.int_mfp_contract_coverage",
+        "model.bestand_mfp.out_mfp_customer_360",
+        "model.bestand_mfp.out_mfp_premium_report",
+        "model.bestand_mfp.out_mfp_contracts",
     }
     # sources have no parents but do have children
     assert graph.nodes[RAW_CONTRACTS].depends_on == []
@@ -92,10 +107,88 @@ def test_cross_pipeline_edges_exist(graph: LineageGraph) -> None:
         for s, t in graph.edges
         if graph.nodes[s].pipeline != graph.nodes[t].pipeline
     ]
-    assert ("model.pnc_analytics.out_mfp_contracts", "model.pnc_analytics.src_claims_mfp_contracts") in cross
+    # separate manifests: the import is a source of schaden_claims, stitched by table name
+    imported = "source.schaden_claims.bestand_mfp.out_mfp_contracts"
+    assert ("model.bestand_mfp.out_mfp_contracts", imported) in cross
+    assert graph.nodes[imported].dependents == ["model.schaden_claims.src_claims_mfp_contracts"]
     assert len(cross) == 3
-    # convention: only outputs cross a pipeline boundary, and always into a src model
+    # convention: only outputs cross a pipeline boundary, and always into the src layer
     assert all(graph.nodes[s].stage == "out" and graph.nodes[t].stage == "src" for s, t in cross)
+
+
+# ---------------------------------------------------------------- multi-project stitching
+
+
+def _project(tmp: Path, project: str, *, models: list[dict[str, Any]],
+             sources: list[dict[str, Any]] = ()) -> ArtifactPair:
+    nodes = {
+        f"model.{project}.{m['name']}": {
+            "resource_type": "model", "name": m["name"], "alias": m["name"],
+            "database": m.get("database", f"{project}-prd"), "schema": "s",
+            "original_file_path": f"models/{m['folder']}/{m['name']}.sql",
+            "config": {"materialized": "table"}, "depends_on": {"nodes": m.get("deps", [])},
+        }
+        for m in models
+    }
+    srcs = {
+        f"source.{project}.{s['source_name']}.{s['table']}": {
+            "resource_type": "source", "name": s["table"], "identifier": s["table"],
+            "source_name": s["source_name"], "database": s["database"], "schema": s["schema"],
+        }
+        for s in sources
+    }
+    folder = tmp / project
+    folder.mkdir()
+    manifest = {"metadata": {"project_name": project}, "nodes": nodes, "sources": srcs}
+    (folder / "manifest.json").write_text(json.dumps(manifest))
+    return ArtifactPair(manifest=folder / "manifest.json")
+
+
+def test_pipelines_are_stitched_by_table_name_only(tmp_path: Path) -> None:
+    upstream = _project(tmp_path, "up", models=[
+        {"name": "out_orders", "folder": "03_output"},
+        {"name": "int_secret", "folder": "02_intermediate"},
+    ])
+    downstream = _project(
+        tmp_path, "down",
+        # another GCP project and dataset than where `up` deploys: only the name counts
+        sources=[{"source_name": "up", "table": "OUT_ORDERS", "database": "x-exp", "schema": "y"},
+                 {"source_name": "raw", "table": "unrelated", "database": "raw", "schema": "r"}],
+        models=[{"name": "src_orders", "folder": "01_source", "deps": ["source.down.up.OUT_ORDERS"]}],
+    )
+    graph = load_graph([upstream, downstream])
+
+    assert graph.pipelines == ["down", "up"]
+    assert ("model.up.out_orders", "source.down.up.OUT_ORDERS") in graph.edges
+    assert graph.nodes["source.down.raw.unrelated"].depends_on == []
+
+
+def test_ambiguous_table_name_prefers_outputs_else_stays_unlinked(tmp_path: Path) -> None:
+    a = _project(tmp_path, "a", models=[{"name": "orders", "folder": "03_output"}])
+    b = _project(tmp_path, "b", models=[{"name": "orders", "folder": "02_intermediate"}])
+    c = _project(tmp_path, "c", models=[{"name": "orders", "folder": "03_output"}])
+    reader = _project(tmp_path, "reader", models=[], sources=[
+        {"source_name": "x", "table": "orders", "database": "d", "schema": "s"}])
+
+    assert load_graph([a, b, reader]).nodes["source.reader.x.orders"].depends_on == ["model.a.orders"]
+    assert load_graph([a, c, reader]).nodes["source.reader.x.orders"].depends_on == []
+
+
+def test_pipelines_yaml(tmp_path: Path) -> None:
+    absolute = (tmp_path / "elsewhere" / "manifest.json").resolve()
+    (tmp_path / "pipelines.yaml").write_text(
+        "pipelines:\n"
+        "  - dir: one\n"
+        f"  - manifest: '{absolute.as_posix()}'\n"
+    )
+    first, second = load_pipelines_config(tmp_path / "pipelines.yaml")
+    assert first.manifest == (tmp_path / "one" / "manifest.json").resolve()
+    assert first.catalog == (tmp_path / "one" / "catalog.json").resolve()
+    assert second.manifest == absolute and second.catalog is None
+
+    (tmp_path / "bad.yaml").write_text("pipelines:\n  - catalog: c.json\n")
+    with pytest.raises(PipelinesConfigError):
+        load_pipelines_config(tmp_path / "bad.yaml")
 
 
 def test_code_is_loaded(graph: LineageGraph) -> None:
@@ -103,7 +196,7 @@ def test_code_is_loaded(graph: LineageGraph) -> None:
     assert node.raw_code is not None and "{{ ref('src_mfp_contracts') }}" in node.raw_code
     assert node.compiled_code is not None
     assert "{{" not in node.compiled_code  # compiled code has no jinja left
-    assert "`pnc-analytics-prd`.mfp_staging.src_mfp_contracts" in node.compiled_code
+    assert "`pnc-analytics-prd`.mfp_source.src_mfp_contracts" in node.compiled_code
     assert graph.nodes[RAW_CONTRACTS].compiled_code is None
 
 

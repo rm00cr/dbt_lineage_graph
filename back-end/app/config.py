@@ -1,13 +1,28 @@
 """Runtime configuration of the Lineage Explorer backend.
 
-Everything is driven by environment variables so the same image can serve fixtures
-during the hackathon and real dbt artifacts afterwards.
+Pipelines
+---------
+A *pipeline* is one dbt project, delivered as its own ``manifest.json`` + ``catalog.json``
+(``dbt docs generate``). Every pipeline uses the same layer layout::
 
-    DBT_MANIFEST_PATH   path to manifest.json      (default: ../fixtures/manifest.json)
-    DBT_CATALOG_PATH    path to catalog.json       (default: ../fixtures/catalog.json)
-    DBT_ARTIFACTS       several projects at once, ';'-separated "manifest[,catalog]" pairs
-                        e.g. "/a/manifest.json,/a/catalog.json;/b/manifest.json"
-                        (this is the hook for feature 2.4 "lineage across pipelines")
+    models/01_source/        -> stage src   imports raw sources and other pipelines' outputs
+    models/02_intermediate/  -> stage int   internal to the pipeline
+    models/03_output/        -> stage out   the pipeline's public interface
+
+Which pipelines exist and where their artifacts live is declared in a YAML file
+(see ``fixtures/pipelines.yaml``)::
+
+    pipelines:
+      - dir: bestand_mfp                  # expects manifest.json (+ catalog.json) inside
+      - manifest: /ci/claims/target/manifest.json
+        catalog: /ci/claims/target/catalog.json    # optional
+
+Relative paths resolve against the YAML file's folder. The pipeline *name* is the
+manifest's ``metadata.project_name``, not something configured here.
+
+Environment variables
+---------------------
+    PIPELINES_CONFIG    path to the pipelines YAML      (default: ../fixtures/pipelines.yaml)
     BQ_CONSOLE_PROJECT  override the GCP project used for BigQuery deeplinks (3.1)
     CORS_ORIGINS        ','-separated allowed origins (default: Vite dev server)
 """
@@ -15,14 +30,17 @@ during the hackathon and real dbt artifacts afterwards.
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
+
+import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-DEFAULT_MANIFEST = REPO_ROOT / "fixtures" / "manifest.json"
-DEFAULT_CATALOG = REPO_ROOT / "fixtures" / "catalog.json"
+DEFAULT_PIPELINES_CONFIG = REPO_ROOT / "fixtures" / "pipelines.yaml"
 
-# --- stage convention (open point #1 of the kick-off, see contract.md 1.1) -------------
+# --- stage convention (see contract.md 1.1) --------------------------------------------
 STAGE_PREFIXES: dict[str, str] = {
     "src_": "src",
     "stg_": "src",
@@ -31,23 +49,28 @@ STAGE_PREFIXES: dict[str, str] = {
     "mart_": "out",
 }
 
+# Folder names below `models/`. A numeric ordering prefix (`01_`, `2-`) is ignored, so the
+# standard layout `01_source / 02_intermediate / 03_output` matches `source / intermediate /
+# output` here.
 STAGE_FOLDERS: dict[str, str] = {
-    "staging": "src",
     "source": "src",
     "sources": "src",
+    "staging": "src",
     "intermediate": "int",
-    "marts": "out",
-    "mart": "out",
     "output": "out",
     "out": "out",
+    "marts": "out",
+    "mart": "out",
 }
 
 STAGE_ORDER: list[str] = ["src", "int", "out", "other"]
 
+_ORDERING_PREFIX = re.compile(r"^\d+[_-]")
+
 
 @dataclass(frozen=True)
 class ArtifactPair:
-    """One dbt project: a manifest and (optionally) its catalog."""
+    """One pipeline (= one dbt project): its manifest and (optionally) its catalog."""
 
     manifest: Path
     catalog: Path | None = None
@@ -55,6 +78,40 @@ class ArtifactPair:
     @property
     def exists(self) -> bool:
         return self.manifest.is_file()
+
+
+class PipelinesConfigError(ValueError):
+    """The pipelines YAML is missing or malformed."""
+
+
+def load_pipelines_config(path: Path) -> list[ArtifactPair]:
+    """Read the pipelines YAML (format in the module docstring) into artifact pairs."""
+    if not path.is_file():
+        raise PipelinesConfigError(f"pipelines config not found: {path}")
+    data: Any = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    entries = data.get("pipelines") if isinstance(data, dict) else None
+    if not isinstance(entries, list):
+        raise PipelinesConfigError(f"{path}: expected a top-level 'pipelines:' list")
+
+    base = path.parent
+    pairs: list[ArtifactPair] = []
+    for position, entry in enumerate(entries, start=1):
+        if not isinstance(entry, dict):
+            raise PipelinesConfigError(f"{path}: pipeline #{position} must be a mapping")
+        folder = _resolve(base, entry.get("dir"))
+        manifest = _resolve(base, entry.get("manifest")) or (folder / "manifest.json" if folder else None)
+        if manifest is None:
+            raise PipelinesConfigError(f"{path}: pipeline #{position} needs 'dir' or 'manifest'")
+        catalog = _resolve(base, entry.get("catalog")) or (folder / "catalog.json" if folder else None)
+        pairs.append(ArtifactPair(manifest=manifest, catalog=catalog))
+    return pairs
+
+
+def _resolve(base: Path, value: Any) -> Path | None:
+    if not value:
+        return None
+    path = Path(str(value)).expanduser()
+    return path if path.is_absolute() else (base / path).resolve()
 
 
 @dataclass(frozen=True)
@@ -65,29 +122,13 @@ class Settings:
 
     @staticmethod
     def from_env() -> Settings:
-        raw_multi = os.getenv("DBT_ARTIFACTS", "").strip()
-        pairs: list[ArtifactPair] = []
-
-        if raw_multi:
-            for chunk in (c.strip() for c in raw_multi.split(";")):
-                if not chunk:
-                    continue
-                parts = [p.strip() for p in chunk.split(",")]
-                manifest = Path(parts[0]).expanduser()
-                catalog = Path(parts[1]).expanduser() if len(parts) > 1 and parts[1] else None
-                pairs.append(ArtifactPair(manifest=manifest, catalog=catalog))
-        else:
-            manifest = Path(os.getenv("DBT_MANIFEST_PATH", str(DEFAULT_MANIFEST))).expanduser()
-            catalog_env = os.getenv("DBT_CATALOG_PATH", str(DEFAULT_CATALOG))
-            catalog = Path(catalog_env).expanduser() if catalog_env else None
-            pairs.append(ArtifactPair(manifest=manifest, catalog=catalog))
-
+        config_path = Path(os.getenv("PIPELINES_CONFIG", str(DEFAULT_PIPELINES_CONFIG))).expanduser()
         origins_env = os.getenv(
             "CORS_ORIGINS",
             "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173",
         )
         return Settings(
-            artifacts=pairs,
+            artifacts=load_pipelines_config(config_path),
             bq_console_project=os.getenv("BQ_CONSOLE_PROJECT") or None,
             cors_origins=[o.strip() for o in origins_env.split(",") if o.strip()],
         )
@@ -100,18 +141,20 @@ def resolve_stage(
     original_file_path: str | None,
     tags: list[str] | None = None,
 ) -> str:
-    """Derive the pipeline stage of a dbt node (see contract.md 1.1)."""
+    """Derive the layer (src / int / out) of a dbt node (see contract.md 1.1)."""
     if resource_type == "source":
         return "src"
+
+    # the layer folder is the convention; name prefixes only cover models outside it
+    for segment in (original_file_path or "").lower().replace("\\", "/").split("/"):
+        folder = _ORDERING_PREFIX.sub("", segment)
+        if folder in STAGE_FOLDERS:
+            return STAGE_FOLDERS[folder]
 
     lowered = name.lower()
     for prefix, stage in STAGE_PREFIXES.items():
         if lowered.startswith(prefix):
             return stage
-
-    for segment in (original_file_path or "").lower().replace("\\", "/").split("/"):
-        if segment in STAGE_FOLDERS:
-            return STAGE_FOLDERS[segment]
 
     for tag in tags or []:
         if tag.lower().startswith("stage:"):

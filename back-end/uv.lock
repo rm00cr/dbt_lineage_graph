@@ -67,6 +67,7 @@ source = { editable = "." }
 dependencies = [
     { name = "fastapi" },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "rapidfuzz" },
     { name = "sqlglot" },
     { name = "uvicorn", extra = ["standard"] },
@@ -83,6 +84,7 @@ dev = [
 requires-dist = [
     { name = "fastapi", specifier = ">=0.115" },
     { name = "pydantic", specifier = ">=2.9" },
+    { name = "pyyaml", specifier = ">=6.0" },
     { name = "rapidfuzz", specifier = ">=3.10" },
     { name = "sqlglot", specifier = ">=30.29,<31" },
     { name = "uvicorn", extras = ["standard"], specifier = ">=0.32" },

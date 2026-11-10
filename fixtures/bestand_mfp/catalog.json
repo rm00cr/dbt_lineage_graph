@@ -1,0 +1,1185 @@
+{
+  "metadata": {
+    "dbt_schema_version": "https://schemas.getdbt.com/dbt/catalog/v1.json",
+    "dbt_version": "1.8.7",
+    "generated_at": "2026-10-27T21:14:09.482173Z",
+    "invocation_id": "9f1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
+    "project_name": "bestand_mfp",
+    "project_id": "bestandmfp0000000000000000000000",
+    "adapter_type": "bigquery",
+    "env": {}
+  },
+  "nodes": {
+    "model.bestand_mfp.src_mfp_contracts": {
+      "unique_id": "model.bestand_mfp.src_mfp_contracts",
+      "metadata": {
+        "type": "VIEW",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_source",
+        "name": "src_mfp_contracts",
+        "comment": "Cleaned contract versions: renamed columns, typed, technical records removed.",
+        "owner": null
+      },
+      "columns": {
+        "contract_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "contract_id",
+          "comment": "Technical contract key."
+        },
+        "partner_id": {
+          "type": "STRING",
+          "index": 2,
+          "name": "partner_id",
+          "comment": "Policy holder reference."
+        },
+        "product_code": {
+          "type": "STRING",
+          "index": 3,
+          "name": "product_code",
+          "comment": "PnC product code."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 4,
+          "name": "valid_from",
+          "comment": "Start of the contract version."
+        },
+        "valid_to": {
+          "type": "DATE",
+          "index": 5,
+          "name": "valid_to",
+          "comment": "End of the contract version, null if open."
+        },
+        "contract_status": {
+          "type": "STRING",
+          "index": 6,
+          "name": "contract_status",
+          "comment": "Harmonised status: active | cancelled | suspended."
+        },
+        "annual_premium_chf": {
+          "type": "NUMERIC",
+          "index": 7,
+          "name": "annual_premium_chf",
+          "comment": "Gross annual premium in CHF."
+        },
+        "_loaded_at": {
+          "type": "TIMESTAMP",
+          "index": 8,
+          "name": "_loaded_at",
+          "comment": "Technical load timestamp."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 4812004.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 0.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.bestand_mfp.src_mfp_partners": {
+      "unique_id": "model.bestand_mfp.src_mfp_partners",
+      "metadata": {
+        "type": "VIEW",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_source",
+        "name": "src_mfp_partners",
+        "comment": "Cleaned partner master data incl. derived age band.",
+        "owner": null
+      },
+      "columns": {
+        "partner_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "partner_id",
+          "comment": "Technical partner key."
+        },
+        "partner_type": {
+          "type": "STRING",
+          "index": 2,
+          "name": "partner_type",
+          "comment": "person | company."
+        },
+        "birth_date": {
+          "type": "DATE",
+          "index": 3,
+          "name": "birth_date",
+          "comment": "Birth date for natural persons."
+        },
+        "age_years": {
+          "type": "INT64",
+          "index": 4,
+          "name": "age_years",
+          "comment": "Age in completed years."
+        },
+        "postal_code": {
+          "type": "STRING",
+          "index": 5,
+          "name": "postal_code",
+          "comment": "Postal code of the main address."
+        },
+        "canton": {
+          "type": "STRING",
+          "index": 6,
+          "name": "canton",
+          "comment": "Swiss canton code."
+        },
+        "language_code": {
+          "type": "STRING",
+          "index": 7,
+          "name": "language_code",
+          "comment": "Correspondence language, lower case."
+        },
+        "_loaded_at": {
+          "type": "TIMESTAMP",
+          "index": 8,
+          "name": "_loaded_at",
+          "comment": "Technical load timestamp."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 2104551.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 0.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.bestand_mfp.src_mfp_coverages": {
+      "unique_id": "model.bestand_mfp.src_mfp_coverages",
+      "metadata": {
+        "type": "VIEW",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_source",
+        "name": "src_mfp_coverages",
+        "comment": "Cleaned coverage lines per contract.",
+        "owner": null
+      },
+      "columns": {
+        "coverage_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "coverage_id",
+          "comment": "Technical coverage key."
+        },
+        "contract_id": {
+          "type": "STRING",
+          "index": 2,
+          "name": "contract_id",
+          "comment": "Parent contract."
+        },
+        "risk_code": {
+          "type": "STRING",
+          "index": 3,
+          "name": "risk_code",
+          "comment": "Covered risk."
+        },
+        "sum_insured_chf": {
+          "type": "NUMERIC",
+          "index": 4,
+          "name": "sum_insured_chf",
+          "comment": "Sum insured in CHF."
+        },
+        "deductible_chf": {
+          "type": "NUMERIC",
+          "index": 5,
+          "name": "deductible_chf",
+          "comment": "Deductible in CHF."
+        },
+        "tariff_code": {
+          "type": "STRING",
+          "index": 6,
+          "name": "tariff_code",
+          "comment": "Applied tariff."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 7,
+          "name": "valid_from",
+          "comment": "Start of the coverage version."
+        },
+        "_loaded_at": {
+          "type": "TIMESTAMP",
+          "index": 8,
+          "name": "_loaded_at",
+          "comment": "Technical load timestamp."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 11721004.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 0.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.bestand_mfp.src_mfp_tariffs": {
+      "unique_id": "model.bestand_mfp.src_mfp_tariffs",
+      "metadata": {
+        "type": "VIEW",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_source",
+        "name": "src_mfp_tariffs",
+        "comment": "Tariff reference data, deduplicated on (tariff_code, risk_code, valid_from).",
+        "owner": null
+      },
+      "columns": {
+        "tariff_code": {
+          "type": "STRING",
+          "index": 1,
+          "name": "tariff_code",
+          "comment": "Tariff key."
+        },
+        "risk_code": {
+          "type": "STRING",
+          "index": 2,
+          "name": "risk_code",
+          "comment": "Risk the tariff applies to."
+        },
+        "region_factor": {
+          "type": "NUMERIC",
+          "index": 3,
+          "name": "region_factor",
+          "comment": "Regional loading factor."
+        },
+        "base_rate": {
+          "type": "NUMERIC",
+          "index": 4,
+          "name": "base_rate",
+          "comment": "Base rate per 1000 CHF sum insured."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 5,
+          "name": "valid_from",
+          "comment": "Start of validity."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 18442.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 0.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.bestand_mfp.int_mfp_contracts": {
+      "unique_id": "model.bestand_mfp.int_mfp_contracts",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_intermediate",
+        "name": "int_mfp_contracts",
+        "comment": "Contract versions enriched with partner attributes. Core entity of the portfolio pipeline.",
+        "owner": null
+      },
+      "columns": {
+        "contract_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "contract_id",
+          "comment": "Technical contract key."
+        },
+        "partner_id": {
+          "type": "STRING",
+          "index": 2,
+          "name": "partner_id",
+          "comment": "Policy holder reference."
+        },
+        "product_code": {
+          "type": "STRING",
+          "index": 3,
+          "name": "product_code",
+          "comment": "PnC product code."
+        },
+        "contract_status": {
+          "type": "STRING",
+          "index": 4,
+          "name": "contract_status",
+          "comment": "active | cancelled | suspended."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 5,
+          "name": "valid_from",
+          "comment": "Start of the contract version."
+        },
+        "valid_to": {
+          "type": "DATE",
+          "index": 6,
+          "name": "valid_to",
+          "comment": "End of the contract version."
+        },
+        "annual_premium_chf": {
+          "type": "NUMERIC",
+          "index": 7,
+          "name": "annual_premium_chf",
+          "comment": "Gross annual premium in CHF."
+        },
+        "partner_type": {
+          "type": "STRING",
+          "index": 8,
+          "name": "partner_type",
+          "comment": "person | company."
+        },
+        "age_years": {
+          "type": "INT64",
+          "index": 9,
+          "name": "age_years",
+          "comment": "Age of the policy holder."
+        },
+        "canton": {
+          "type": "STRING",
+          "index": 10,
+          "name": "canton",
+          "comment": "Swiss canton code."
+        },
+        "language_code": {
+          "type": "STRING",
+          "index": 11,
+          "name": "language_code",
+          "comment": "Correspondence language."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 4812004.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 1073741824.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.bestand_mfp.int_mfp_coverages": {
+      "unique_id": "model.bestand_mfp.int_mfp_coverages",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_intermediate",
+        "name": "int_mfp_coverages",
+        "comment": "Coverage lines joined to their tariff, incrementally loaded on valid_from.",
+        "owner": null
+      },
+      "columns": {
+        "coverage_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "coverage_id",
+          "comment": "Technical coverage key."
+        },
+        "contract_id": {
+          "type": "STRING",
+          "index": 2,
+          "name": "contract_id",
+          "comment": "Parent contract."
+        },
+        "risk_code": {
+          "type": "STRING",
+          "index": 3,
+          "name": "risk_code",
+          "comment": "Covered risk."
+        },
+        "sum_insured_chf": {
+          "type": "NUMERIC",
+          "index": 4,
+          "name": "sum_insured_chf",
+          "comment": "Sum insured in CHF."
+        },
+        "deductible_chf": {
+          "type": "NUMERIC",
+          "index": 5,
+          "name": "deductible_chf",
+          "comment": "Deductible in CHF."
+        },
+        "tariff_code": {
+          "type": "STRING",
+          "index": 6,
+          "name": "tariff_code",
+          "comment": "Applied tariff."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 7,
+          "name": "valid_from",
+          "comment": "Start of the coverage version."
+        },
+        "region_factor": {
+          "type": "NUMERIC",
+          "index": 8,
+          "name": "region_factor",
+          "comment": "Regional loading factor."
+        },
+        "base_rate": {
+          "type": "NUMERIC",
+          "index": 9,
+          "name": "base_rate",
+          "comment": "Base rate per 1000 CHF sum insured."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 11721004.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 2684354560.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.bestand_mfp.int_mfp_contract_coverage": {
+      "unique_id": "model.bestand_mfp.int_mfp_contract_coverage",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_intermediate",
+        "name": "int_mfp_contract_coverage",
+        "comment": "Contract x coverage grain: the central fact table of the portfolio pipeline.",
+        "owner": null
+      },
+      "columns": {
+        "contract_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "contract_id",
+          "comment": "Technical contract key."
+        },
+        "coverage_id": {
+          "type": "STRING",
+          "index": 2,
+          "name": "coverage_id",
+          "comment": "Technical coverage key."
+        },
+        "partner_id": {
+          "type": "STRING",
+          "index": 3,
+          "name": "partner_id",
+          "comment": "Policy holder reference."
+        },
+        "product_code": {
+          "type": "STRING",
+          "index": 4,
+          "name": "product_code",
+          "comment": "PnC product code."
+        },
+        "risk_code": {
+          "type": "STRING",
+          "index": 5,
+          "name": "risk_code",
+          "comment": "Covered risk."
+        },
+        "contract_status": {
+          "type": "STRING",
+          "index": 6,
+          "name": "contract_status",
+          "comment": "active | cancelled | suspended."
+        },
+        "canton": {
+          "type": "STRING",
+          "index": 7,
+          "name": "canton",
+          "comment": "Swiss canton code."
+        },
+        "sum_insured_chf": {
+          "type": "NUMERIC",
+          "index": 8,
+          "name": "sum_insured_chf",
+          "comment": "Sum insured in CHF."
+        },
+        "deductible_chf": {
+          "type": "NUMERIC",
+          "index": 9,
+          "name": "deductible_chf",
+          "comment": "Deductible in CHF."
+        },
+        "region_factor": {
+          "type": "NUMERIC",
+          "index": 10,
+          "name": "region_factor",
+          "comment": "Regional loading factor."
+        },
+        "base_rate": {
+          "type": "NUMERIC",
+          "index": 11,
+          "name": "base_rate",
+          "comment": "Base rate per 1000 CHF sum insured."
+        },
+        "annual_premium_chf": {
+          "type": "NUMERIC",
+          "index": 12,
+          "name": "annual_premium_chf",
+          "comment": "Gross annual premium in CHF."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 13,
+          "name": "valid_from",
+          "comment": "Start of the combined version."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 11690233.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 3221225472.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.bestand_mfp.out_mfp_portfolio_daily": {
+      "unique_id": "model.bestand_mfp.out_mfp_portfolio_daily",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_output",
+        "name": "out_mfp_portfolio_daily",
+        "comment": "Daily portfolio snapshot per product, canton and risk. Feeds the portfolio dashboard.",
+        "owner": null
+      },
+      "columns": {
+        "snapshot_date": {
+          "type": "DATE",
+          "index": 1,
+          "name": "snapshot_date",
+          "comment": "Snapshot day."
+        },
+        "product_code": {
+          "type": "STRING",
+          "index": 2,
+          "name": "product_code",
+          "comment": "PnC product code."
+        },
+        "canton": {
+          "type": "STRING",
+          "index": 3,
+          "name": "canton",
+          "comment": "Swiss canton code."
+        },
+        "risk_code": {
+          "type": "STRING",
+          "index": 4,
+          "name": "risk_code",
+          "comment": "Covered risk."
+        },
+        "contract_count": {
+          "type": "INT64",
+          "index": 5,
+          "name": "contract_count",
+          "comment": "Distinct active contracts."
+        },
+        "coverage_count": {
+          "type": "INT64",
+          "index": 6,
+          "name": "coverage_count",
+          "comment": "Number of coverage lines."
+        },
+        "sum_insured_chf": {
+          "type": "NUMERIC",
+          "index": 7,
+          "name": "sum_insured_chf",
+          "comment": "Total sum insured in CHF."
+        },
+        "technical_premium_chf": {
+          "type": "NUMERIC",
+          "index": 8,
+          "name": "technical_premium_chf",
+          "comment": "Total technical premium in CHF."
+        },
+        "written_premium_chf": {
+          "type": "NUMERIC",
+          "index": 9,
+          "name": "written_premium_chf",
+          "comment": "Total written premium in CHF."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 284112.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 62914560.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.bestand_mfp.out_mfp_premium_report": {
+      "unique_id": "model.bestand_mfp.out_mfp_premium_report",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_output",
+        "name": "out_mfp_premium_report",
+        "comment": "Monthly premium reconciliation: technical vs. written premium per product.",
+        "owner": null
+      },
+      "columns": {
+        "reporting_month": {
+          "type": "DATE",
+          "index": 1,
+          "name": "reporting_month",
+          "comment": "First day of the reporting month."
+        },
+        "product_code": {
+          "type": "STRING",
+          "index": 2,
+          "name": "product_code",
+          "comment": "PnC product code."
+        },
+        "contract_count": {
+          "type": "INT64",
+          "index": 3,
+          "name": "contract_count",
+          "comment": "Distinct contracts."
+        },
+        "technical_premium_chf": {
+          "type": "NUMERIC",
+          "index": 4,
+          "name": "technical_premium_chf",
+          "comment": "Technical premium in CHF."
+        },
+        "annual_premium_chf": {
+          "type": "NUMERIC",
+          "index": 5,
+          "name": "annual_premium_chf",
+          "comment": "Written premium in CHF."
+        },
+        "premium_adequacy_ratio": {
+          "type": "FLOAT64",
+          "index": 6,
+          "name": "premium_adequacy_ratio",
+          "comment": "Technical / written premium."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 1284.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 1048576.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.bestand_mfp.out_mfp_customer_360": {
+      "unique_id": "model.bestand_mfp.out_mfp_customer_360",
+      "metadata": {
+        "type": "VIEW",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_output",
+        "name": "out_mfp_customer_360",
+        "comment": "One row per partner with portfolio aggregates for the CRM front-end.",
+        "owner": null
+      },
+      "columns": {
+        "partner_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "partner_id",
+          "comment": "Technical partner key."
+        },
+        "partner_type": {
+          "type": "STRING",
+          "index": 2,
+          "name": "partner_type",
+          "comment": "person | company."
+        },
+        "age_years": {
+          "type": "INT64",
+          "index": 3,
+          "name": "age_years",
+          "comment": "Age of the partner."
+        },
+        "canton": {
+          "type": "STRING",
+          "index": 4,
+          "name": "canton",
+          "comment": "Swiss canton code."
+        },
+        "language_code": {
+          "type": "STRING",
+          "index": 5,
+          "name": "language_code",
+          "comment": "Correspondence language."
+        },
+        "contract_count": {
+          "type": "INT64",
+          "index": 6,
+          "name": "contract_count",
+          "comment": "Number of contracts."
+        },
+        "total_premium_chf": {
+          "type": "NUMERIC",
+          "index": 7,
+          "name": "total_premium_chf",
+          "comment": "Total annual premium in CHF."
+        },
+        "customer_since": {
+          "type": "DATE",
+          "index": 8,
+          "name": "customer_since",
+          "comment": "Earliest contract start."
+        },
+        "product_codes": {
+          "type": "ARRAY<STRING>",
+          "index": 9,
+          "name": "product_codes",
+          "comment": "Distinct product codes held."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 2104551.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 0.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "model.bestand_mfp.out_mfp_contracts": {
+      "unique_id": "model.bestand_mfp.out_mfp_contracts",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-analytics-prd",
+        "schema": "mfp_output",
+        "name": "out_mfp_contracts",
+        "comment": "Public contract dimension: the interface other pipelines read contract attributes from.",
+        "owner": null
+      },
+      "columns": {
+        "contract_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "contract_id",
+          "comment": "Technical contract key."
+        },
+        "partner_id": {
+          "type": "STRING",
+          "index": 2,
+          "name": "partner_id",
+          "comment": "Policy holder reference."
+        },
+        "product_code": {
+          "type": "STRING",
+          "index": 3,
+          "name": "product_code",
+          "comment": "PnC product code."
+        },
+        "canton": {
+          "type": "STRING",
+          "index": 4,
+          "name": "canton",
+          "comment": "Swiss canton code."
+        },
+        "contract_status": {
+          "type": "STRING",
+          "index": 5,
+          "name": "contract_status",
+          "comment": "active | cancelled | suspended."
+        },
+        "annual_premium_chf": {
+          "type": "NUMERIC",
+          "index": 6,
+          "name": "annual_premium_chf",
+          "comment": "Written annual premium in CHF."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 7,
+          "name": "valid_from",
+          "comment": "Start of the contract version."
+        },
+        "valid_to": {
+          "type": "DATE",
+          "index": 8,
+          "name": "valid_to",
+          "comment": "End of the contract version."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 4812004.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 734003200.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    }
+  },
+  "sources": {
+    "source.bestand_mfp.raw_mfp.contracts": {
+      "unique_id": "source.bestand_mfp.raw_mfp.contracts",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-raw-prd",
+        "schema": "raw_mfp",
+        "name": "contracts",
+        "comment": "Raw contract header export from the MFP policy system (daily full load).",
+        "owner": null
+      },
+      "columns": {
+        "contract_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "contract_id",
+          "comment": "Technical contract key from MFP."
+        },
+        "partner_id": {
+          "type": "STRING",
+          "index": 2,
+          "name": "partner_id",
+          "comment": "Policy holder reference."
+        },
+        "product_code": {
+          "type": "STRING",
+          "index": 3,
+          "name": "product_code",
+          "comment": "PnC product code, e.g. MOT, HOU, LIA."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 4,
+          "name": "valid_from",
+          "comment": "Start of the contract version."
+        },
+        "valid_to": {
+          "type": "DATE",
+          "index": 5,
+          "name": "valid_to",
+          "comment": "End of the contract version, 9999-12-31 if open."
+        },
+        "status_code": {
+          "type": "STRING",
+          "index": 6,
+          "name": "status_code",
+          "comment": "Raw status code of the contract version."
+        },
+        "annual_premium": {
+          "type": "NUMERIC",
+          "index": 7,
+          "name": "annual_premium",
+          "comment": "Gross annual premium in CHF."
+        },
+        "load_ts": {
+          "type": "TIMESTAMP",
+          "index": 8,
+          "name": "load_ts",
+          "comment": "Technical load timestamp."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 4812004.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 1204318208.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "source.bestand_mfp.raw_mfp.partners": {
+      "unique_id": "source.bestand_mfp.raw_mfp.partners",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-raw-prd",
+        "schema": "raw_mfp",
+        "name": "partners",
+        "comment": "Raw partner / policy holder master data.",
+        "owner": null
+      },
+      "columns": {
+        "partner_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "partner_id",
+          "comment": "Technical partner key."
+        },
+        "partner_type": {
+          "type": "STRING",
+          "index": 2,
+          "name": "partner_type",
+          "comment": "P = person, C = company."
+        },
+        "birth_date": {
+          "type": "DATE",
+          "index": 3,
+          "name": "birth_date",
+          "comment": "Birth date for natural persons."
+        },
+        "postal_code": {
+          "type": "STRING",
+          "index": 4,
+          "name": "postal_code",
+          "comment": "Postal code of the main address."
+        },
+        "canton": {
+          "type": "STRING",
+          "index": 5,
+          "name": "canton",
+          "comment": "Swiss canton code."
+        },
+        "language_code": {
+          "type": "STRING",
+          "index": 6,
+          "name": "language_code",
+          "comment": "Correspondence language."
+        },
+        "load_ts": {
+          "type": "TIMESTAMP",
+          "index": 7,
+          "name": "load_ts",
+          "comment": "Technical load timestamp."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 2104551.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 402653184.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "source.bestand_mfp.raw_mfp.coverages": {
+      "unique_id": "source.bestand_mfp.raw_mfp.coverages",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-raw-prd",
+        "schema": "raw_mfp",
+        "name": "coverages",
+        "comment": "Raw coverage lines per contract (one row per covered risk).",
+        "owner": null
+      },
+      "columns": {
+        "coverage_id": {
+          "type": "STRING",
+          "index": 1,
+          "name": "coverage_id",
+          "comment": "Technical coverage key."
+        },
+        "contract_id": {
+          "type": "STRING",
+          "index": 2,
+          "name": "contract_id",
+          "comment": "Parent contract."
+        },
+        "risk_code": {
+          "type": "STRING",
+          "index": 3,
+          "name": "risk_code",
+          "comment": "Covered risk, e.g. THEFT, FIRE, GLASS."
+        },
+        "sum_insured": {
+          "type": "NUMERIC",
+          "index": 4,
+          "name": "sum_insured",
+          "comment": "Sum insured in CHF."
+        },
+        "deductible": {
+          "type": "NUMERIC",
+          "index": 5,
+          "name": "deductible",
+          "comment": "Deductible in CHF."
+        },
+        "tariff_code": {
+          "type": "STRING",
+          "index": 6,
+          "name": "tariff_code",
+          "comment": "Applied tariff."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 7,
+          "name": "valid_from",
+          "comment": "Start of the coverage version."
+        },
+        "load_ts": {
+          "type": "TIMESTAMP",
+          "index": 8,
+          "name": "load_ts",
+          "comment": "Technical load timestamp."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 11904776.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 2952790016.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    },
+    "source.bestand_mfp.raw_mfp.tariffs": {
+      "unique_id": "source.bestand_mfp.raw_mfp.tariffs",
+      "metadata": {
+        "type": "BASE TABLE",
+        "database": "pnc-raw-prd",
+        "schema": "raw_mfp",
+        "name": "tariffs",
+        "comment": "Tariff master data incl. factors per risk and region.",
+        "owner": null
+      },
+      "columns": {
+        "tariff_code": {
+          "type": "STRING",
+          "index": 1,
+          "name": "tariff_code",
+          "comment": "Tariff key."
+        },
+        "risk_code": {
+          "type": "STRING",
+          "index": 2,
+          "name": "risk_code",
+          "comment": "Risk the tariff applies to."
+        },
+        "region_factor": {
+          "type": "NUMERIC",
+          "index": 3,
+          "name": "region_factor",
+          "comment": "Regional loading factor."
+        },
+        "base_rate": {
+          "type": "NUMERIC",
+          "index": 4,
+          "name": "base_rate",
+          "comment": "Base rate per 1000 CHF sum insured."
+        },
+        "valid_from": {
+          "type": "DATE",
+          "index": 5,
+          "name": "valid_from",
+          "comment": "Start of validity."
+        }
+      },
+      "stats": {
+        "num_rows": {
+          "id": "num_rows",
+          "label": "# Rows",
+          "value": 18442.0,
+          "include": true,
+          "description": "Approximate count of rows."
+        },
+        "num_bytes": {
+          "id": "num_bytes",
+          "label": "Approximate Size",
+          "value": 2097152.0,
+          "include": true,
+          "description": "Approximate size of table as reported by BigQuery."
+        }
+      }
+    }
+  },
+  "errors": null,
+  "_compile_results": null
+}

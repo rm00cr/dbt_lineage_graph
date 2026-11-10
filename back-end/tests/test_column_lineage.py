@@ -213,9 +213,20 @@ def test_fixtures_known_edges(graph: LineageGraph) -> None:
     edge = next(
         e
         for e in index.edges
-        if e.target_model == "model.pnc_analytics.out_mfp_portfolio_daily"
+        if e.target_model == "model.bestand_mfp.out_mfp_portfolio_daily"
         and e.target_column == "written_premium_chf"
     )
-    assert edge.source_model == "model.pnc_analytics.int_mfp_contract_coverage"
+    assert edge.source_model == "model.bestand_mfp.int_mfp_contract_coverage"
     assert edge.source_column == "annual_premium_chf"
     assert edge.kind == "aggregate"
+
+
+def test_fixtures_trace_crosses_pipelines(graph: LineageGraph) -> None:
+    """The import of another pipeline's output is a source stitched by table name; a column
+    trace must run through it into the upstream pipeline."""
+    index = build_column_lineage(graph)
+    trace = index.trace("model.schaden_claims.src_claims_mfp_contracts", "canton", direction="up")
+    assert ("source.schaden_claims.bestand_mfp.out_mfp_contracts", "canton") in trace.nodes
+    assert ("model.bestand_mfp.out_mfp_contracts", "canton") in trace.nodes
+    hop = next(e for e in trace.edges if e.target_model.startswith("source.schaden_claims"))
+    assert hop.kind == "passthrough"

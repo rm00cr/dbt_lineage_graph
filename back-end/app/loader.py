@@ -2,15 +2,17 @@
 
 Design notes
 ------------
-* The loader accepts a *list* of artifact pairs, so loading several dbt projects and
-  merging them into one graph (feature 2.4) is a config change, not a code change.
+* One artifact pair = one pipeline = one dbt project (see `config.py`). The loader merges
+  any number of them into one graph; pipelines are stitched together by table name
+  (`_stitch_pipelines`), because separate manifests do not reference each other.
 * Nothing here depends on FastAPI or Pydantic — it is plain data, easy to unit test.
 """
 
 from __future__ import annotations
 
 import json
-from collections import Counter
+import logging
+from collections import Counter, defaultdict
 from collections.abc import Iterable
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -19,6 +21,8 @@ from typing import Any
 from .config import STAGE_ORDER, ArtifactPair, resolve_stage
 
 MATERIALIZATIONS = {"table", "view", "incremental", "ephemeral", "source"}
+
+log = logging.getLogger(__name__)
 
 
 @dataclass
@@ -105,19 +109,12 @@ def _read_json(path: Path) -> dict[str, Any]:
         return json.load(fh)
 
 
-def _pipeline_of(node: dict[str, Any], fallback_project: str) -> str:
+def _pipeline_of(node: dict[str, Any], project: str) -> str:
+    """A pipeline is a dbt project: every node of a manifest belongs to its `project_name`.
+    `meta.pipeline` remains as an explicit per-node override."""
     meta = {**(node.get("meta") or {}), **((node.get("config") or {}).get("meta") or {})}
     pipeline = meta.get("pipeline")
-    if pipeline:
-        return str(pipeline)
-
-    path = (node.get("original_file_path") or node.get("path") or "").replace("\\", "/")
-    segments = [s for s in path.split("/") if s]
-    if segments and segments[0] in {"models", "seeds", "snapshots"} and len(segments) > 1:
-        return segments[1]
-    if segments and len(segments) > 1:
-        return segments[0]
-    return fallback_project
+    return str(pipeline) if pipeline else project
 
 
 def _materialization_of(node: dict[str, Any]) -> str:
@@ -209,7 +206,9 @@ def load_graph(pairs: Iterable[ArtifactPair]) -> LineageGraph:
 def _ingest(graph: LineageGraph, manifest: dict[str, Any], catalog: dict[str, Any] | None) -> None:
     metadata = manifest.get("metadata") or {}
     project = metadata.get("project_name") or "dbt"
-    if project not in graph.project_names:
+    if project in graph.project_names:
+        log.warning("project %r is configured twice; later nodes overwrite earlier ones", project)
+    else:
         graph.project_names.append(project)
     graph.adapter_type = graph.adapter_type or metadata.get("adapter_type")
     graph.dbt_version = graph.dbt_version or metadata.get("dbt_version")
@@ -290,8 +289,52 @@ def _ingest(graph: LineageGraph, manifest: dict[str, Any], catalog: dict[str, An
         )
 
 
+def _stitch_pipelines(graph: LineageGraph) -> None:
+    """Connect pipelines that were loaded from separate manifests.
+
+    A pipeline reads another pipeline's output by declaring that table as a dbt *source*.
+    The two manifests know nothing of each other, so the link is made here, and on the
+    **table name only**: pipelines are often deployed to different GCP projects / datasets
+    (and per environment), so database and schema are deliberately ignored.
+
+    ASSUMPTION: output table names are unique across all pipelines. If a table name still
+    matches several models, `out` models are preferred; if that is still ambiguous, the
+    source stays unlinked and a warning is logged.
+
+    The matched model is added to the source's `depends_on`, so the edge is
+    `upstream model -> source` and is cross-pipeline by construction.
+    """
+    by_table: dict[str, list[LineageNode]] = defaultdict(list)
+    for node in graph.nodes.values():
+        if node.resource_type == "model" and node.materialization != "ephemeral":
+            by_table[table_name(node).lower()].append(node)
+
+    for source in graph.nodes.values():
+        if source.resource_type != "source":
+            continue
+        candidates = [
+            m for m in by_table.get(table_name(source).lower(), []) if m.pipeline != source.pipeline
+        ]
+        if len(candidates) > 1:
+            candidates = [m for m in candidates if m.stage == "out"] or candidates
+        if len(candidates) == 1:
+            source.depends_on.append(candidates[0].id)
+        elif candidates:
+            log.warning(
+                "source %s matches several tables of other pipelines (%s); left unlinked",
+                source.id,
+                ", ".join(sorted(m.id for m in candidates)),
+            )
+
+
+def table_name(node: LineageNode) -> str:
+    """The physical table name of a node (dbt `alias` for models, `identifier` for sources)."""
+    return node.alias or node.name.split(".")[-1]
+
+
 def _link(graph: LineageGraph) -> None:
     """Keep only edges between known nodes and invert them into `dependents`."""
+    _stitch_pipelines(graph)
     edges: list[tuple[str, str]] = []
     seen: set[tuple[str, str]] = set()
 
