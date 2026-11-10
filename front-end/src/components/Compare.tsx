@@ -118,13 +118,16 @@ function FileDrop({
   )
 }
 
+/** stable fallback: a fresh `[]` from a store selector re-renders forever */
+const NO_PIPELINES: string[] = []
+
 export function CompareDialog() {
   const open = useExplorerStore((s) => s.compareDialogOpen)
   const setOpen = useExplorerStore((s) => s.setCompareDialogOpen)
   const loading = useExplorerStore((s) => s.compareLoading)
   const error = useExplorerStore((s) => s.compareError)
   const startCompare = useExplorerStore((s) => s.startCompare)
-  const pipelines = useExplorerStore((s) => s.meta?.pipelines ?? [])
+  const pipelines = useExplorerStore((s) => s.meta?.pipelines ?? NO_PIPELINES)
   const filtered = useExplorerStore((s) => s.filters.pipelines)
 
   const [manifest, setManifest] = useState<File | null>(null)
