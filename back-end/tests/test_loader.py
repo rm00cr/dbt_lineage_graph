@@ -194,7 +194,7 @@ def test_pipelines_are_stitched_by_table_name_only(tmp_path: Path) -> None:
     assert graph.nodes["source.down.raw.unrelated"].depends_on == []
 
 
-def test_ambiguous_table_name_prefers_outputs_else_stays_unlinked(tmp_path: Path) -> None:
+def test_only_outputs_are_linked_and_ambiguity_stays_unlinked(tmp_path: Path) -> None:
     a = _project(tmp_path, "a", models=[{"name": "orders", "folder": "03_output"}])
     b = _project(tmp_path, "b", models=[{"name": "orders", "folder": "02_intermediate"}])
     c = _project(tmp_path, "c", models=[{"name": "orders", "folder": "03_output"}])
@@ -203,6 +203,25 @@ def test_ambiguous_table_name_prefers_outputs_else_stays_unlinked(tmp_path: Path
 
     assert load_graph([a, b, reader]).nodes["source.reader.x.orders"].depends_on == ["model.a.orders"]
     assert load_graph([a, c, reader]).nodes["source.reader.x.orders"].depends_on == []
+    # a non-output model is never a link target, even when it is the only name match
+    assert load_graph([b, reader]).nodes["source.reader.x.orders"].depends_on == []
+
+
+def test_source_on_passthrough_view_links_to_the_output(tmp_path: Path) -> None:
+    """A pipeline may read another's output through a `{table}_v` passthrough view."""
+    up = _project(tmp_path, "up", models=[{"name": "orders", "folder": "03_output"}])
+    reader = _project(tmp_path, "reader", models=[], sources=[
+        {"source_name": "x", "table": "ORDERS_V", "database": "d", "schema": "s"},
+        {"source_name": "x", "table": "orders_vw", "database": "d", "schema": "s"}])
+    graph = load_graph([up, reader])
+
+    assert graph.nodes["source.reader.x.ORDERS_V"].depends_on == ["model.up.orders"]
+    assert graph.nodes["source.reader.x.orders_vw"].depends_on == []
+
+    # an output that is literally called `orders_v` is an exact match and wins
+    exact = _project(tmp_path, "exact", models=[{"name": "orders_v", "folder": "03_output"}])
+    assert load_graph([up, exact, reader]).nodes["source.reader.x.ORDERS_V"].depends_on == [
+        "model.exact.orders_v"]
 
 
 def test_pipelines_yaml(tmp_path: Path) -> None:

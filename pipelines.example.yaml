@@ -24,6 +24,13 @@ pipelines:
   # Short form: a folder with manifest.json + catalog.json inside.
   - name: bestand_mfp
     dir: artifacts/bestand_mfp
+    execution_modes:
+      - full_mode: 
+          full_mode: true
+          monthly_mode: false
+      - incremental_mode:
+          full_mode: false
+          monthly_mode: true
 
   # Explicit paths, e.g. straight from a dbt project's target/ folder.
   - name: schaden_claims

@@ -40,8 +40,11 @@ pipelines:
 as a dbt **source** (in `01_source`). Separate manifests do not reference each other, so the
 backend links them on the **table name only** (source `identifier` = model `alias`). Database
 and dataset are ignored on purpose, because pipelines are deployed to different GCP projects /
-datasets. **Assumption: output table names are unique across all pipelines.** If a name still
-matches several models, `out` models win; if that is still ambiguous, the source stays
+datasets. Only `out` models (`03_output`) are link targets: a source whose name matches only
+a `src` / `int` model of another pipeline stays unlinked. A source may also point at a
+passthrough view `{table}_v` of an output (e.g. source `orders_v` -> output `orders`); an exact
+name match wins over the `_v` match. **Assumption: output table names are
+unique across all pipelines.** If a name matches several `out` models, the source stays
 unlinked and the backend logs a warning. The resulting edge is
 `upstream out model -> imported source (src)`, with `cross_pipeline: true`.
 Column lineage maps the columns of that edge 1:1 (`passthrough`).

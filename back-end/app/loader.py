@@ -353,6 +353,9 @@ def _ingest(
         )
 
 
+PASSTHROUGH_VIEW_SUFFIX = "_v"
+
+
 def _stitch_pipelines(graph: LineageGraph) -> None:
     """Connect pipelines that were loaded from separate manifests.
 
@@ -361,31 +364,42 @@ def _stitch_pipelines(graph: LineageGraph) -> None:
     **table name only**: pipelines are often deployed to different GCP projects / datasets
     (and per environment), so database and schema are deliberately ignored.
 
-    ASSUMPTION: output table names are unique across all pipelines. If a table name still
-    matches several models, `out` models are preferred; if that is still ambiguous, the
-    source stays unlinked and a warning is logged.
+    Only `out` models (a pipeline's public interface) are link targets; `src` and `int`
+    models are never matched, even if their table name fits.
+
+    A source may also read an output through a passthrough view named `{table}_v`. An exact
+    name match wins; only if there is none is the `_v` suffix stripped and matched again.
+
+    ASSUMPTION: output table names are unique across all pipelines. If a table name matches
+    several outputs, the source stays unlinked and a warning is logged.
 
     The matched model is added to the source's `depends_on`, so the edge is
     `upstream model -> source` and is cross-pipeline by construction.
     """
     by_table: dict[str, list[LineageNode]] = defaultdict(list)
     for node in graph.nodes.values():
-        if node.resource_type == "model" and node.materialization != "ephemeral":
+        if (
+            node.resource_type == "model"
+            and node.stage == "out"
+            and node.materialization != "ephemeral"
+        ):
             by_table[table_name(node).lower()].append(node)
+
+    def outputs_named(name: str, source: LineageNode) -> list[LineageNode]:
+        return [m for m in by_table.get(name, []) if m.pipeline != source.pipeline]
 
     for source in graph.nodes.values():
         if source.resource_type != "source":
             continue
-        candidates = [
-            m for m in by_table.get(table_name(source).lower(), []) if m.pipeline != source.pipeline
-        ]
-        if len(candidates) > 1:
-            candidates = [m for m in candidates if m.stage == "out"] or candidates
+        name = table_name(source).lower()
+        candidates = outputs_named(name, source)
+        if not candidates and name.endswith(PASSTHROUGH_VIEW_SUFFIX):
+            candidates = outputs_named(name.removesuffix(PASSTHROUGH_VIEW_SUFFIX), source)
         if len(candidates) == 1:
             source.depends_on.append(candidates[0].id)
         elif candidates:
             log.warning(
-                "source %s matches several tables of other pipelines (%s); left unlinked",
+                "source %s matches several output tables of other pipelines (%s); left unlinked",
                 source.id,
                 ", ".join(sorted(m.id for m in candidates)),
             )
