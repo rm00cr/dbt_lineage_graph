@@ -1,0 +1,9 @@
+version: 2
+
+groups:
+  - name: claims
+    owner: {name: Claims Analytics, email: claims-analytics@pnc.example}
+  - name: reinsurance
+    owner: {name: Reinsurance Team, email: reinsurance@pnc.example}
+  - name: finance
+    owner: {name: Finance Controlling, email: controlling@pnc.example}

@@ -1,0 +1,18 @@
+# Targets for the example project. DuckDB (default) needs nothing; for BigQuery install the
+# extra (`uv sync --project examples --extra bigquery`), authenticate with
+# `gcloud auth application-default login` and set DBT_TARGET=bigquery + BQ_PROJECT.
+dbt_pnc:
+  target: "{{ env_var('DBT_TARGET', 'duckdb') }}"
+  outputs:
+    duckdb:
+      type: duckdb
+      path: bestand_mfp.duckdb      # empty tables only, see macros/create_empty_sources.sql
+      schema: main
+      threads: 4
+    bigquery:
+      type: bigquery
+      method: oauth
+      project: "{{ env_var('BQ_PROJECT', 'pnc-analytics-dev') }}"
+      dataset: "{{ env_var('BQ_DATASET', 'dbt_pnc') }}"
+      location: "{{ env_var('BQ_LOCATION', 'EU') }}"
+      threads: 8

@@ -9,6 +9,7 @@ import { Legend } from './components/Legend'
 import { ModelOverlay } from './components/ModelOverlay'
 import { PipelinePicker } from './components/PipelinePicker'
 import { SearchBar } from './components/SearchBar'
+import { TaskIndicator } from './components/TaskIndicator'
 import { ThemeToggle } from './components/ThemeToggle'
 import { Toolbar } from './components/Toolbar'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
@@ -40,6 +41,10 @@ function Explorer() {
   useEffect(() => {
     void init()
   }, [init])
+
+  // background dbt runs: drives the task indicator and redraws when fresh artifacts land
+  const startJobPolling = useExplorerStore((s) => s.startJobPolling)
+  useEffect(() => startJobPolling(), [startJobPolling])
 
   const showToast = (message: string) => {
     setToast(message)
@@ -77,6 +82,7 @@ function Explorer() {
             <span className="stat-chip__label">edges</span>
           </div>
           <PipelinePicker />
+          <TaskIndicator />
         </div>
       </header>
 

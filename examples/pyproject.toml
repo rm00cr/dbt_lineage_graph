@@ -1,0 +1,15 @@
+[project]
+name = "lineage-explorer-examples"
+version = "0.1.0"
+description = "Example dbt projects (no data) for the Lineage Explorer - DuckDB locally, BigQuery-compatible"
+requires-python = ">=3.11,<3.14"
+dependencies = [
+    "dbt-core>=1.8,<2",
+    "dbt-duckdb>=1.8,<2",
+]
+
+[project.optional-dependencies]
+bigquery = ["dbt-bigquery>=1.8,<2"]
+
+[tool.uv]
+package = false

@@ -1,0 +1,36 @@
+# schaden_claims - claims (Schaden): cases, payments, loss ratios. Reads the portfolio
+# outputs of bestand_mfp as dbt sources (linked by table name in the Lineage Explorer).
+name: dbt_pnc
+version: "1.0.0"
+config-version: 2
+profile: dbt_pnc
+
+model-paths: ["models"]
+macro-paths: ["macros"]
+clean-targets: ["target", "dbt_packages"]
+
+flags:
+  send_anonymous_usage_stats: false
+
+# Execution modes (pipelines.yaml) are combinations of these vars:
+#   include_reinsurance   true: net of reinsurance - adds the RI recoveries feed, the loss
+#                         ratio is computed on net payments and an RI report is produced
+#   large_loss_threshold  claims above it (CHF) are flagged as large losses
+vars:
+  include_reinsurance: false
+  large_loss_threshold: 1000000
+
+on-run-start:
+  - "{{ create_empty_sources() }}"
+
+models:
+  dbt_pnc:
+    01_source:
+      +schema: claims_source
+      +materialized: view
+    02_intermediate:
+      +schema: claims_intermediate
+      +materialized: table
+    03_output:
+      +schema: claims_output
+      +materialized: table

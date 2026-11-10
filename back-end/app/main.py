@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from functools import lru_cache
 from typing import Annotated
 
@@ -10,17 +12,28 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .column_lineage import Direction
 from .config import Settings
+from .dbt_runner import GenerationUnsupportedError, JobRunningError
 from .schemas import (
     ColumnLineageResponse,
     DiffResponse,
+    GenerateRequest,
+    GenerationJobInfo,
     GraphResponse,
     HealthResponse,
     LineageStatusResponse,
     MetaResponse,
     ModelDetail,
+    PipelineInfo,
     SearchResponse,
+    SetModeRequest,
 )
-from .service import ArtifactError, GraphService, UnknownStateError
+from .service import (
+    ArtifactError,
+    GraphService,
+    ModeUnavailableError,
+    UnknownPipelineError,
+    UnknownStateError,
+)
 
 API_DESCRIPTION = """
 Interactive dbt Lineage Explorer — backend.
@@ -33,12 +46,24 @@ running state with another state of the project (`POST /api/diff`).
 
 @lru_cache(maxsize=1)
 def get_service() -> GraphService:
-    return GraphService(Settings.from_env())
+    service = GraphService(Settings.from_env())
+    # artifacts that are not on disk yet are generated in the background (needs project_dir)
+    service.generate_missing()
+    return service
 
 
 ServiceDep = Annotated[GraphService, Depends(get_service)]
 
+@asynccontextmanager
+async def lifespan(app: FastAPI) -> AsyncIterator[None]:
+    # build the graph and start generating missing artifacts right away, not on the first request
+    if get_service not in app.dependency_overrides:
+        get_service()
+    yield
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="dbt Lineage Explorer API",
     description=API_DESCRIPTION,
     version="0.1.0",
@@ -71,6 +96,55 @@ def reload_artifacts(service: ServiceDep) -> HealthResponse:
     """Re-read the configured artifacts from disk (after a fresh `dbt docs generate`)."""
     service.reload()
     return service.health()
+
+
+@app.get("/api/pipelines", response_model=list[PipelineInfo], tags=["pipelines"])
+def pipelines(service: ServiceDep) -> list[PipelineInfo]:
+    """The configured pipelines with their execution modes and which mode is shown."""
+    return service.pipelines_info()
+
+
+@app.post("/api/pipelines/{name}/mode", response_model=PipelineInfo, tags=["pipelines"])
+def set_pipeline_mode(service: ServiceDep, name: str, body: SetModeRequest) -> PipelineInfo:
+    """Show another execution mode of a pipeline; every endpoint then reads that mode.
+
+    Without artifacts on disk the mode is generated first (`pending_mode`), then shown."""
+    try:
+        return service.set_mode(name, body.mode)
+    except UnknownPipelineError as error:
+        raise HTTPException(status_code=404, detail=error.args[0]) from None
+    except ModeUnavailableError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+
+
+def _generate(service: GraphService, name: str, mode: str | None) -> PipelineInfo:
+    try:
+        return service.generate(name, mode)
+    except UnknownPipelineError as error:
+        raise HTTPException(status_code=404, detail=error.args[0]) from None
+    except GenerationUnsupportedError as error:
+        raise HTTPException(status_code=400, detail=str(error)) from None
+    except JobRunningError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+
+
+@app.post("/api/pipelines/{name}/generate", response_model=PipelineInfo, tags=["pipelines"])
+def generate_pipeline(service: ServiceDep, name: str, body: GenerateRequest | None = None) -> PipelineInfo:
+    """Regenerate a pipeline's artifacts in the background (`dbt docs generate`); for a
+    pipeline with execution modes the shown mode, or `mode` from the body."""
+    return _generate(service, name, body.mode if body else None)
+
+
+@app.post("/api/pipelines/{name}/modes/{mode}/generate", response_model=PipelineInfo, tags=["pipelines"])
+def generate_pipeline_mode(service: ServiceDep, name: str, mode: str) -> PipelineInfo:
+    """Regenerate one execution mode of a pipeline in the background."""
+    return _generate(service, name, mode)
+
+
+@app.get("/api/jobs", response_model=list[GenerationJobInfo], tags=["pipelines"])
+def jobs(service: ServiceDep) -> list[GenerationJobInfo]:
+    """Background dbt runs: running ones and the recent finished ones, newest first."""
+    return service.jobs()
 
 
 @app.get("/api/graph", response_model=GraphResponse, tags=["graph"])

@@ -1,0 +1,27 @@
+version: 2
+
+models:
+  - name: int_claims_cases
+    description: Claim cases enriched with contract attributes from bestand_mfp; large losses flagged.
+    config: {group: claims, tags: [claims, core], meta: {execution_mode: hourly}}
+    columns:
+      - {name: claim_id, description: Technical claim key., data_tests: [unique, not_null]}
+      - {name: is_large_loss, description: "Reserve above the large-loss threshold (var large_loss_threshold)."}
+
+  - name: int_claims_payments
+    description: Payments aggregated per claim and payment type (incremental).
+    config: {group: claims, tags: [claims, core], meta: {execution_mode: hourly}}
+
+  - name: int_claims_net_payments
+    description: Net of reinsurance only - gross payments minus RI recoveries per claim.
+    config: {group: reinsurance, tags: [claims, reinsurance], meta: {execution_mode: monthly}}
+    columns:
+      - {name: net_paid_chf, description: Paid after reinsurance recoveries.}
+
+  - name: int_claims_loss_ratio
+    description: >
+      Incurred (paid + reserve) over written premium per product, canton and risk. Gross in
+      the gross mode; net of reinsurance recoveries in net_of_ri.
+    config: {group: claims, tags: [claims, kpi], meta: {execution_mode: daily}}
+    columns:
+      - {name: loss_ratio, description: (paid + reserve) / written premium.}

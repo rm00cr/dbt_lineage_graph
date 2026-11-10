@@ -289,9 +289,15 @@ class _Builder:
                 parsed.copy(), schema=self.schema, dialect=self.dialect, validate_qualify_columns=False
             )
 
-        # models without catalog columns still feed their downstreams
-        if node.id not in self.columns:
-            self._register_columns(node, {name: None for name in qualified.named_selects})
+        # models without catalog columns still feed their downstreams; columns documented in
+        # yml only (e.g. an ephemeral model with a few described columns) are completed from
+        # the select list, else downstream models cannot resolve the undocumented ones
+        known = self.columns.get(node.id, {})
+        if any(name.lower() not in known for name in qualified.named_selects):
+            documented = (
+                self.schema.get(node.database or "", {}).get(node.schema_name or "", {}).get(table_name(node), {})
+            )
+            self._register_columns(node, {**{name: None for name in qualified.named_selects}, **documented})
 
         scope = build_scope(qualified)
         roots = lineage(None, qualified, schema=self.schema, dialect=self.dialect, scope=scope)

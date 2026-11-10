@@ -1,0 +1,7 @@
+version: 2
+
+groups:
+  - name: finance
+    owner: {name: Finance Controlling, email: controlling@pnc.example}
+  - name: planning
+    owner: {name: Planning & Steering, email: planning@pnc.example}

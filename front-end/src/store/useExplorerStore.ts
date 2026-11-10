@@ -10,7 +10,16 @@ import { create } from 'zustand'
 
 import { ApiError, api } from '../api/client'
 import { mockColumnLineage, mockGraph, mockModelDetail } from '../api/mock'
-import type { DiffResponse, GraphResponse, MetaResponse, ModelDetail, NodeChange, TraceDirection } from '../api/types'
+import type {
+  DiffResponse,
+  GenerationJob,
+  GraphResponse,
+  MetaResponse,
+  ModelDetail,
+  NodeChange,
+  PipelineInfo,
+  TraceDirection,
+} from '../api/types'
 import { type TraceView, buildTraceView } from '../graph/columnTrace'
 import { changedIds } from '../graph/diff'
 import { type GraphFilters, filterGraph } from '../graph/filter'
@@ -64,6 +73,20 @@ interface ExplorerState {
 
   graph: GraphResponse | null
   meta: MetaResponse | null
+  /** pipelines with their execution modes (GET /api/pipelines) */
+  pipelineInfo: PipelineInfo[]
+  /** pipeline whose execution mode is being switched */
+  modeSwitching: string | null
+  modeError: string | null
+  /** background dbt runs (GET /api/jobs), newest first */
+  jobs: GenerationJob[]
+  /** false until the first poll: jobs finished before that are history, not news */
+  jobsLoaded: boolean
+  /** short-lived messages about finished jobs */
+  jobNotices: JobNotice[]
+  /** failed jobs the user has not looked at yet (red dot on the task indicator) */
+  unseenFailures: string[]
+  tasksOpen: boolean
   index: AdjacencyIndex
 
   filters: Filters
@@ -100,6 +123,14 @@ interface ExplorerState {
   init: () => Promise<void>
   refresh: () => Promise<void>
   setFilters: (patch: Partial<Filters>) => Promise<void>
+  setPipelineMode: (pipeline: string, mode: string) => Promise<void>
+  /** run dbt for a pipeline in the background (`mode`: default the shown one) */
+  regenerate: (pipeline: string, mode?: string | null) => Promise<void>
+  pollJobs: () => Promise<void>
+  /** poll /api/jobs - every 2 s while a job runs, else every 15 s. Returns the stop function. */
+  startJobPolling: () => () => void
+  setTasksOpen: (open: boolean) => void
+  dismissNotice: (id: string) => void
   setLayoutMode: (mode: LayoutMode) => void
   setZoneMode: (mode: ZoneMode) => void
   setSplitPipelines: (split: boolean) => void
@@ -160,6 +191,55 @@ function computeHighlight(
   }
 }
 
+export interface JobNotice {
+  id: string
+  status: 'done' | 'failed'
+  text: string
+}
+
+export const isActive = (job: GenerationJob) => job.status === 'queued' || job.status === 'running'
+
+export const jobLabel = (job: Pick<GenerationJob, 'pipeline' | 'mode'>) =>
+  job.mode ? `${job.pipeline} · ${job.mode}` : job.pipeline
+
+/** the latest job of a pipeline / mode (jobs are newest first) */
+export const latestJob = (jobs: GenerationJob[], pipeline: string, mode: string | null) =>
+  jobs.find((job) => job.pipeline === pipeline && job.mode === mode)
+
+const errorText = (error: unknown) => (error instanceof ApiError ? error.message : String(error))
+
+const replaceInfo = (list: PipelineInfo[], info: PipelineInfo) => list.map((p) => (p.name === info.name ? info : p))
+
+/** The backend now serves other artifacts (mode switch, fresh dbt run): redraw everything. */
+async function reloadShownGraph(get: () => ExplorerState) {
+  // a comparison was made against the old artifacts: it no longer matches what is shown.
+  // Otherwise refresh() drops cached details and reruns a column trace on the new graph.
+  if (get().compare) await get().exitCompare()
+  else await get().refresh()
+  // an open overlay shows the old version: reload it (404 if the model is gone now)
+  const { activeId, overlayTab } = get()
+  if (activeId) void get().openModel(activeId, { tab: overlayTab, center: false })
+}
+
+// job polling: one timer for the app; kickJobPolling() polls right away (after starting a job)
+let polling = false
+let pollTimer: ReturnType<typeof setTimeout> | undefined
+const POLL_BUSY_MS = 2000
+const POLL_IDLE_MS = 15000
+
+function kickJobPolling() {
+  if (!polling) return
+  clearTimeout(pollTimer)
+  pollTimer = setTimeout(async () => {
+    const store = useExplorerStore.getState()
+    await store.pollJobs()
+    if (!polling) return
+    clearTimeout(pollTimer)
+    const busy = useExplorerStore.getState().jobs.some(isActive)
+    pollTimer = setTimeout(kickJobPolling, busy ? POLL_BUSY_MS : POLL_IDLE_MS)
+  }, 0)
+}
+
 /** `?pipeline=a,b` is read before the first fetch so a shared link loads only those pipelines */
 function pipelinesFromUrl(): string[] {
   if (typeof window === 'undefined') return []
@@ -174,6 +254,14 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   graph: null,
   meta: null,
+  pipelineInfo: [],
+  modeSwitching: null,
+  modeError: null,
+  jobs: [],
+  jobsLoaded: false,
+  jobNotices: [],
+  unseenFailures: [],
+  tasksOpen: false,
   index: EMPTY_INDEX,
 
   filters: { pipelines: pipelinesFromUrl(), stages: [], includeSources: true },
@@ -218,18 +306,20 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
     set({ status: 'loading', errorMessage: null })
     try {
-      const [graph, meta] = await Promise.all([
+      const [graph, meta, pipelineInfo] = await Promise.all([
         api.graph({
           pipeline: filters.pipelines,
           stage: filters.stages,
           includeSources: filters.includeSources,
         }),
         api.meta().catch(() => null),
+        api.pipelines().catch(() => [] as PipelineInfo[]),
       ])
 
       set({
         graph,
         meta,
+        pipelineInfo,
         index: buildIndex(graph.nodes, graph.edges),
         status: 'ready',
         usingMock: false,
@@ -242,6 +332,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
       set({
         graph,
         meta: null,
+        pipelineInfo: [],
         index: buildIndex(graph.nodes, graph.edges),
         status: 'ready',
         usingMock: true,
@@ -263,6 +354,95 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     set((state) => ({ filters: { ...state.filters, ...patch } }))
     await get().init()
   },
+
+  setPipelineMode: async (pipeline, mode) => {
+    const current = get().pipelineInfo.find((p) => p.name === pipeline)
+    if (!current || current.active_mode === mode || get().modeSwitching) return
+    set({ modeSwitching: pipeline, modeError: null })
+    try {
+      const info = await api.setPipelineMode(pipeline, mode)
+      if (info.pending_mode) {
+        // no artifacts yet: the backend generates them and switches once done (see pollJobs)
+        set((state) => ({ pipelineInfo: replaceInfo(state.pipelineInfo, info), modeSwitching: null }))
+        kickJobPolling()
+        return
+      }
+      await reloadShownGraph(get)
+      set({ modeSwitching: null })
+    } catch (error) {
+      set({ modeSwitching: null, modeError: errorText(error) })
+    }
+  },
+
+  regenerate: async (pipeline, mode) => {
+    set({ modeError: null })
+    try {
+      const info = await api.generatePipeline(pipeline, mode)
+      set((state) => ({ pipelineInfo: replaceInfo(state.pipelineInfo, info) }))
+      kickJobPolling()
+    } catch (error) {
+      set({ modeError: errorText(error) })
+    }
+  },
+
+  pollJobs: async () => {
+    if (get().usingMock) return
+    let jobs: GenerationJob[]
+    try {
+      jobs = await api.jobs()
+    } catch {
+      return // backend away: try again on the next tick
+    }
+    const { jobs: before, jobsLoaded, jobNotices } = get()
+    const previous = new Map(before.map((j) => [j.id, j]))
+    const known = new Set(jobNotices.map((n) => n.id))
+    // finished since the last poll: was running then, or started and ended in between
+    const finished = jobs.filter((job) => {
+      if (isActive(job) || known.has(job.id)) return false
+      const old = previous.get(job.id)
+      return old ? isActive(old) : jobsLoaded
+    })
+    set({ jobs, jobsLoaded: true })
+    if (finished.length === 0) return
+
+    // the backend has already switched / rebuilt; fetch the new mode state and redraw
+    const pipelineInfo = await api.pipelines().catch(() => get().pipelineInfo)
+    set({ pipelineInfo })
+    const shown = (job: GenerationJob) =>
+      job.mode === null || pipelineInfo.find((p) => p.name === job.pipeline)?.active_mode === job.mode
+    const redraw = finished.some((job) => job.status === 'done' && shown(job)) && !get().compare
+    if (redraw) await reloadShownGraph(get)
+
+    set((state) => ({
+      jobNotices: [
+        ...state.jobNotices,
+        ...finished.map((job) => ({
+          id: job.id,
+          status: job.status as 'done' | 'failed',
+          text:
+            job.status === 'done'
+              ? `${jobLabel(job)} generated${redraw && shown(job) ? ' - graph updated' : ''}`
+              : `${jobLabel(job)}: dbt failed`,
+        })),
+      ],
+      unseenFailures: state.tasksOpen
+        ? state.unseenFailures
+        : [...state.unseenFailures, ...finished.filter((j) => j.status === 'failed').map((j) => j.id)],
+    }))
+  },
+
+  startJobPolling: () => {
+    polling = true
+    kickJobPolling()
+    return () => {
+      polling = false
+      clearTimeout(pollTimer)
+    }
+  },
+
+  setTasksOpen: (open) => set(open ? { tasksOpen: true, unseenFailures: [] } : { tasksOpen: false }),
+
+  dismissNotice: (id) => set((state) => ({ jobNotices: state.jobNotices.filter((n) => n.id !== id) })),
 
   setLayoutMode: (mode) => set({ layoutMode: mode }),
   setZoneMode: (mode) => set({ zoneMode: mode }),

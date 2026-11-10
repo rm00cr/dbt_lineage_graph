@@ -3,14 +3,18 @@
 from __future__ import annotations
 
 import json
+import re
+import threading
 import uuid
 from collections import OrderedDict
 from collections.abc import Iterable
+from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
 from .column_lineage import ColumnLineageIndex, Direction, build_column_lineage
-from .config import STAGE_ORDER, Settings
+from .config import STAGE_ORDER, ArtifactPair, ExecutionMode, Settings
+from .dbt_runner import DbtRunner, GenerationJob, JobTrigger
 from .diff import GraphDiff, diff_graphs
 from .loader import LineageGraph, LineageNode, LoadedArtifacts, build_graph, load_graph, read_artifacts
 from .schemas import (
@@ -24,6 +28,7 @@ from .schemas import (
     DiffResponse,
     DiffSummary,
     FieldChange,
+    GenerationJobInfo,
     GraphEdge,
     GraphNode,
     GraphResponse,
@@ -36,6 +41,8 @@ from .schemas import (
     NodeChange,
     NodeRef,
     NodeStats,
+    PipelineInfo,
+    PipelineModeInfo,
     SearchHit,
     SearchResponse,
     StateInfo,
@@ -57,20 +64,169 @@ class UnknownStateError(KeyError):
     """A ``state`` id that is not (or no longer) held in memory (-> HTTP 404)."""
 
 
+class UnknownPipelineError(KeyError):
+    """A pipeline or execution mode name that is not configured (-> HTTP 404)."""
+
+
+class ModeUnavailableError(ValueError):
+    """An execution mode whose artifacts are not on disk and cannot be generated (-> HTTP 409)."""
+
+
 class GraphService:
-    def __init__(self, settings: Settings) -> None:
+    def __init__(self, settings: Settings, runner: DbtRunner | None = None) -> None:
         self.settings = settings
-        self.graph: LineageGraph = load_graph(settings.artifacts)
-        self.column_lineage: ColumnLineageIndex = build_column_lineage(self.graph)
+        self.runner = runner or DbtRunner()
+        # pipeline name -> shown execution mode (only pipelines that have modes)
+        self.active_modes: dict[str, str] = {
+            pair.name: pair.default_mode or pair.modes[0].name for pair in settings.artifacts if pair.modes
+        }
+        # pipeline name -> mode to switch to once its artifacts are generated
+        self.pending_modes: dict[str, str] = {}
+        # built graphs per combination of active modes, so switching back is instant
+        self._cache: dict[tuple[tuple[str, str], ...], tuple[LineageGraph, ColumnLineageIndex]] = {}
+        self._lock = threading.RLock()
+        self.graph: LineageGraph
+        self.column_lineage: ColumnLineageIndex
+        self._activate()
         # comparison states (POST /api/diff): state_id -> head graph, oldest first
         self.states: OrderedDict[str, LineageGraph] = OrderedDict()
 
     # ------------------------------------------------------------------ lifecycle
     def reload(self) -> LineageGraph:
         """Re-read the artifacts from disk (handy when a fresh dbt run just finished)."""
-        self.graph = load_graph(self.settings.artifacts)
-        self.column_lineage = build_column_lineage(self.graph)
-        return self.graph
+        with self._lock:
+            self._cache.clear()
+            self._activate()
+            return self.graph
+
+    def _effective_pairs(self) -> list[ArtifactPair]:
+        """The configured pipelines, each with the artifacts of its active execution mode."""
+        return [
+            pair.for_mode(self.active_modes[pair.name]) if pair.modes else pair for pair in self.settings.artifacts
+        ]
+
+    def _activate(self) -> None:
+        """Point ``graph``/``column_lineage`` at the active modes (built once per combination)."""
+        key = tuple(sorted(self.active_modes.items()))
+        built = self._cache.get(key)
+        if built is None:
+            graph = load_graph(self._effective_pairs())
+            built = (graph, build_column_lineage(graph))
+            self._cache[key] = built
+        self.graph, self.column_lineage = built
+
+    # ------------------------------------------------------------------ execution modes
+    def pipelines_info(self) -> list[PipelineInfo]:
+        return [self._pipeline_info(pair) for pair in self.settings.artifacts]
+
+    def set_mode(self, pipeline: str, mode: str) -> PipelineInfo:
+        """Show execution mode ``mode`` of ``pipeline``. Without artifacts on disk the mode is
+        generated first (needs ``project_dir``) and shown once that is done."""
+        pair = self._pair(pipeline)
+        target = self._mode(pair, mode)
+        with self._lock:
+            if target.manifest.is_file():
+                self.pending_modes.pop(pipeline, None)
+                if self.active_modes.get(pipeline) != mode:
+                    self.active_modes[pipeline] = mode
+                    self._activate()
+                return self._pipeline_info(pair)
+
+            if pair.project_dir is None:
+                raise ModeUnavailableError(
+                    f"execution mode '{mode}' of '{pipeline}' has no artifacts yet ({target.manifest} not found) "
+                    "and the pipeline has no 'project_dir' to generate them"
+                )
+            self.pending_modes[pipeline] = mode
+            if self.runner.active_job(pipeline, mode) is None:
+                self.runner.start(pair, target, "mode-switch", self._on_job_done)
+        return self._pipeline_info(pair)
+
+    def generate(self, pipeline: str, mode: str | None = None, trigger: JobTrigger = "user") -> PipelineInfo:
+        """Regenerate a pipeline's artifacts with dbt (for a pipeline with modes: ``mode``,
+        default the shown one). Raises GenerationUnsupportedError / JobRunningError."""
+        pair = self._pair(pipeline)
+        target: ExecutionMode | None = None
+        if pair.modes:
+            target = self._mode(pair, mode or self.active_modes[pipeline])
+        elif mode:
+            raise UnknownPipelineError(f"pipeline '{pipeline}' has no execution modes")
+        self.runner.start(pair, target, trigger, self._on_job_done)
+        return self._pipeline_info(pair)
+
+    def generate_missing(self) -> list[GenerationJob]:
+        """Start generation for every shown artifact set that is not on disk (at startup)."""
+        jobs: list[GenerationJob] = []
+        for pair in self._effective_pairs():
+            if pair.project_dir is None or pair.manifest.is_file():
+                continue
+            mode = pair.mode(self.active_modes[pair.name]) if pair.modes else None
+            if self.runner.active_job(pair.name, mode.name if mode else None) is None:
+                jobs.append(self.runner.start(pair, mode, "startup", self._on_job_done))
+        return jobs
+
+    def jobs(self) -> list[GenerationJobInfo]:
+        return [_job_info(job) for job in self.runner.list()]
+
+    def _on_job_done(self, job: GenerationJob) -> None:
+        """Runs in the job's thread: pick up fresh artifacts, complete a pending switch."""
+        with self._lock:
+            pending = self.pending_modes.get(job.pipeline)
+            if job.outcome != "done":
+                if pending == job.mode:
+                    self.pending_modes.pop(job.pipeline, None)  # the switch is abandoned
+                return
+            # drop every cached graph built from the old files of this pipeline / mode
+            for key in list(self._cache):
+                if job.mode is None or (job.pipeline, job.mode) in key:
+                    del self._cache[key]
+            if pending is not None and pending == job.mode:
+                self.pending_modes.pop(job.pipeline, None)
+                self.active_modes[job.pipeline] = job.mode
+            if job.mode is None or self.active_modes.get(job.pipeline) == job.mode:
+                self._activate()
+
+    def _pair(self, pipeline: str) -> ArtifactPair:
+        for pair in self.settings.artifacts:
+            if pair.name == pipeline:
+                return pair
+        raise UnknownPipelineError(f"pipeline '{pipeline}' is not configured")
+
+    @staticmethod
+    def _mode(pair: ArtifactPair, mode: str) -> ExecutionMode:
+        try:
+            return pair.mode(mode)
+        except KeyError:
+            names = ", ".join(m.name for m in pair.modes) or "none"
+            raise UnknownPipelineError(
+                f"pipeline '{pair.name}' has no execution mode '{mode}' (modes: {names})"
+            ) from None
+
+    def _pipeline_info(self, pair: ArtifactPair) -> PipelineInfo:
+        active = self.active_modes.get(pair.name)
+        manifest = pair.for_mode(active).manifest if active else pair.manifest
+        job = None if pair.modes else self.runner.latest(pair.name, None)
+        return PipelineInfo(
+            name=pair.name,
+            active_mode=active,
+            pending_mode=self.pending_modes.get(pair.name),
+            available=manifest.is_file(),
+            generated_at=_generated_at(manifest),
+            can_generate=pair.project_dir is not None,
+            job=_job_info(job) if job else None,
+            modes=[self._mode_info(pair, mode) for mode in pair.modes],
+        )
+
+    def _mode_info(self, pair: ArtifactPair, mode: ExecutionMode) -> PipelineModeInfo:
+        job = self.runner.latest(pair.name, mode.name)
+        return PipelineModeInfo(
+            name=mode.name,
+            vars=mode.vars,
+            available=mode.manifest.is_file(),
+            generated_at=_generated_at(mode.manifest),
+            manifest=str(mode.manifest),
+            job=_job_info(job) if job else None,
+        )
 
     # ------------------------------------------------------------------ health / meta
     def health(self) -> HealthResponse:
@@ -312,7 +468,7 @@ class GraphService:
             raise ArtifactError("manifest.json contains no models or sources")
 
         upload = LoadedArtifacts(manifest=manifest_data, catalog=catalog_data, source=f"upload:{label}")
-        running = read_artifacts(self.settings.artifacts)
+        running = read_artifacts(self._effective_pairs())
         pipelines = ", ".join(item.name or item.project_name for item in running) or "none"
         pipeline = (pipeline or "").strip() or None
 
@@ -591,6 +747,42 @@ def _parse_artifact(raw: bytes, name: str) -> dict[str, Any]:
     if not isinstance(data, dict):
         raise ArtifactError(f"{name} must be a JSON object")
     return data
+
+
+_GENERATED_AT = re.compile(rb'"generated_at"\s*:\s*"([^"]+)"')
+_generated_at_cache: dict[Path, tuple[float, str | None]] = {}
+
+
+def _generated_at(manifest: Path) -> str | None:
+    """``metadata.generated_at`` of a manifest without parsing it: dbt writes the metadata
+    block first, so the head of the file is enough. Cached by modification time."""
+    try:
+        mtime = manifest.stat().st_mtime
+    except OSError:
+        return None
+    cached = _generated_at_cache.get(manifest)
+    if cached and cached[0] == mtime:
+        return cached[1]
+    with manifest.open("rb") as fh:
+        match = _GENERATED_AT.search(fh.read(16384))
+    value = match.group(1).decode() if match else None
+    _generated_at_cache[manifest] = (mtime, value)
+    return value
+
+
+def _job_info(job: GenerationJob) -> GenerationJobInfo:
+    return GenerationJobInfo(
+        id=job.id,
+        pipeline=job.pipeline,
+        mode=job.mode,
+        trigger=job.trigger,
+        status=job.status,
+        started_at=job.started_at,
+        finished_at=job.finished_at,
+        error=job.error,
+        command=" ".join(job.command),
+        log_tail=job.log_tail(),
+    )
 
 
 def _state_info(label: str, graph: LineageGraph) -> StateInfo:

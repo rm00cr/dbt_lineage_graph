@@ -31,8 +31,15 @@ down, so either side can be worked on alone.
 
 ```bash
 ./dev.sh                         # starts both: API on :8000, UI on http://localhost:5173
+./dev.sh examples/pipelines.yaml # the full experience: 3 real dbt projects the backend builds itself
 ./dev.sh path/to/pipelines.yaml  # same, with your own pipelines (see pipelines.example.yaml)
 ```
+
+`examples/` holds three real dbt-core 1.x projects (no data, DuckDB, BigQuery-compatible SQL)
+with execution modes. The backend runs `dbt docs generate` for them through uv, so the first
+start takes a few seconds per pipeline. See [examples/README.md](examples/README.md), and
+[docs/pipeline-guide.md](docs/pipeline-guide.md) for how to set up a pipeline that reads well
+(layers, dbt groups, cross-pipeline sources, execution modes).
 
 Or separately:
 
@@ -146,7 +153,8 @@ BigQuery deeplink to the node's own `database` unless `BQ_CONSOLE_PROJECT` is se
 ```
 contract.md                  API contract v0 — the only coupling between FE and BE
 dev.sh                       start both servers
-fixtures/                    synthetic PnC dbt artifacts + their generator
+fixtures/                    synthetic PnC dbt artifacts + their generator (used by the tests)
+examples/                    real dbt projects with execution modes (uv project, DuckDB)
 back-end/                    FastAPI service (uv), see back-end/README.md
 front-end/                   React + Vite app, see front-end/README.md
 hackathon-lineage-explorer.md  the original brief

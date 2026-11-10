@@ -1,0 +1,9 @@
+version: 2
+
+groups:
+  - name: contract
+    owner: {name: Portfolio Team, email: portfolio@pnc.example}
+  - name: partner
+    owner: {name: Partner Data Team, email: partner-data@pnc.example}
+  - name: premium
+    owner: {name: Pricing Team, email: pricing@pnc.example}

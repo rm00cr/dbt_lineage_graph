@@ -1,0 +1,18 @@
+version: 2
+
+models:
+  - name: int_fin_expenses_by_product
+    description: >
+      Expenses per month, product and type. Shared expenses (no product) are allocated by
+      var expense_alloc - by share of earned premium, or flat.
+    config: {group: finance, tags: [finance, allocation], meta: {execution_mode: monthly}}
+
+  - name: int_fin_pnl
+    description: Underwriting P&L per month and product - earned premium, incurred claims, expenses.
+    config: {group: finance, tags: [finance, core], meta: {execution_mode: monthly}}
+    columns:
+      - {name: underwriting_result_chf, description: Earned premium - incurred - expenses.}
+
+  - name: int_fin_plan_vs_actual
+    description: Plan vs. actual only - planned against actual premium, loss and expense ratios.
+    config: {group: planning, tags: [finance, plan], meta: {execution_mode: monthly}}

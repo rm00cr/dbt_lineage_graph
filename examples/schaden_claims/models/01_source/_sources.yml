@@ -1,0 +1,81 @@
+version: 2
+
+sources:
+  - name: raw_claims
+    description: Raw exports of the claims handling system.
+    database: "{{ var('raw_database', target.database) }}"
+    schema: raw_claims
+    loader: ingestion-platform
+    tables:
+      - name: claims
+        description: Claim cases (one row per claim, latest state).
+        columns:
+          - {name: claim_id, data_type: STRING, description: Technical claim key.}
+          - {name: contract_id, data_type: STRING, description: Contract the claim was reported on.}
+          - {name: risk_code, data_type: STRING, description: Affected risk.}
+          - {name: loss_date, data_type: DATE, description: Date of loss.}
+          - {name: report_date, data_type: DATE, description: Date the claim was reported.}
+          - {name: claim_status, data_type: STRING, description: "Raw status: OPEN, CLOSED, REOPENED."}
+          - {name: reserve_amount, data_type: NUMERIC, description: Current case reserve in CHF.}
+          - {name: load_ts, data_type: TIMESTAMP, description: Technical load timestamp.}
+
+      - name: payments
+        description: Claim payment transactions (indemnity, expenses, recoveries).
+        columns:
+          - {name: payment_id, data_type: STRING, description: Technical payment key.}
+          - {name: claim_id, data_type: STRING, description: Parent claim.}
+          - {name: payment_date, data_type: DATE, description: Value date of the payment.}
+          - {name: payment_type, data_type: STRING, description: "INDEMNITY | EXPENSE | RECOVERY."}
+          - {name: amount, data_type: NUMERIC, description: Signed amount in CHF.}
+          - {name: load_ts, data_type: TIMESTAMP, description: Technical load timestamp.}
+
+      - name: ri_recoveries
+        description: Reinsurance recoveries per claim - only read net of reinsurance.
+        config:
+          enabled: "{{ var('include_reinsurance') | as_bool }}"
+        columns:
+          - {name: recovery_id, data_type: STRING, description: Technical recovery key.}
+          - {name: claim_id, data_type: STRING, description: Recovered claim.}
+          - {name: treaty_id, data_type: STRING, description: Reinsurance treaty.}
+          - {name: recovery_date, data_type: DATE, description: Value date.}
+          - {name: recovered_amount, data_type: NUMERIC, description: Recovered amount in CHF.}
+          - {name: load_ts, data_type: TIMESTAMP, description: Technical load timestamp.}
+
+  # outputs of the bestand_mfp pipeline (another dbt project)
+  - name: mfp_output
+    description: Public outputs of the bestand_mfp pipeline.
+    database: "{{ var('mfp_database', target.database) }}"
+    schema: mfp_output
+    tables:
+      - name: out_mfp_contracts
+        description: Current contracts (bestand_mfp).
+        columns:
+          - {name: contract_id, data_type: STRING}
+          - {name: partner_id, data_type: STRING}
+          - {name: product_code, data_type: STRING}
+          - {name: canton, data_type: STRING}
+          - {name: contract_status, data_type: STRING}
+          - {name: annual_premium_chf, data_type: NUMERIC}
+          - {name: valid_from, data_type: DATE}
+          - {name: valid_to, data_type: DATE}
+      - name: out_mfp_portfolio_daily
+        description: Daily portfolio KPIs (bestand_mfp).
+        columns:
+          - {name: snapshot_date, data_type: DATE}
+          - {name: product_code, data_type: STRING}
+          - {name: canton, data_type: STRING}
+          - {name: risk_code, data_type: STRING}
+          - {name: contract_count, data_type: INTEGER}
+          - {name: coverage_count, data_type: INTEGER}
+          - {name: sum_insured_chf, data_type: NUMERIC}
+          - {name: technical_premium_chf, data_type: NUMERIC}
+          - {name: written_premium_chf, data_type: NUMERIC}
+      - name: out_mfp_premium_report
+        description: Premium adequacy per product and month (bestand_mfp).
+        columns:
+          - {name: reporting_month, data_type: DATE}
+          - {name: product_code, data_type: STRING}
+          - {name: contract_count, data_type: INTEGER}
+          - {name: technical_premium_chf, data_type: NUMERIC}
+          - {name: annual_premium_chf, data_type: NUMERIC}
+          - {name: premium_adequacy_ratio, data_type: NUMERIC}

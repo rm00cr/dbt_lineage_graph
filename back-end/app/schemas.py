@@ -3,7 +3,8 @@ front-end/src/api/types.ts)."""
 
 from __future__ import annotations
 
-from typing import Literal
+from datetime import datetime
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
@@ -134,6 +135,53 @@ class MetaResponse(BaseModel):
     edge_count: int
     source_count: int
     model_count: int
+
+
+class GenerationJobInfo(BaseModel):
+    """A background `dbt docs generate` run (GET /api/jobs)."""
+
+    id: str
+    pipeline: str
+    mode: str | None = None  # null: a pipeline without execution modes
+    trigger: Literal["startup", "user", "mode-switch"]
+    status: Literal["queued", "running", "done", "failed"]
+    started_at: datetime
+    finished_at: datetime | None = None
+    error: str | None = None
+    command: str
+    log_tail: list[str] = Field(default_factory=list)  # last lines of dbt output, live while running
+
+
+class PipelineModeInfo(BaseModel):
+    """One execution mode of a pipeline: a named combination of dbt vars."""
+
+    name: str
+    vars: dict[str, Any] = Field(default_factory=dict)
+    available: bool  # its manifest.json is on disk
+    generated_at: str | None = None  # manifest metadata.generated_at
+    manifest: str
+    job: GenerationJobInfo | None = None  # latest generation of this mode
+
+
+class PipelineInfo(BaseModel):
+    """A configured pipeline and - if it has execution modes - which one is shown."""
+
+    name: str
+    active_mode: str | None = None  # null: the pipeline has no execution modes
+    pending_mode: str | None = None  # being generated; shown once done
+    available: bool  # the shown artifacts are on disk
+    generated_at: str | None = None
+    can_generate: bool = False  # has a project_dir: dbt can (re)generate its artifacts
+    job: GenerationJobInfo | None = None  # latest generation (pipelines without modes)
+    modes: list[PipelineModeInfo] = Field(default_factory=list)
+
+
+class GenerateRequest(BaseModel):
+    mode: str | None = None  # default: the shown mode
+
+
+class SetModeRequest(BaseModel):
+    mode: str
 
 
 class HealthResponse(BaseModel):

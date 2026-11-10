@@ -240,7 +240,7 @@ def test_pipelines_yaml(tmp_path: Path) -> None:
     assert second.manifest == absolute and second.catalog is None
 
     for bad, message in (
-        ("  - {name: a, catalog: c.json}\n", "needs 'dir' or 'manifest'"),
+        ("  - {name: a, catalog: c.json}\n", "needs 'dir', 'manifest' or 'project_dir'"),
         ("  - {dir: x}\n", "needs a 'name'"),
         ("  - {name: 'a.b', dir: x}\n", "may only contain"),
         ("  - {name: a, dir: x}\n  - {name: a, dir: y}\n", "used twice"),

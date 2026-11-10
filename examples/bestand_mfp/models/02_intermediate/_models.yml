@@ -1,0 +1,41 @@
+version: 2
+
+models:
+  - name: int_mfp_contracts
+    description: >
+      Current contract versions enriched with partner attributes. Full mode rebuilds it
+      from the full export; incremental mode merges the change feed (deleted versions dropped).
+    config: {group: contract, tags: [mfp, core], meta: {execution_mode: daily}}
+    columns:
+      - {name: contract_id, description: Technical contract key., data_tests: [unique, not_null]}
+      - {name: partner_id, description: Policy holder reference.}
+      - {name: product_code, description: PnC product code.}
+      - {name: contract_status, description: "Harmonised status: active | cancelled | suspended | unknown."}
+      - {name: annual_premium_chf, description: Gross annual premium in CHF.}
+      - {name: partner_type, description: person | company.}
+      - {name: age_years, description: Age of the policy holder.}
+      - {name: canton, description: Canton of the policy holder.}
+
+  - name: int_mfp_coverages
+    description: Coverage lines with the tariff valid at their start (incremental on load time).
+    config: {group: contract, tags: [mfp, core], meta: {execution_mode: daily}}
+    columns:
+      - {name: coverage_id, description: Technical coverage key., data_tests: [unique, not_null]}
+      - {name: region_factor, description: Regional loading factor of the matched tariff.}
+      - {name: base_rate, description: Base rate of the matched tariff.}
+
+  - name: int_mfp_contract_coverage
+    description: One row per active contract x coverage - the portfolio grain.
+    config: {group: contract, tags: [mfp, core], meta: {execution_mode: daily}}
+
+  - name: int_mfp_premium_calc
+    description: Technical premium per coverage (sum insured / 1000 x base rate x region factor).
+    config: {group: premium, tags: [mfp, pricing], meta: {execution_mode: daily}}
+    columns:
+      - {name: technical_premium_chf, description: "Risk-based premium in CHF, rounded to 2 decimals."}
+
+  - name: int_mfp_month_end_snapshot
+    description: Month-end close only - the portfolio frozen per reporting month.
+    config: {group: premium, tags: [mfp, month-end], meta: {execution_mode: monthly}}
+    columns:
+      - {name: reporting_month, description: First day of the closed month.}

@@ -123,6 +123,51 @@ export interface MetaResponse {
   model_count: number
 }
 
+// ------------------------------------------------------------------ pipelines / execution modes
+
+export type JobStatus = 'queued' | 'running' | 'done' | 'failed'
+
+/** A background `dbt docs generate` run (GET /api/jobs) */
+export interface GenerationJob {
+  id: string
+  pipeline: string
+  /** null: a pipeline without execution modes */
+  mode: string | null
+  trigger: 'startup' | 'user' | 'mode-switch'
+  status: JobStatus
+  started_at: string
+  finished_at: string | null
+  error: string | null
+  command: string
+  /** last lines of the dbt output, live while running */
+  log_tail: string[]
+}
+
+/** One execution mode of a pipeline: a named combination of dbt vars with its own artifacts */
+export interface PipelineModeInfo {
+  name: string
+  vars: Record<string, unknown>
+  /** its manifest.json is on disk */
+  available: boolean
+  generated_at: string | null
+  manifest: string
+  job?: GenerationJob | null
+}
+
+export interface PipelineInfo {
+  name: string
+  /** the shown execution mode; null when the pipeline has none */
+  active_mode: string | null
+  /** being generated, shown once that is done */
+  pending_mode?: string | null
+  available: boolean
+  generated_at: string | null
+  /** has a project_dir: the backend can run dbt for it */
+  can_generate?: boolean
+  job?: GenerationJob | null
+  modes: PipelineModeInfo[]
+}
+
 // ------------------------------------------------------------------ column lineage (2.3)
 
 export type ColumnEdgeKind = 'passthrough' | 'rename' | 'transform' | 'aggregate'

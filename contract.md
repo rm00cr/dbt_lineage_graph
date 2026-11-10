@@ -120,6 +120,11 @@ Ids are URL-encoded in `/api/model/{id}`.
 | `GET` | `/api/lineage/status` | which models the SQL parser understood (coverage) | 2.3 |
 | `POST` | `/api/reload` | re-read the artifacts from disk after a fresh `dbt docs generate` | — |
 | `POST` | `/api/diff` | compare the running state with an uploaded manifest (+ catalog) | diff |
+| `GET` | `/api/pipelines` | configured pipelines, their execution modes, which mode is shown | modes |
+| `POST` | `/api/pipelines/{name}/mode` | show another execution mode of a pipeline (generates it if missing) | modes |
+| `POST` | `/api/pipelines/{name}/generate` | rerun `dbt docs generate` in the background (shown mode, or body `mode`) | modes |
+| `POST` | `/api/pipelines/{name}/modes/{mode}/generate` | same for one execution mode | modes |
+| `GET` | `/api/jobs` | background dbt runs: running + recent finished, with live output | modes |
 
 ### 2.1 `GET /api/graph`
 
@@ -336,6 +341,98 @@ pipeline (with a warning). Without `pipeline`, the one whose manifest has the sa
   `/api/model/{id}` returns 404. A node the state does not have (removed) falls back to the
   running graph. Column-lineage counts are only computed for the running graph.
 - `422` when a file is not JSON or not a dbt manifest / catalog.
+
+### 2.8 Execution modes — `GET /api/pipelines`, `POST /api/pipelines/{name}/mode`
+
+An **execution mode** is a named combination of dbt vars (pipelines.yaml `execution_modes`)
+with its own `manifest.json` + `catalog.json` - by default in `<dir>/<mode>/`. Not to be
+confused with a node's `execution_mode` (`meta.execution_mode`, e.g. `daily`).
+
+Exactly one mode per pipeline is shown, held **server-side**: after a switch every endpoint
+(graph, model, search, column lineage, diff base) reads that mode. Initially the pipeline's
+`default_mode`, else its first mode.
+
+```jsonc
+// GET /api/pipelines
+[
+  {
+    "name": "bestand_mfp",
+    "active_mode": "full",                 // null: the pipeline has no execution modes
+    "available": true,                     // the shown artifacts are on disk
+    "generated_at": "2026-11-01T08:00:00Z",
+    "modes": [
+      {
+        "name": "full",
+        "vars": { "full_mode": true, "monthly_mode": false },
+        "available": true,                 // its manifest.json exists
+        "generated_at": "2026-11-01T08:00:00Z",   // manifest metadata.generated_at
+        "manifest": "/abs/path/artifacts/bestand_mfp/full/manifest.json"
+      }
+    ]
+  },
+  { "name": "schaden_claims", "active_mode": null, "available": true, "generated_at": null, "modes": [] }
+]
+```
+
+`PipelineInfo` also carries `pending_mode` (being generated, shown once done), `can_generate`
+(the pipeline has a `project_dir`), and `job` (latest run; pipelines without modes) - each
+`PipelineModeInfo` has its own `job`. Both are `GenerationJob`s (see 2.9).
+
+`POST /api/pipelines/{name}/mode` with body `{ "mode": "incremental" }` returns that pipeline's
+`PipelineInfo`. If the mode's manifest is on disk the switch is immediate. Otherwise, with a
+`project_dir`, the backend starts generating it and answers with `pending_mode` set - the
+shown mode stays until the job is done, then switches by itself (a failed job abandons the
+switch). Without `project_dir`: `409`. `404` for an unknown pipeline or mode. Built graphs
+are cached per combination of modes, so switching back is instant; `POST /api/reload`
+clears the cache.
+
+### 2.9 Generation — `POST …/generate`, `GET /api/jobs`
+
+With `project_dir` in pipelines.yaml the backend runs `dbt docs generate` itself:
+
+```
+dbt docs generate --project-dir <project_dir> [--profiles-dir …] [--target …]
+                  [--vars '<mode vars as JSON>'] [--target-path <dest>/.dbt_target_<mode>]
+```
+
+- **When:** at startup for every shown artifact set that is not on disk; when switching to a
+  mode without artifacts; on demand via `POST /api/pipelines/{name}/generate` (body
+  `{ "mode": … }` optional, default the shown mode) or `POST …/modes/{mode}/generate`.
+  Existing artifacts are never regenerated on their own.
+- **Where:** dbt writes to its own `--target-path`, then `manifest.json` / `catalog.json` are
+  copied atomically to the configured location. Exception: a pipeline without modes whose
+  artifacts live in `<project_dir>/target/` - dbt writes there directly.
+- **Prepare steps:** each command in the pipeline's `prepare` (or the `dbt.prepare` default
+  in pipelines.yaml), e.g. `run --empty --full-refresh`, runs first with the same flags and
+  vars. If one fails, the job fails and `docs generate` is not run.
+- Runs in the same dbt project are serialised (the later one is `queued`). dbt is called as
+  `DBT_EXECUTABLE` if set, else `dbt.command` from pipelines.yaml (e.g.
+  `uv run --frozen --project {here} dbt`), else `dbt` on PATH.
+- When a job is done the affected graphs are rebuilt **before** its status turns `done`, so
+  a client that sees `done` can refetch right away.
+- Errors: `400` without `project_dir`, `409` while the same pipeline / mode is being
+  generated, `404` for unknown names.
+
+```jsonc
+// GET /api/jobs - running ones and the last 20 finished, newest first
+[
+  {
+    "id": "3f9c0a1b2c4d",
+    "pipeline": "bestand_mfp",
+    "mode": "incremental",              // null: pipeline without modes
+    "trigger": "mode-switch",           // startup | user | mode-switch
+    "status": "running",                // queued | running | done | failed
+    "started_at": "2026-11-10T13:02:11Z",
+    "finished_at": null,
+    "error": null,                      // set when failed, e.g. "dbt docs generate exited with code 2: …"
+    "command": "dbt docs generate --project-dir … --vars {\"full_mode\": false, …}",
+    "log_tail": ["Running with dbt=1.8.7", "Found 23 models, …"]   // last 60 lines, live
+  }
+]
+```
+
+The UI polls `/api/jobs` every 2 s while a job runs (every 15 s otherwise), shows the runs
+in a task indicator in the top bar and redraws when a job changed what is shown.
 
 ---
 

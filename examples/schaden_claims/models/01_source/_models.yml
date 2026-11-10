@@ -1,0 +1,34 @@
+version: 2
+
+models:
+  - name: src_claims_cases
+    description: Cleaned claim cases incl. reporting delay.
+    config: {group: claims, tags: [claims, staging], meta: {execution_mode: hourly}}
+    columns:
+      - {name: claim_id, description: Technical claim key., data_tests: [unique, not_null]}
+      - {name: reporting_delay_days, description: Days between loss and report.}
+      - {name: claim_status, description: "open | closed | reopened."}
+      - {name: reserve_chf, description: Current case reserve in CHF.}
+
+  - name: src_claims_payments
+    description: Cleaned payment transactions; zero amounts dropped.
+    config: {group: claims, tags: [claims, staging], meta: {execution_mode: hourly}}
+    columns:
+      - {name: payment_type, description: "indemnity | expense | recovery."}
+      - {name: amount_chf, description: Signed amount in CHF.}
+
+  - name: src_claims_ri_recoveries
+    description: Reinsurance recoveries - net of reinsurance only.
+    config: {group: reinsurance, tags: [claims, staging, reinsurance], meta: {execution_mode: monthly}}
+
+  - name: src_claims_mfp_contracts
+    description: Contracts from bestand_mfp, as far as claims needs them.
+    config: {group: claims, tags: [claims, staging, cross-pipeline], meta: {execution_mode: daily}}
+
+  - name: src_claims_mfp_portfolio
+    description: Latest written premium per product, canton and risk from bestand_mfp.
+    config: {group: claims, tags: [claims, staging, cross-pipeline], meta: {execution_mode: daily}}
+
+  - name: src_claims_mfp_premium
+    description: Premium adequacy per product from bestand_mfp.
+    config: {group: finance, tags: [claims, staging, cross-pipeline], meta: {execution_mode: daily}}
