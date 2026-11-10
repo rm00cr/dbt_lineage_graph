@@ -8,7 +8,7 @@ import { useEffect, useRef } from 'react'
 
 import type { TraceDirection } from '../api/types'
 import { decodeTraceParam, encodeTraceParam } from '../graph/columnTrace'
-import { type LayoutMode, ZONE_MODES, type ZoneMode } from '../graph/layout'
+import { DEFAULT_ZONE_MODE, type LayoutMode, ZONE_MODES, type ZoneMode } from '../graph/layout'
 import { type FocusMode, type OverlayTab, useExplorerStore } from '../store/useExplorerStore'
 
 // 'changes' only exists while comparing, which a link cannot restore
@@ -87,7 +87,7 @@ export function useUrlSync() {
     set('model', activeId)
     set('tab', activeId && overlayTab !== 'overview' && overlayTab !== 'changes' ? overlayTab : null)
     set('layout', layoutMode === 'dag' ? null : layoutMode)
-    set('zones', layoutMode === 'lanes' && zoneMode !== 'both' ? zoneMode : null)
+    set('zones', layoutMode === 'lanes' && zoneMode !== DEFAULT_ZONE_MODE ? zoneMode : null)
     set('split', layoutMode === 'lanes' && splitPipelines ? 'pipeline' : null)
     set('pipeline', pipelines.length ? pipelines.join(',') : null)
     set('focus', focusMode === 'dim' ? null : focusMode)

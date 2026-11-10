@@ -1,6 +1,7 @@
 /**
  * Layout (AP-2): directed DAG layout via dagre, plus a "stage lanes" layout that lines the
- * nodes up in src / int / out columns (feature 3.2).
+ * nodes up in src / int / out columns (feature 3.2), and a "folders" zone mode that nests one
+ * box per model sub-folder inside each stage column.
  */
 
 import dagre from 'dagre'
@@ -11,9 +12,13 @@ export const NODE_WIDTH = 268
 export const NODE_HEIGHT = 124
 
 export type LayoutMode = 'dag' | 'lanes'
-/** zones of the 'lanes' layout: stage columns, dbt-group rows, or both */
-export type ZoneMode = 'stages' | 'both' | 'groups'
-export const ZONE_MODES: ZoneMode[] = ['stages', 'both', 'groups']
+/**
+ * zones of the 'lanes' layout: stage columns, dbt-group rows, both, or 'folders' (one box per
+ * model sub-folder nested inside each stage column)
+ */
+export type ZoneMode = 'stages' | 'folders' | 'both' | 'groups'
+export const ZONE_MODES: ZoneMode[] = ['stages', 'folders', 'both', 'groups']
+export const DEFAULT_ZONE_MODE: ZoneMode = 'folders'
 
 export interface Positioned {
   id: string
@@ -45,6 +50,20 @@ export interface RowBand {
   count: number
 }
 
+/** Box for one model sub-folder inside a stage (folders zone mode). */
+export interface FolderBand {
+  stage: Stage
+  /** null = models directly in the stage folder */
+  folder: string | null
+  /** the enclosing pipeline band, when split by pipeline */
+  pipeline: string | null
+  x: number
+  y: number
+  width: number
+  height: number
+  count: number
+}
+
 /** Box around one pipeline's own grid (zones layout, split by pipeline). */
 export interface PipelineBand {
   pipeline: string
@@ -60,6 +79,8 @@ export interface LayoutResult {
   lanes: LaneBox[]
   /** group bands; empty unless group rows are shown */
   rows: RowBand[]
+  /** folder boxes inside the stage lanes; empty unless the 'folders' zone mode is on */
+  folders: FolderBand[]
   /** pipeline bands; empty unless split by pipeline */
   pipelines: PipelineBand[]
 }
@@ -89,6 +110,10 @@ const PIPE_HEADER = 40
 const PIPE_PADDING = 18
 const PIPE_GAP = 48
 const PIPE_COLUMN_GAP = 170
+/** folder boxes: label strip on top, inner side padding, vertical gap between boxes */
+const FOLDER_HEADER = 30
+const FOLDER_PADDING = 16
+const FOLDER_GAP = 16
 
 export function layoutGraph(
   nodes: GraphNode[],
@@ -99,7 +124,7 @@ export function layoutGraph(
   /** what the 'lanes' (zones) layout draws */
   zoneOptions: Partial<ZoneOptions> = {},
 ): LayoutResult {
-  if (nodes.length === 0) return { positions: new Map(), lanes: [], rows: [], pipelines: [] }
+  if (nodes.length === 0) return { positions: new Map(), lanes: [], rows: [], folders: [], pipelines: [] }
   const heightOf = (id: string) => heights?.get(id) ?? NODE_HEIGHT
   const options: ZoneOptions = { zones: 'both', splitPipelines: false, ...zoneOptions }
   return mode === 'lanes' ? layoutZones(nodes, edges, heightOf, options) : layoutDag(nodes, edges, heightOf)
@@ -127,7 +152,7 @@ function layoutDag(nodes: GraphNode[], edges: GraphEdge[], heightOf: (id: string
     })
   }
 
-  return { positions, lanes: [], rows: [], pipelines: [] }
+  return { positions, lanes: [], rows: [], folders: [], pipelines: [] }
 }
 
 /**
@@ -232,6 +257,7 @@ interface Block {
   positions: Map<string, { x: number; y: number }>
   lanes: LaneBox[]
   rows: RowBand[]
+  folders: FolderBand[]
   width: number
   height: number
 }
@@ -340,7 +366,97 @@ function layoutBlock(
   const gridBottom = Math.max(y + LANE_PADDING / 2, byStage ? NODE_HEIGHT + LANE_PADDING * 2 : 0)
   for (const lane of lanes) lane.height = gridBottom
 
-  return { positions, lanes, rows, width: gridRight, height: gridBottom }
+  return { positions, lanes, rows, folders: [], width: gridRight, height: gridBottom }
+}
+
+/**
+ * One zone grid for the 'folders' mode, relative to (0, 0): a box per stage (src / int / out)
+ * holding one box per sub-folder. A source sits in the folder of the models that read it (the
+ * backend infers it); sources without one stack directly under the stage label, unboxed.
+ * Sub-columns (intra-stage depth) are shared by everything in a stage, so columns line up.
+ * Folders are ordered by their mean dagre y; models without a folder sit in a "(root)" box last.
+ */
+function layoutFolderBlock(
+  nodes: GraphNode[],
+  edges: GraphEdge[],
+  heightOf: (id: string) => number,
+  dagY: (id: string) => number,
+  pipeline: string | null,
+): Block {
+  const positions = new Map<string, { x: number; y: number }>()
+  const lanes: LaneBox[] = []
+  const folders: FolderBand[] = []
+  const depths = intraStageDepths(nodes, edges)
+  const meanY = (list: GraphNode[]) => list.reduce((sum, n) => sum + dagY(n.id), 0) / list.length
+
+  /** stack nodes per sub-column starting at `top`; returns the bottom edge of the stack */
+  const stack = (members: GraphNode[], top: number, columnOffset: Map<number, number>, laneX: number) => {
+    let bottom = top
+    for (const [depth, offset] of columnOffset) {
+      const column = members
+        .filter((n) => (depths.get(n.id) ?? 0) === depth)
+        .sort((a, b) => dagY(a.id) - dagY(b.id) || a.name.localeCompare(b.name))
+      let stackY = top
+      for (const n of column) {
+        positions.set(n.id, { x: laneX + offset, y: stackY })
+        stackY += heightOf(n.id) + ROW_GAP
+      }
+      if (column.length > 0) bottom = Math.max(bottom, stackY - ROW_GAP)
+    }
+    return bottom
+  }
+
+  let laneX = LANE_PADDING
+  let gridBottom = 0
+  for (const stage of STAGE_SEQUENCE) {
+    const list = nodes.filter((n) => n.stage === stage)
+    if (list.length === 0) continue
+    const distinct = [...new Set(list.map((n) => depths.get(n.id) ?? 0))].sort((a, b) => a - b)
+    const columnOffset = new Map(distinct.map((d, i) => [d, i * (NODE_WIDTH + SUB_COLUMN_GAP)]))
+    const innerWidth = distinct.length * NODE_WIDTH + (distinct.length - 1) * SUB_COLUMN_GAP
+
+    let y = LANE_HEADER
+    // sources without a folder: no box, stacked directly under the stage label
+    const sources = list.filter((n) => n.resource_type === 'source' && !n.folder)
+    if (sources.length > 0) {
+      y = stack(sources, y, columnOffset, laneX) + FOLDER_GAP
+    }
+
+    // model folders, ordered like the group rows; "(root)" last
+    const byFolder = bucket(list.filter((n) => n.resource_type !== 'source' || n.folder), (n) => n.folder ?? UNGROUPED)
+    const folderOrder = [...byFolder.keys()].sort((a, b) => {
+      if (a === UNGROUPED) return 1
+      if (b === UNGROUPED) return -1
+      return meanY(byFolder.get(a)!) - meanY(byFolder.get(b)!) || a.localeCompare(b)
+    })
+    for (const key of folderOrder) {
+      const members = byFolder.get(key)!
+      const bottom = stack(members, y + FOLDER_HEADER, columnOffset, laneX)
+      const height = bottom - y + FOLDER_PADDING
+      folders.push({
+        stage,
+        folder: key === UNGROUPED ? null : key,
+        pipeline,
+        x: laneX - FOLDER_PADDING,
+        y,
+        width: innerWidth + FOLDER_PADDING * 2,
+        height,
+        count: members.length,
+      })
+      y += height + FOLDER_GAP
+    }
+
+    const stageBottom = y - FOLDER_GAP + LANE_PADDING / 2
+    gridBottom = Math.max(gridBottom, stageBottom)
+    lanes.push({ stage, pipeline, x: laneX - LANE_PADDING / 2, y: 0, width: innerWidth + LANE_PADDING, height: 0, count: list.length })
+    laneX += innerWidth + LANE_GAP
+  }
+
+  // all stage boxes share one height, so the columns read as one grid
+  const width = laneX - LANE_GAP + LANE_PADDING / 2
+  const height = Math.max(gridBottom, NODE_HEIGHT + LANE_PADDING * 2)
+  for (const lane of lanes) lane.height = height
+  return { positions, lanes, rows: [], folders, width, height }
 }
 
 function bucket(list: GraphNode[], key: (n: GraphNode) => string): Map<string, GraphNode[]> {
@@ -354,6 +470,7 @@ function placeBlock(block: Block, dx: number, dy: number, into: LayoutResult): v
   for (const [id, p] of block.positions) into.positions.set(id, { x: p.x + dx, y: p.y + dy })
   for (const lane of block.lanes) into.lanes.push({ ...lane, x: lane.x + dx, y: lane.y + dy })
   for (const row of block.rows) into.rows.push({ ...row, x: row.x + dx, y: row.y + dy })
+  for (const folder of block.folders) into.folders.push({ ...folder, x: folder.x + dx, y: folder.y + dy })
 }
 
 /**
@@ -361,6 +478,7 @@ function placeBlock(block: Block, dx: number, dy: number, into: LayoutResult): v
  *  - 'stages': stage columns, one row
  *  - 'both':   stage columns x group rows
  *  - 'groups': group rows; columns are the DAG depth (longest path), no stage boxes
+ *  - 'folders': stage boxes, each holding one box per model sub-folder
  *
  * `splitPipelines` gives every pipeline its own grid inside a pipeline band. Assuming the
  * convention that only a pipeline's outputs feed other pipelines, the bands are placed like
@@ -376,12 +494,18 @@ function layoutZones(
   const dagLayout = layoutDag(nodes, edges, heightOf)
   const dagY = (id: string) => dagLayout.positions.get(id)?.y ?? 0
   const byStage = zones !== 'groups'
-  const grouped = zones !== 'stages' && nodes.some((n) => n.group)
+  // folders replace the dbt-group rows, so 'folders' never draws them
+  const grouped = zones !== 'stages' && zones !== 'folders' && nodes.some((n) => n.group)
   const split = splitPipelines && new Set(nodes.map((n) => n.pipeline)).size > 1
 
-  const result: LayoutResult = { positions: new Map(), lanes: [], rows: [], pipelines: [] }
+  const result: LayoutResult = { positions: new Map(), lanes: [], rows: [], folders: [], pipelines: [] }
+  const buildBlock = (members: GraphNode[], inner: GraphEdge[], pipeline: string | null) =>
+    zones === 'folders'
+      ? layoutFolderBlock(members, inner, heightOf, dagY, pipeline)
+      : layoutBlock(members, inner, heightOf, dagY, byStage, grouped, pipeline)
+
   if (!split) {
-    placeBlock(layoutBlock(nodes, edges, heightOf, dagY, byStage, grouped, null), 0, 0, result)
+    placeBlock(buildBlock(nodes, edges, null), 0, 0, result)
     return result
   }
 
@@ -393,7 +517,7 @@ function layoutZones(
     const members = byPipeline.get(p)!
     const ids = new Set(members.map((n) => n.id))
     const inner = edges.filter((e) => ids.has(e.source) && ids.has(e.target))
-    blocks.set(p, layoutBlock(members, inner, heightOf, dagY, byStage, grouped, p))
+    blocks.set(p, buildBlock(members, inner, p))
   }
 
   const columnCount = Math.max(...columnOf.values()) + 1

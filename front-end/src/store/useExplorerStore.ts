@@ -21,9 +21,10 @@ import type {
   TraceDirection,
 } from '../api/types'
 import { type TraceView, buildTraceView } from '../graph/columnTrace'
+import { DEFAULT_ZONE_MODE, type LayoutMode, type ZoneMode } from '../graph/layout'
 import { changedIds } from '../graph/diff'
 import { type GraphFilters, filterGraph } from '../graph/filter'
-import type { LayoutMode, ZoneMode } from '../graph/layout'
+/*import type { LayoutMode, ZoneMode } from '../graph/layout'*/
 import {
   type AdjacencyIndex,
   buildIndex,
@@ -91,7 +92,7 @@ interface ExplorerState {
 
   filters: Filters
   layoutMode: LayoutMode
-  /** which zones the 'lanes' layout draws: stage columns, dbt-group rows, or both */
+  /** which zones the 'lanes' layout draws: stage columns, folder boxes, dbt-group rows, or both */
   zoneMode: ZoneMode
   /** zones layout: one grid per pipeline, placed left to right by pipeline dependency */
   splitPipelines: boolean
@@ -272,7 +273,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   filters: { pipelines: pipelinesFromUrl(), stages: [], includeSources: true },
   layoutMode: 'dag',
-  zoneMode: 'both',
+  zoneMode: DEFAULT_ZONE_MODE,
   splitPipelines: false,
   focusMode: 'dim',
   showMiniMap: true,

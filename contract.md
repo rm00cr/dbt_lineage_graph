@@ -69,6 +69,15 @@ The `name` of the pipeline's entry in the pipelines YAML (see 1.0). The dbt
 `metadata.project_name` is **not** used, because every project is called `dbt_pnc`.
 `config.meta.pipeline` on a single node overrides it. Used for *lineage across pipelines* (2.4).
 
+### 1.2a Folder (box inside a stage)
+
+`folder` on `GraphNode` / `ModelDetail` (nullable). Models: the first sub-folder below the layer
+folder (`models/02_intermediate/contract_with_claim/x.sql` -> `contract_with_claim`; numeric
+prefixes ignored, deeper levels flattened). Models directly in the layer folder: `null`
+(drawn as a `(root)` box). Sources: `null`; they are drawn directly in the SRC stage without a
+box. The zones mode `folders` (`?zones=folders`, default) draws one box per stage (src / int /
+out) and one box per model folder inside it; `folder:<name>` is the matching selector.
+
 ### 1.2b Group (domain)
 
 `group` on `GraphNode` / `ModelDetail` (nullable), plus `groups` in `/api/graph` stats and

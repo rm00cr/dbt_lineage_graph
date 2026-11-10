@@ -34,8 +34,7 @@ const FOCUS_ICON = { off: EyeOff, dim: Eye, isolate: Crosshair } as const
 
 const ZONE_OPTIONS: { mode: ZoneMode; label: string; title: string }[] = [
   { mode: 'stages', label: 'Stages', title: 'Stage columns only (src / int / out)' },
-  { mode: 'both', label: 'Stages × Groups', title: 'Stage columns, one row per dbt group' },
-  { mode: 'groups', label: 'Groups', title: 'One row per dbt group, columns by DAG depth' },
+  { mode: 'folders', label: 'Groups', title: 'Stage columns, one box per model folder (group) inside each' },
 ]
 
 interface ToolbarProps {
@@ -47,7 +46,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const setLayoutMode = useExplorerStore((s) => s.setLayoutMode)
   const zoneMode = useExplorerStore((s) => s.zoneMode)
   const setZoneMode = useExplorerStore((s) => s.setZoneMode)
-  const hasGroups = useExplorerStore((s) => s.graph?.nodes.some((n) => n.group) ?? false)
+  const hasFolders = useExplorerStore((s) => s.graph?.nodes.some((n) => n.folder) ?? false)
   const splitPipelines = useExplorerStore((s) => s.splitPipelines)
   const setSplitPipelines = useExplorerStore((s) => s.setSplitPipelines)
   const pipelineCount = useExplorerStore((s) => s.graph?.stats.pipelines.length ?? 0)
@@ -134,15 +133,15 @@ export function Toolbar({ onToast }: ToolbarProps) {
         {layoutMode === 'lanes' && (
           <div className="segmented toolbar__zones" role="group" aria-label="Zones">
             {ZONE_OPTIONS.map(({ mode, label, title }) => {
-              const needsGroups = mode !== 'stages'
-              const disabled = needsGroups && !hasGroups
+              const disabled = mode === 'folders' && !hasFolders
+              const reason = 'No model sub-folders in this project (put models in e.g. 02_intermediate/<folder>/)'
               return (
                 <button
                   key={mode}
                   data-active={zoneMode === mode}
                   disabled={disabled}
                   onClick={() => setZoneMode(mode)}
-                  title={disabled ? 'No dbt groups in this project (set `group:` on your models)' : title}
+                  title={disabled ? reason : title}
                 >
                   {label}
                 </button>

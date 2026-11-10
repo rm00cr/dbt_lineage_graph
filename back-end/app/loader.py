@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .config import STAGE_ORDER, ArtifactPair, resolve_stage
+from .config import STAGE_ORDER, ArtifactPair, folder_of, resolve_stage
 
 MATERIALIZATIONS = {"table", "view", "incremental", "ephemeral", "source"}
 
@@ -44,6 +44,9 @@ class LineageNode:
     project: str
     # dbt `group` (models: `config.group`); sources inherit it from their consumers in _link
     group: str | None = None
+    # box inside the stage: the sub-folder of a model (see config.folder_of). Sources take the
+    # folder most of their consumers live in (_infer_source_folders); None = no box
+    folder: str | None = None
     schema_name: str | None = None
     database: str | None = None
     alias: str | None = None
@@ -306,6 +309,7 @@ def _ingest(
             resource_type="model",
             project=node.get("package_name") or project,
             group=node.get("group") or config.get("group") or None,
+            folder=folder_of(node.get("original_file_path") or node.get("path")),
             schema_name=node.get("schema"),
             database=node.get("database"),
             alias=node.get("alias") or node.get("name"),
@@ -339,6 +343,7 @@ def _ingest(
             project=node.get("package_name") or project,
             # dbt has no groups for sources; allow an explicit `meta.group`, else inferred in _link
             group=_source_group(node),
+            folder=None,  # inferred in _infer_source_folders from the consuming models
             schema_name=node.get("schema"),
             database=node.get("database"),
             alias=identifier,
@@ -436,6 +441,7 @@ def _link(graph: LineageGraph) -> None:
 
     graph.edges = edges
     _infer_source_groups(graph)
+    _infer_source_folders(graph)
 
 
 def _source_group(node: dict[str, Any]) -> str | None:
@@ -453,3 +459,15 @@ def _infer_source_groups(graph: LineageGraph) -> None:
         counts = Counter(g for i in node.dependents if (g := graph.nodes[i].group))
         if counts:
             node.group = min(counts, key=lambda g: (-counts[g], g))
+
+
+def _infer_source_folders(graph: LineageGraph) -> None:
+    """A source takes the folder most of its direct consumers live in (ties alphabetical), so
+    a raw table is drawn next to the src models that read it. Sources with no folder-bearing
+    consumer stay without one."""
+    for node in graph.nodes.values():
+        if node.resource_type != "source" or node.folder:
+            continue
+        counts = Counter(f for i in node.dependents if (f := graph.nodes[i].folder))
+        if counts:
+            node.folder = min(counts, key=lambda f: (-counts[f], f))

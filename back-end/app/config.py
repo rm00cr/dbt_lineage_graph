@@ -352,6 +352,23 @@ class Settings:
         )
 
 
+def folder_of(original_file_path: str | None) -> str | None:
+    """The first sub-folder below the layer folder, e.g.
+    ``models/02_intermediate/contract_with_claim/int_x.sql`` -> ``contract_with_claim``.
+
+    Returns None when the model sits directly in the layer folder (``03_output/out_x.sql``)
+    or when no layer folder is found. Only one level is used; deeper folders are flattened.
+    """
+    segments = (original_file_path or "").replace("\\", "/").split("/")
+    for index, segment in enumerate(segments[:-1]):  # the last segment is the file itself
+        if _ORDERING_PREFIX.sub("", segment.lower()) in STAGE_FOLDERS:
+            # the segment right after the layer folder, if it is not the file itself
+            if index + 1 < len(segments) - 1:
+                return segments[index + 1]
+            return None
+    return None
+
+
 def resolve_stage(
     *,
     name: str,

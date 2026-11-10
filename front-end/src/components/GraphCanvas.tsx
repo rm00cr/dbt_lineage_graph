@@ -398,6 +398,23 @@ export function GraphCanvas() {
                 </div>
               </div>
             ))}
+            {layout.folders.map((box) => (
+              <div
+                key={`${box.pipeline ?? ''}:${box.stage}:${box.folder ?? '__root__'}`}
+                className={`folder-band ${box.folder ? '' : 'folder-band--root'}`}
+                style={{
+                  ['--stage-color' as string]: stageColor(box.stage),
+                  transform: `translate(${box.x}px, ${box.y}px)`,
+                  width: box.width,
+                  height: box.height,
+                }}
+              >
+                <div className="folder-band__label">
+                  {box.folder ?? '(root)'}
+                  <span className="row-band__count">{box.count}</span>
+                </div>
+              </div>
+            ))}
           </ViewportPortal>
         )}
       </ReactFlow>

@@ -1423,6 +1423,34 @@ input {
   font-weight: 500;
 }
 
+/* model sub-folders: one box per folder inside a stage lane ('folders' zone mode) */
+.folder-band {
+  position: absolute;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--stage-color) 30%, transparent);
+  background: color-mix(in srgb, var(--stage-color) 9%, transparent);
+  pointer-events: none;
+}
+
+.folder-band--root {
+  border-style: dashed;
+  background: transparent;
+}
+
+.folder-band__label {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--stage-color) 75%, var(--text-muted, var(--text-faint)));
+}
+
 /* dbt groups (domains): horizontal bands across the stage lanes */
 .row-band {
   position: absolute;

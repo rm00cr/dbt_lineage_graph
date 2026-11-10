@@ -279,3 +279,53 @@ def test_catalog_stats(graph: LineageGraph) -> None:
     node = graph.nodes[CONTRACTS]
     assert node.row_count == 4_812_004
     assert node.size_bytes == 1_073_741_824
+
+
+def test_folder_of_is_first_subfolder_below_layer() -> None:
+    from app.config import folder_of
+
+    assert folder_of("models/02_intermediate/contract_with_claim/int_x.sql") == "contract_with_claim"
+    assert folder_of("models/01_source/claim/src_x.sql") == "claim"
+    # numeric prefix on the layer folder is ignored, and deeper levels are flattened
+    assert folder_of("models/02_intermediate/contract/sub/deep/int_x.sql") == "contract"
+    assert folder_of("models\\03_output\\datamart\\out_x.sql") == "datamart"
+    # directly in the layer folder -> no box
+    assert folder_of("models/03_output/crpc_statistik_int.sql") is None
+    # no layer folder at all
+    assert folder_of("models/misc/x.sql") is None
+    assert folder_of(None) is None
+
+
+def test_source_takes_the_folder_of_its_consumers(tmp_path: Path) -> None:
+    manifest = {
+        "metadata": {"project_name": "p"},
+        "nodes": {
+            "model.p.src_a": {
+                "name": "src_a", "resource_type": "model", "original_file_path": "models/01_source/claim/src_a.sql",
+                "depends_on": {"nodes": ["source.p.ds.tbl_a", "source.p.ds.tbl_b"]},
+            },
+            "model.p.src_b": {
+                "name": "src_b", "resource_type": "model", "original_file_path": "models/01_source/claim/src_b.sql",
+                "depends_on": {"nodes": ["source.p.ds.tbl_b"]},
+            },
+            "model.p.src_c": {
+                "name": "src_c", "resource_type": "model", "original_file_path": "models/01_source/adam/src_c.sql",
+                "depends_on": {"nodes": ["source.p.ds.tbl_b"]},
+            },
+            "model.p.src_d": {
+                "name": "src_d", "resource_type": "model", "original_file_path": "models/01_source/adam/src_d.sql",
+                "depends_on": {"nodes": ["source.p.ds.tbl_a"]},
+            },
+        },
+        "sources": {
+            "source.p.ds.tbl_a": {"name": "tbl_a", "source_name": "ds", "identifier": "tbl_a", "resource_type": "source"},
+            "source.p.ds.tbl_b": {"name": "tbl_b", "source_name": "ds", "identifier": "tbl_b", "resource_type": "source"},
+            "source.p.ds.tbl_orphan": {"name": "tbl_orphan", "source_name": "ds", "identifier": "tbl_orphan", "resource_type": "source"},
+        },
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    graph = load_graph([ArtifactPair(manifest=tmp_path / "manifest.json")])
+    # tbl_b: claim (2 consumers) beats adam (1); tbl_a: tie claim/adam -> alphabetical
+    assert graph.nodes["source.p.ds.tbl_b"].folder == "claim"
+    assert graph.nodes["source.p.ds.tbl_a"].folder == "adam"
+    assert graph.nodes["source.p.ds.tbl_orphan"].folder is None

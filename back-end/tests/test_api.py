@@ -39,6 +39,7 @@ def test_graph_shape(client: TestClient) -> None:
         "pipeline": "bestand_mfp",
         "resource_type": "model",
         "group": "contract",
+        "folder": None,  # fixtures keep int models directly in 02_intermediate
         "schema_name": "mfp_intermediate",
         "database": "pnc-analytics-prd",
         "description": node["description"],
