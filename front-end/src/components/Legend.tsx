@@ -1,5 +1,8 @@
 /** Legend: the visual language of the canvas (stage colours + materialization icons). */
 
+import { useMemo } from 'react'
+
+import { boundaryViolations } from '../graph/boundary'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { MATERIALIZATION_ICONS, STAGE_LABELS, useStageColor } from './visual'
 
@@ -9,6 +12,10 @@ export function Legend() {
   const graph = useExplorerStore((s) => s.graph)
   const stageColor = useStageColor()
   const stages = (graph?.stats.stages ?? ['src', 'int', 'out']) as ('src' | 'int' | 'out')[]
+  const hasViolations = useMemo(
+    () => (graph ? boundaryViolations(graph.nodes, graph.edges).size > 0 : false),
+    [graph],
+  )
 
   return (
     <div className="legend">
@@ -55,6 +62,16 @@ export function Legend() {
           cross-pipeline edge
         </span>
       </div>
+      {hasViolations && (
+        <div className="legend__row">
+          <span className="legend__item" title="Only a pipeline's outputs may feed another pipeline, through a src model">
+            <svg width="26" height="8" aria-hidden>
+              <line x1="0" y1="4" x2="26" y2="4" stroke="var(--danger)" strokeWidth="2" strokeDasharray="3 4" />
+            </svg>
+            breaks pipeline boundary
+          </span>
+        </div>
+      )}
     </div>
   )
 }

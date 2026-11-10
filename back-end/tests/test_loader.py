@@ -13,8 +13,8 @@ CLAIMS_CASES = "model.pnc_analytics.int_claims_cases"
 
 
 def test_graph_loads_models_and_sources(graph: LineageGraph) -> None:
-    assert len(graph.nodes) == 25  # 19 models + 6 sources
-    assert sum(1 for n in graph.nodes.values() if n.resource_type == "model") == 19
+    assert len(graph.nodes) == 29  # 23 models + 6 sources
+    assert sum(1 for n in graph.nodes.values() if n.resource_type == "model") == 23
     assert sum(1 for n in graph.nodes.values() if n.resource_type == "source") == 6
     assert graph.catalog_loaded is True
     assert graph.adapter_type == "bigquery"
@@ -27,6 +27,14 @@ def test_stage_derivation(graph: LineageGraph) -> None:
     assert graph.nodes["model.pnc_analytics.out_mfp_portfolio_daily"].stage == "out"
     assert graph.nodes[RAW_CONTRACTS].stage == "src"
     assert graph.stages == ["src", "int", "out"]
+
+
+def test_dbt_groups(graph: LineageGraph) -> None:
+    assert graph.nodes[CONTRACTS].group == "contract"
+    assert graph.nodes[CLAIMS_CASES].group == "claims"
+    # sources have no dbt group: inherited from their consumers (raw contracts -> src_mfp_contracts)
+    assert graph.nodes[RAW_CONTRACTS].group == "contract"
+    assert graph.groups == ["claims", "contract", "finance", "partner", "premium"]
 
 
 def test_stage_fallbacks() -> None:
@@ -63,7 +71,7 @@ def test_dependencies_and_inverted_dependents(graph: LineageGraph) -> None:
         "model.pnc_analytics.int_mfp_contract_coverage",
         "model.pnc_analytics.out_mfp_customer_360",
         "model.pnc_analytics.out_mfp_premium_report",
-        CLAIMS_CASES,
+        "model.pnc_analytics.out_mfp_contracts",
     }
     # sources have no parents but do have children
     assert graph.nodes[RAW_CONTRACTS].depends_on == []
@@ -84,8 +92,10 @@ def test_cross_pipeline_edges_exist(graph: LineageGraph) -> None:
         for s, t in graph.edges
         if graph.nodes[s].pipeline != graph.nodes[t].pipeline
     ]
-    assert (CONTRACTS, CLAIMS_CASES) in cross
-    assert len(cross) >= 3
+    assert ("model.pnc_analytics.out_mfp_contracts", "model.pnc_analytics.src_claims_mfp_contracts") in cross
+    assert len(cross) == 3
+    # convention: only outputs cross a pipeline boundary, and always into a src model
+    assert all(graph.nodes[s].stage == "out" and graph.nodes[t].stage == "src" for s, t in cross)
 
 
 def test_code_is_loaded(graph: LineageGraph) -> None:

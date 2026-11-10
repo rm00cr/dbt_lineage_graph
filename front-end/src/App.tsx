@@ -2,9 +2,11 @@ import { ReactFlowProvider } from '@xyflow/react'
 import { GitFork, TriangleAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
+import { TraceBar } from './components/ColumnTrace'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Legend } from './components/Legend'
 import { ModelOverlay } from './components/ModelOverlay'
+import { PipelinePicker } from './components/PipelinePicker'
 import { SearchBar } from './components/SearchBar'
 import { ThemeToggle } from './components/ThemeToggle'
 import { Toolbar } from './components/Toolbar'
@@ -72,10 +74,7 @@ function Explorer() {
             <span className="stat-chip__value">{graph?.stats.edge_count ?? 0}</span>
             <span className="stat-chip__label">edges</span>
           </div>
-          <div className="stat-chip">
-            <span className="stat-chip__value">{graph?.stats.pipelines.length ?? 0}</span>
-            <span className="stat-chip__label">pipelines</span>
-          </div>
+          <PipelinePicker />
         </div>
       </header>
 
@@ -93,6 +92,7 @@ function Explorer() {
             <Toolbar onToast={showToast} />
             <Legend />
             <ModelOverlay onToast={showToast} />
+            <TraceBar />
 
             {usingMock && (
               <div className="banner" title={errorMessage ?? undefined}>

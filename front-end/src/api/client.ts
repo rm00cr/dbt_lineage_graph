@@ -6,7 +6,15 @@
  *   empty (default)        -> relative '/api', served by the Vite dev proxy
  */
 
-import type { GraphResponse, MetaResponse, ModelDetail, SearchResponse } from './types'
+import type {
+  ColumnLineageResponse,
+  GraphResponse,
+  LineageStatusResponse,
+  MetaResponse,
+  ModelDetail,
+  SearchResponse,
+  TraceDirection,
+} from './types'
 
 const BASE = (import.meta.env.VITE_API_BASE_URL ?? '').replace(/\/$/, '')
 
@@ -63,4 +71,14 @@ export const api = {
   searchModels: (q: string, limit = 20) => get<SearchResponse>('/api/search', { q, limit }),
 
   searchColumns: (q: string, limit = 50) => get<SearchResponse>('/api/search/columns', { q, limit }),
+
+  columnLineage: (model: string, column: string, direction: TraceDirection = 'both', depth?: number) =>
+    get<ColumnLineageResponse>('/api/lineage/column', {
+      model,
+      column,
+      direction,
+      ...(depth ? { depth } : {}),
+    }),
+
+  lineageStatus: () => get<LineageStatusResponse>('/api/lineage/status'),
 }

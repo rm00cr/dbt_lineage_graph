@@ -21,7 +21,9 @@ import {
 } from '@xyflow/react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
-import type { GraphNode } from '../api/types'
+import type { GraphEdge, GraphNode } from '../api/types'
+import { boundaryViolations } from '../graph/boundary'
+import { edgeHandles, traceNodeHeight } from '../graph/columnTrace'
 import { NODE_HEIGHT, NODE_WIDTH, layoutGraph } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { useTheme } from '../theme/useTheme'
@@ -34,6 +36,8 @@ const PULSE_MS = 1900
 export function GraphCanvas() {
   const graph = useExplorerStore((s) => s.graph)
   const layoutMode = useExplorerStore((s) => s.layoutMode)
+  const zoneMode = useExplorerStore((s) => s.zoneMode)
+  const splitPipelines = useExplorerStore((s) => s.splitPipelines)
   const focusMode = useExplorerStore((s) => s.focusMode)
   const showMiniMap = useExplorerStore((s) => s.showMiniMap)
   const selectionDrag = useExplorerStore((s) => s.selectionDrag)
@@ -42,13 +46,15 @@ export function GraphCanvas() {
   const highlightedEdgeIds = useExplorerStore((s) => s.highlightedEdgeIds)
   const activeId = useExplorerStore((s) => s.activeId)
   const centerRequest = useExplorerStore((s) => s.centerRequest)
+  const traceView = useExplorerStore((s) => s.columnTrace?.view ?? null)
 
   const select = useExplorerStore((s) => s.select)
   const openModel = useExplorerStore((s) => s.openModel)
   const clearSelection = useExplorerStore((s) => s.clearSelection)
   const closeOverlay = useExplorerStore((s) => s.closeOverlay)
 
-  const { setCenter, fitView } = useReactFlow()
+  const { setCenter, fitView, fitBounds, getNodesBounds } = useReactFlow()
+  const canvasRef = useRef<HTMLDivElement>(null)
   const theme = useTheme((s) => s.resolved)
   const stageColor = useStageColor()
 
@@ -58,17 +64,60 @@ export function GraphCanvas() {
   selectionRef.current = selectedIds
 
   // ------------------------------------------------------------------ layout
+  // traced nodes (2.3) grow by their column rows; the layout makes room for them
+  const heights = useMemo(() => {
+    const map = new Map<string, number>()
+    if (!traceView) return map
+    for (const [id, columns] of traceView.columnsByNode) map.set(id, traceNodeHeight(NODE_HEIGHT, columns))
+    return map
+  }, [traceView])
+
   const layout = useMemo(
-    () => layoutGraph(graph?.nodes ?? [], graph?.edges ?? [], layoutMode),
-    [graph, layoutMode],
+    () =>
+      layoutGraph(graph?.nodes ?? [], graph?.edges ?? [], layoutMode, heights, { zones: zoneMode, splitPipelines }),
+    [graph, layoutMode, heights, zoneMode, splitPipelines],
   )
 
-  const layoutSignature = `${layoutMode}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
+  /**
+   * Fit the viewport: to the traced column path (2.3) while one is shown, otherwise to the
+   * whole graph. Reads the trace at call time, so a delayed call never undoes a newer one.
+   * The traced path is framed in the part of the canvas the overlay does not cover (same
+   * width rule as `.overlay` in global.css).
+   */
+  const frameView = useCallback(() => {
+    const view = useExplorerStore.getState().columnTrace?.view
+    if (!view) {
+      void fitView({ duration: 650, padding: 0.18 })
+      return
+    }
+    const ids = [...view.nodeIds]
+    const width = canvasRef.current?.clientWidth ?? window.innerWidth
+    const covered = useExplorerStore.getState().activeId ? Math.min(560, window.innerWidth * 0.46) : 0
+    if (covered === 0 || width - covered < 200) {
+      void fitView({ nodes: ids.map((id) => ({ id })), duration: 650, padding: 0.22, maxZoom: 1.2 })
+      return
+    }
+    // widen the box to the right so the traced nodes land left of the overlay
+    const bounds = getNodesBounds(ids)
+    void fitBounds({ ...bounds, width: (bounds.width * width) / (width - covered) }, { duration: 650, padding: 0.12 })
+  }, [fitView, fitBounds, getNodesBounds])
+
+  const layoutSignature = `${layoutMode}:${layoutMode === 'lanes' ? `${zoneMode}:${splitPipelines}` : ''}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
   useEffect(() => {
     setDragged(new Map())
-    const timer = window.setTimeout(() => fitView({ duration: 650, padding: 0.18 }), 60)
+    const timer = window.setTimeout(frameView, 60)
     return () => window.clearTimeout(timer)
-  }, [layoutSignature, fitView])
+  }, [layoutSignature, frameView])
+
+  // re-frame whenever a different set of nodes is traced
+  const traceSignature = traceView
+    ? `${traceView.root.modelId}|${traceView.root.column}|${[...traceView.nodeIds].sort().join(',')}`
+    : ''
+  useEffect(() => {
+    if (!traceSignature) return
+    const timer = window.setTimeout(frameView, 80)
+    return () => window.clearTimeout(timer)
+  }, [traceSignature, frameView])
 
   // ------------------------------------------------------------------ pulse on jump
   useEffect(() => {
@@ -113,7 +162,7 @@ export function GraphCanvas() {
         // Explicit dimensions: the nodes are fully controlled, so React Flow never writes
         // measurements back into them — without this the mini-map stays empty.
         width: NODE_WIDTH,
-        height: NODE_HEIGHT,
+        height: heights.get(node.id) ?? NODE_HEIGHT,
         selected: selectedIds.has(node.id),
         data: {
           node,
@@ -121,16 +170,49 @@ export function GraphCanvas() {
           inFocus: dimming && highlightedIds.has(node.id),
           active: activeId === node.id,
           searchHit: pulseId === node.id,
+          traceColumns: traceView?.columnsByNode.get(node.id),
+          height: heights.get(node.id),
         },
       }))
-  }, [graph, visibleIds, dragged, layout, selectedIds, highlightedIds, focusMode, activeId, pulseId])
+  }, [graph, visibleIds, dragged, layout, heights, traceView, selectedIds, highlightedIds, focusMode, activeId, pulseId])
 
   const accentColor = theme === 'light' ? '#4f46e5' : '#6366f1'
   const edgeColor = theme === 'light' ? 'rgba(71,85,105,0.5)' : 'rgba(148,163,184,0.4)'
 
+  // cross-pipeline edges that break the boundary convention (only OUT -> SRC may cross)
+  const violations = useMemo(() => boundaryViolations(graph?.nodes ?? [], graph?.edges ?? []), [graph])
+
   const edges = useMemo(() => {
     if (!graph) return []
     const dimming = focusMode !== 'off' && highlightedEdgeIds.size > 0
+    const crossClass = (edge: GraphEdge) =>
+      edge.cross_pipeline ? `edge--cross${violations.has(edge.id) ? ' edge--violation' : ''}` : ''
+
+    // while a column is traced, the model edges on its path are replaced by column edges
+    if (traceView) {
+      const modelEdges = graph.edges
+        .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
+        .filter((edge) => !traceView.modelEdgeIds.has(edge.id))
+        .map((edge) => ({
+          id: edge.id,
+          source: edge.source,
+          target: edge.target,
+          className: `edge--dim ${crossClass(edge)}`.trim(),
+          markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: edgeColor },
+        }))
+      const columnEdges = traceView.edges
+        .filter((edge) => visibleIds.has(edge.source_model) && visibleIds.has(edge.target_model))
+        .map((edge) => ({
+          id: `col:${edge.id}`,
+          source: edge.source_model,
+          target: edge.target_model,
+          ...edgeHandles(traceView, edge),
+          className: `cedge cedge--${edge.kind}`,
+          zIndex: 1,
+          markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: accentColor },
+        }))
+      return [...modelEdges, ...columnEdges]
+    }
 
     return graph.edges
       .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
@@ -138,7 +220,7 @@ export function GraphCanvas() {
         const highlighted = highlightedEdgeIds.has(edge.id)
         const classes = [
           highlighted ? 'edge--highlight' : dimming ? 'edge--dim' : '',
-          edge.cross_pipeline ? 'edge--cross' : '',
+          crossClass(edge),
         ]
           .filter(Boolean)
           .join(' ')
@@ -156,7 +238,7 @@ export function GraphCanvas() {
           },
         }
       })
-  }, [graph, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor])
+  }, [graph, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor, traceView, violations])
 
   // ------------------------------------------------------------------ interaction
   const onNodesChange = useCallback(
@@ -206,7 +288,7 @@ export function GraphCanvas() {
   }, [clearSelection, closeOverlay])
 
   return (
-    <div className={`canvas${activeId ? ' canvas--with-overlay' : ''}`}>
+    <div ref={canvasRef} className={`canvas${activeId ? ' canvas--with-overlay' : ''}`}>
       <ReactFlow
         nodes={nodes}
         edges={edges}
@@ -225,8 +307,6 @@ export function GraphCanvas() {
         minZoom={0.1}
         maxZoom={2.2}
         proOptions={{ hideAttribution: true }}
-        fitView
-        fitViewOptions={{ padding: 0.18 }}
         defaultEdgeOptions={{ type: 'default' }}
       >
         <Background
@@ -250,9 +330,41 @@ export function GraphCanvas() {
 
         {layoutMode === 'lanes' && (
           <ViewportPortal>
+            {layout.pipelines.map((band) => (
+              <div
+                key={band.pipeline}
+                className="pipeline-band"
+                style={{
+                  transform: `translate(${band.x}px, ${band.y}px)`,
+                  width: band.width,
+                  height: band.height,
+                }}
+              >
+                <div className="pipeline-band__label">
+                  {band.pipeline}
+                  <span className="row-band__count">{band.count}</span>
+                </div>
+              </div>
+            ))}
+            {layout.rows.map((row) => (
+              <div
+                key={`${row.pipeline ?? ''}:${row.group ?? '__ungrouped__'}`}
+                className={`row-band ${row.group ? '' : 'row-band--ungrouped'}`}
+                style={{
+                  transform: `translate(${row.x}px, ${row.y}px)`,
+                  width: row.width,
+                  height: row.height,
+                }}
+              >
+                <div className="row-band__label">
+                  {row.group ?? 'ungrouped'}
+                  <span className="row-band__count">{row.count}</span>
+                </div>
+              </div>
+            ))}
             {layout.lanes.map((lane) => (
               <div
-                key={lane.stage}
+                key={`${lane.pipeline ?? ''}:${lane.stage}`}
                 className="lane"
                 style={{
                   ['--stage-color' as string]: stageColor(lane.stage),
