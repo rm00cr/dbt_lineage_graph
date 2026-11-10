@@ -30,7 +30,8 @@ down, so either side can be worked on alone.
 ## Quick start
 
 ```bash
-./dev.sh          # starts both: API on :8000, UI on http://localhost:5173
+./dev.sh                         # starts both: API on :8000, UI on http://localhost:5173
+./dev.sh path/to/pipelines.yaml  # same, with your own pipelines (see pipelines.example.yaml)
 ```
 
 Or separately:

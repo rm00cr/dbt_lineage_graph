@@ -48,8 +48,12 @@ Output table names are assumed unique (details: `../contract.md` §1.0).
 | `BQ_CONSOLE_PROJECT` | node's `database` | GCP project used for BigQuery deeplinks |
 | `CORS_ORIGINS` | Vite dev servers | comma-separated allowed origins |
 
+The variables can also go in `back-end/.env` (template: `.env.example`), which
+`lineage-api` loads at startup. Precedence: `--config` > shell environment > `.env` >
+default. The API prints the pipelines config it uses when it starts.
+
 ```bash
-PIPELINES_CONFIG=~/pnc/pipelines.yaml uv run lineage-api
+uv run lineage-api --config ~/pnc/pipelines.yaml       # or: PIPELINES_CONFIG=... uv run lineage-api
 ```
 
 After a fresh `dbt docs generate` you can reload without a restart: `curl -X POST localhost:8000/api/reload`.
