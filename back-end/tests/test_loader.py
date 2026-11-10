@@ -178,10 +178,12 @@ def test_pipelines_yaml(tmp_path: Path) -> None:
     absolute = (tmp_path / "elsewhere" / "manifest.json").resolve()
     (tmp_path / "pipelines.yaml").write_text(
         "pipelines:\n"
-        "  - dir: one\n"
+        "  - name: Portfolio\n"
+        "    dir: one\n"
         f"  - manifest: '{absolute.as_posix()}'\n"
     )
     first, second = load_pipelines_config(tmp_path / "pipelines.yaml")
+    assert first.name == "Portfolio" and second.name is None
     assert first.manifest == (tmp_path / "one" / "manifest.json").resolve()
     assert first.catalog == (tmp_path / "one" / "catalog.json").resolve()
     assert second.manifest == absolute and second.catalog is None
@@ -189,6 +191,17 @@ def test_pipelines_yaml(tmp_path: Path) -> None:
     (tmp_path / "bad.yaml").write_text("pipelines:\n  - catalog: c.json\n")
     with pytest.raises(PipelinesConfigError):
         load_pipelines_config(tmp_path / "bad.yaml")
+
+    (tmp_path / "dupe.yaml").write_text("pipelines:\n  - {name: a, dir: x}\n  - {name: a, dir: y}\n")
+    with pytest.raises(PipelinesConfigError, match="used twice"):
+        load_pipelines_config(tmp_path / "dupe.yaml")
+
+
+def test_pipeline_name_from_yaml_overrides_project_name(tmp_path: Path) -> None:
+    pair = _project(tmp_path, "dbt_proj", models=[{"name": "out_x", "folder": "03_output"}])
+    graph = load_graph([ArtifactPair(manifest=pair.manifest, name="Portfolio")])
+    assert graph.nodes["model.dbt_proj.out_x"].pipeline == "Portfolio"
+    assert graph.pipelines == ["Portfolio"] and graph.project_names == ["dbt_proj"]
 
 
 def test_code_is_loaded(graph: LineageGraph) -> None:

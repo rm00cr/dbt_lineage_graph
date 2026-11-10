@@ -109,12 +109,12 @@ def _read_json(path: Path) -> dict[str, Any]:
         return json.load(fh)
 
 
-def _pipeline_of(node: dict[str, Any], project: str) -> str:
-    """A pipeline is a dbt project: every node of a manifest belongs to its `project_name`.
-    `meta.pipeline` remains as an explicit per-node override."""
+def _pipeline_of(node: dict[str, Any], pipeline: str) -> str:
+    """A pipeline is a dbt project: every node of a manifest belongs to it (named in
+    pipelines.yaml, else `project_name`). `meta.pipeline` remains a per-node override."""
     meta = {**(node.get("meta") or {}), **((node.get("config") or {}).get("meta") or {})}
-    pipeline = meta.get("pipeline")
-    return str(pipeline) if pipeline else project
+    override = meta.get("pipeline")
+    return str(override) if override else pipeline
 
 
 def _materialization_of(node: dict[str, Any]) -> str:
@@ -197,19 +197,25 @@ def load_graph(pairs: Iterable[ArtifactPair]) -> LineageGraph:
         if catalog:
             graph.catalog_loaded = True
         graph.artifacts.append(str(pair.manifest))
-        _ingest(graph, manifest, catalog)
+        _ingest(graph, manifest, catalog, pair.name)
 
     _link(graph)
     return graph
 
 
-def _ingest(graph: LineageGraph, manifest: dict[str, Any], catalog: dict[str, Any] | None) -> None:
+def _ingest(
+    graph: LineageGraph,
+    manifest: dict[str, Any],
+    catalog: dict[str, Any] | None,
+    pipeline_name: str | None = None,
+) -> None:
     metadata = manifest.get("metadata") or {}
     project = metadata.get("project_name") or "dbt"
     if project in graph.project_names:
         log.warning("project %r is configured twice; later nodes overwrite earlier ones", project)
     else:
         graph.project_names.append(project)
+    pipeline = pipeline_name or project  # name from pipelines.yaml, else the dbt project
     graph.adapter_type = graph.adapter_type or metadata.get("adapter_type")
     graph.dbt_version = graph.dbt_version or metadata.get("dbt_version")
     graph.generated_at = graph.generated_at or metadata.get("generated_at")
@@ -238,7 +244,7 @@ def _ingest(graph: LineageGraph, manifest: dict[str, Any], catalog: dict[str, An
                 tags=tags,
             ),
             materialization=_materialization_of(node),
-            pipeline=_pipeline_of(node, project),
+            pipeline=_pipeline_of(node, pipeline),
             resource_type="model",
             project=node.get("package_name") or project,
             group=node.get("group") or config.get("group") or None,
@@ -270,7 +276,7 @@ def _ingest(graph: LineageGraph, manifest: dict[str, Any], catalog: dict[str, An
             name=display_name,
             stage="src",
             materialization="source",
-            pipeline=_pipeline_of(node, project),
+            pipeline=_pipeline_of(node, pipeline),
             resource_type="source",
             project=node.get("package_name") or project,
             # dbt has no groups for sources; allow an explicit `meta.group`, else inferred in _link

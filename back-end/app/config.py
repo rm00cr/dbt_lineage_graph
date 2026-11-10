@@ -13,12 +13,13 @@ Which pipelines exist and where their artifacts live is declared in a YAML file
 (see ``fixtures/pipelines.yaml``)::
 
     pipelines:
-      - dir: bestand_mfp                  # expects manifest.json (+ catalog.json) inside
-      - manifest: /ci/claims/target/manifest.json
+      - name: bestand_mfp                 # optional, default: manifest metadata.project_name
+        dir: bestand_mfp                  # expects manifest.json (+ catalog.json) inside
+      - name: schaden_claims
+        manifest: /ci/claims/target/manifest.json
         catalog: /ci/claims/target/catalog.json    # optional
 
-Relative paths resolve against the YAML file's folder. The pipeline *name* is the
-manifest's ``metadata.project_name``, not something configured here.
+Relative paths resolve against the YAML file's folder. Pipeline names must be unique.
 
 Environment variables
 ---------------------
@@ -74,6 +75,8 @@ class ArtifactPair:
 
     manifest: Path
     catalog: Path | None = None
+    # pipeline name; None -> the manifest's `metadata.project_name`
+    name: str | None = None
 
     @property
     def exists(self) -> bool:
@@ -95,6 +98,7 @@ def load_pipelines_config(path: Path) -> list[ArtifactPair]:
 
     base = path.parent
     pairs: list[ArtifactPair] = []
+    names: set[str] = set()
     for position, entry in enumerate(entries, start=1):
         if not isinstance(entry, dict):
             raise PipelinesConfigError(f"{path}: pipeline #{position} must be a mapping")
@@ -103,7 +107,12 @@ def load_pipelines_config(path: Path) -> list[ArtifactPair]:
         if manifest is None:
             raise PipelinesConfigError(f"{path}: pipeline #{position} needs 'dir' or 'manifest'")
         catalog = _resolve(base, entry.get("catalog")) or (folder / "catalog.json" if folder else None)
-        pairs.append(ArtifactPair(manifest=manifest, catalog=catalog))
+        name = str(entry["name"]).strip() if entry.get("name") else None
+        if name and name in names:
+            raise PipelinesConfigError(f"{path}: pipeline name {name!r} is used twice")
+        if name:
+            names.add(name)
+        pairs.append(ArtifactPair(manifest=manifest, catalog=catalog, name=name))
     return pairs
 
 

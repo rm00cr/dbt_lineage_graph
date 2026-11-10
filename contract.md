@@ -29,8 +29,10 @@ Which pipelines exist and where their artifacts are is declared in a YAML file
 
 ```yaml
 pipelines:
-  - dir: bestand_mfp                     # manifest.json (+ catalog.json) inside
-  - manifest: /ci/claims/target/manifest.json
+  - name: bestand_mfp                    # optional, default: manifest project_name
+    dir: bestand_mfp                     # manifest.json (+ catalog.json) inside
+  - name: schaden_claims
+    manifest: /ci/claims/target/manifest.json
     catalog: /ci/claims/target/catalog.json
 ```
 
@@ -60,8 +62,8 @@ Configurable through `STAGE_FOLDERS` / `STAGE_PREFIXES` in `back-end/app/config.
 
 ### 1.2 Pipeline
 
-The `metadata.project_name` of the manifest the node came from (see 1.0).
-`config.meta.pipeline` on a node overrides it. Used for *lineage across pipelines* (2.4).
+The `name` of the node's entry in the pipelines YAML, else the `metadata.project_name` of
+its manifest (see 1.0). `config.meta.pipeline` on a single node overrides both. Used for *lineage across pipelines* (2.4).
 
 ### 1.2b Group (domain)
 

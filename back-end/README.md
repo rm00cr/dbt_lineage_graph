@@ -24,14 +24,16 @@ uv run ruff check .
 
 A **pipeline is one dbt project** with its own `manifest.json` + `catalog.json`, laid out as
 `models/01_source` → `02_intermediate` → `03_output` (src / int / out). The pipelines to load
-are listed in a YAML file; relative paths resolve against the YAML's folder, and the pipeline
-name is the manifest's `project_name`:
+are listed in a YAML file; relative paths resolve against the YAML's folder. `name` is
+optional and defaults to the manifest's `project_name`:
 
 ```yaml
 # pipelines.yaml
 pipelines:
-  - dir: bestand_mfp                          # manifest.json (+ catalog.json) inside
-  - manifest: ~/pnc/claims/target/manifest.json
+  - name: bestand_mfp
+    dir: bestand_mfp                          # manifest.json (+ catalog.json) inside
+  - name: schaden_claims
+    manifest: ~/pnc/claims/target/manifest.json
     catalog: ~/pnc/claims/target/catalog.json   # optional
 ```
 
