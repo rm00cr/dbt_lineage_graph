@@ -182,7 +182,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
             })}
           </div>
         )}
-        {layoutMode === 'lanes' && zoneMode === 'folders' && graph && (
+        {layoutMode === 'lanes' && zoneMode === 'folders' && hasFolders && graph && (
           <FoldAllButton
             keys={allFolderKeys(graph.nodes, splitPipelines && pipelineCount > 1)}
             collapsed={collapsedFolders}

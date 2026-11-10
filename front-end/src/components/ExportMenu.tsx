@@ -10,7 +10,7 @@ import { useEffect, useRef, useState } from 'react'
 
 import { type ImageFormat, downloadText, downloadUrl, nextPaint, renderCanvasImage } from '../export/image'
 import { mermaidMarkdown, toMermaid } from '../graph/mermaid'
-import { visibleSubgraph } from '../graph/visible'
+import { shownView, visibleSubgraph } from '../graph/visible'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { copyToClipboard } from './visual'
 
@@ -30,10 +30,29 @@ function exportTitle(count: number): string {
   return `dbt lineage (${scope}${diff}), ${count} nodes, exported ${new Date().toISOString().slice(0, 10)}`
 }
 
+type StoreState = ReturnType<typeof useExplorerStore.getState>
+
+/** what the canvas shows (collapsed folders as one node, focus "isolate" applied) */
+function shownNow(s: StoreState) {
+  const view = shownView({
+    graph: s.graph,
+    layoutMode: s.layoutMode,
+    zoneMode: s.zoneMode,
+    collapsedFolders: s.collapsedFolders,
+    splitPipelines: s.splitPipelines,
+    keep: s.columnTrace?.view?.nodeIds,
+  })
+  return { view, ...visibleSubgraph(view, s.focusMode, s.highlightedIds) }
+}
+
 function currentMermaid(): string {
-  const { graph, focusMode, highlightedIds, compare } = useExplorerStore.getState()
-  const { nodes, edges } = visibleSubgraph(graph, focusMode, highlightedIds)
-  return toMermaid(nodes, edges, { byChange: compare !== null, title: exportTitle(nodes.length) })
+  const state = useExplorerStore.getState()
+  const { view, nodes, edges } = shownNow(state)
+  return toMermaid(nodes, edges, {
+    byChange: state.compare !== null,
+    collapsed: view.members,
+    title: exportTitle(nodes.length),
+  })
 }
 
 export function ExportMenu({ onToast }: { onToast: (message: string) => void }) {
@@ -42,9 +61,8 @@ export function ExportMenu({ onToast }: { onToast: (message: string) => void }) 
   const ref = useRef<HTMLDivElement>(null)
   const { getViewport } = useReactFlow()
   const setExporting = useExplorerStore((s) => s.setExporting)
-  const count = useExplorerStore(
-    (s) => visibleSubgraph(s.graph, s.focusMode, s.highlightedIds).nodes.length,
-  )
+  const count = useExplorerStore((s) => shownNow(s).nodes.length)
+  const collapsedCount = useExplorerStore((s) => shownNow(s).view.members.size)
   const isolating = useExplorerStore((s) => s.focusMode === 'isolate' && s.highlightedIds.size > 0)
 
   useEffect(() => {
@@ -110,6 +128,7 @@ export function ExportMenu({ onToast }: { onToast: (message: string) => void }) 
         <div className="export__menu" role="menu">
           <div className="export__scope">
             {count} nodes, as shown{isolating ? ' (focus: isolate)' : ''}
+            {collapsedCount > 0 ? `, ${collapsedCount} collapsed group${collapsedCount === 1 ? '' : 's'}` : ''}
           </div>
           <button type="button" role="menuitem" className="export__item" disabled={busy !== null} onClick={() => void exportImage('png')}>
             {busy === 'png' ? <Loader2 size={15} className="spin" /> : <FileImage size={15} />}
@@ -140,7 +159,7 @@ export function ExportMenu({ onToast }: { onToast: (message: string) => void }) 
             </span>
           </button>
           <div className="export__hint">
-            Filters and focus “isolate” decide what is exported. Images use the current theme.
+            Filters, focus “isolate” and collapsed groups decide what is exported. Images use the current theme.
           </div>
         </div>
       )}

@@ -1456,9 +1456,9 @@ input {
   /* the boxes ignore the mouse, only the header toggles the folder */
   pointer-events: auto;
   cursor: pointer;
-  font-size: 24px;
-  font-weight: 700;
-  letter-spacing: 0.01em;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
   white-space: nowrap;
   color: color-mix(in srgb, var(--stage-color) 80%, var(--text, #fff));
 }
@@ -1468,7 +1468,7 @@ input {
 }
 
 .folder-band__label .row-band__count {
-  font-size: 17px;
+  font-size: 11px;
   font-weight: 600;
 }
 
@@ -1481,7 +1481,7 @@ input {
 .fnode {
   position: relative;
   width: 268px;
-  height: 112px;
+  height: 84px;
   display: flex;
   border-radius: 14px;
   border: 1px solid color-mix(in srgb, var(--stage-color) 45%, var(--border));
@@ -1519,14 +1519,14 @@ input {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 10px;
+  gap: 8px;
 }
 
 .fnode__name {
   display: flex;
   align-items: center;
-  gap: 9px;
-  font-size: 22px;
+  gap: 8px;
+  font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.015em;
   line-height: 1.15;
@@ -1582,8 +1582,15 @@ input {
   box-shadow: none;
 }
 
-.fnode[data-change='modified'] {
-  border-style: dashed;
+/* state comparison: the same rings as the model cards (green / yellow / red) */
+.fnode[data-change='added'],
+.fnode[data-change='modified'],
+.fnode[data-change='removed'] {
+  outline: 3px solid var(--change-color);
+  outline-offset: 3px;
+}
+.fnode[data-change='removed'] {
+  outline-style: dashed;
 }
 
 /* dbt groups (domains): horizontal bands across the stage lanes */

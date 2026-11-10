@@ -7,7 +7,7 @@
 import type { ChangeStatus, GraphEdge, GraphNode } from '../api/types'
 
 export const COLLAPSED_PREFIX = '__folder__:'
-export const COLLAPSED_NODE_HEIGHT = 112
+export const COLLAPSED_NODE_HEIGHT = 84
 
 /**
  * Identity of one folder box. Without a pipeline split a box spans all pipelines (stage +
@@ -73,7 +73,9 @@ export function collapseFolders(
     const first = list[0]
     members.set(id, list.map((n) => n.id))
     for (const n of list) representative.set(n.id, id)
+    // comparison: all members alike -> that status, mixed -> modified
     const changes = new Set(list.map((n) => n.change ?? 'unchanged'))
+    const only = changes.size === 1 ? [...changes][0] : 'modified'
     viewNodes.push({
       id,
       name: first.folder ?? '(root)',
@@ -89,7 +91,7 @@ export function collapseFolders(
       tags: [],
       column_count: 0,
       execution_mode: null,
-      change: changes.size === 1 && changes.has('unchanged') ? undefined : 'modified',
+      change: only === 'unchanged' ? undefined : only,
     })
   }
 
@@ -109,9 +111,11 @@ export function collapseFolders(
     if (known) {
       known.cross_pipeline ||= edge.cross_pipeline
       known.change = mergeChange(known.change, edge.change)
+      // stacked modes: back-only (dashed) only if every edge it stands for is
+      known.front = known.front !== false || edge.front !== false
       edgeMembers.get(id)!.push(edge.id)
     } else {
-      merged.set(id, { id, source, target, cross_pipeline: edge.cross_pipeline, change: edge.change })
+      merged.set(id, { id, source, target, cross_pipeline: edge.cross_pipeline, change: edge.change, front: edge.front })
       edgeMembers.set(id, [edge.id])
     }
   }

@@ -8,7 +8,7 @@ import { Handle, type Node, type NodeProps, Position } from '@xyflow/react'
 import { ChevronsUpDown, Layers } from 'lucide-react'
 import { memo } from 'react'
 
-import type { Stage } from '../../api/types'
+import type { ChangeStatus, Stage } from '../../api/types'
 import { useStageColor } from '../visual'
 
 export type FolderNodeData = {
@@ -19,8 +19,8 @@ export type FolderNodeData = {
   inFocus: boolean
   active: boolean
   searchHit: boolean
-  /** state comparison: some member differs between the two states */
-  changed: boolean
+  /** state comparison: all members added / removed, or modified (mixed or changed) */
+  change?: ChangeStatus
 }
 
 export type FolderNodeType = Node<FolderNodeData, 'folder'>
@@ -35,19 +35,21 @@ function FolderNodeComponent({ data }: NodeProps<FolderNodeType>) {
       data-in-focus={data.inFocus}
       data-active={data.active}
       data-search-hit={data.searchHit}
-      data-change={data.changed ? 'modified' : undefined}
-      title={`${data.label}: ${data.count} models collapsed. Click to expand`}
+      data-change={data.change}
+      title={`${data.label}: ${data.count} ${data.count === 1 ? 'model' : 'models'} collapsed. Click to expand`}
     >
       <Handle type="target" position={Position.Left} isConnectable={false} />
       <Handle type="source" position={Position.Right} isConnectable={false} />
       <div className="fnode__accent" />
       <div className="fnode__body">
         <div className="fnode__name">
-          <Layers size={22} strokeWidth={2} />
+          <Layers size={16} strokeWidth={2.2} />
           <span>{data.label}</span>
         </div>
         <div className="fnode__meta">
-          <span className="fnode__pill">{data.count} models</span>
+          <span className="fnode__pill">
+            {data.count} {data.count === 1 ? 'model' : 'models'}
+          </span>
           <span className="fnode__hint">
             <ChevronsUpDown size={13} /> expand
           </span>

@@ -151,7 +151,7 @@ const PIPE_PADDING = 18
 const PIPE_GAP = 48
 const PIPE_COLUMN_GAP = 170
 /** folder boxes: label strip on top, inner side padding, vertical gap between boxes */
-const FOLDER_HEADER = 62
+const FOLDER_HEADER = 30
 const FOLDER_PADDING = 16
 const FOLDER_GAP = 16
 

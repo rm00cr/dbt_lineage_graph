@@ -24,14 +24,10 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { GraphEdge, GraphNode } from '../api/types'
 import { boundaryViolations } from '../graph/boundary'
-import {
-  COLLAPSED_NODE_HEIGHT,
-  COLLAPSED_PREFIX,
-  collapseFolders,
-  isCollapsedNodeId,
-} from '../graph/collapse'
+import { COLLAPSED_NODE_HEIGHT, COLLAPSED_PREFIX, isCollapsedNodeId } from '../graph/collapse'
 import { edgeHandles, traceNodeHeight } from '../graph/columnTrace'
 import { NODE_HEIGHT, NODE_WIDTH, cardHeight, layoutGraph } from '../graph/layout'
+import { shownView, touches as touchesIn, visibleSubgraph } from '../graph/visible'
 import { STACK_HEAD, isStacked } from '../graph/stack'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { useTheme } from '../theme/useTheme'
@@ -40,7 +36,6 @@ import { ModelNode, type ModelNodeType } from './nodes/ModelNode'
 import { STAGE_LABELS, useChangeColor, useStageColor } from './visual'
 
 const NODE_TYPES = { model: ModelNode, folder: FolderNode }
-const NO_FOLDERS: ReadonlySet<string> = new Set()
 const PULSE_MS = 1900
 
 export function GraphCanvas() {
@@ -78,23 +73,20 @@ export function GraphCanvas() {
   selectionRef.current = selectedIds
 
   // ------------------------------------------------------------------ layout
-  // collapsed folder boxes (zones > groups) are replaced by one summary node each
-  const split = useMemo(
-    () => splitPipelines && new Set(graph?.nodes.map((n) => n.pipeline)).size > 1,
-    [graph, splitPipelines],
-  )
-  const folderCollapse = layoutMode === 'lanes' && zoneMode === 'folders'
+  // collapsed folder boxes (zones > groups) are replaced by one summary node each; the same
+  // rule (graph/visible.ts) decides what an export contains
   const view = useMemo(
     () =>
-      collapseFolders(
-        graph?.nodes ?? [],
-        graph?.edges ?? [],
-        folderCollapse ? collapsedFolders : NO_FOLDERS,
-        split,
+      shownView({
+        graph,
+        layoutMode,
+        zoneMode,
+        collapsedFolders,
+        splitPipelines,
         // a column trace needs its models: their folders stay open while it is shown
-        traceView?.nodeIds ?? NO_FOLDERS,
-      ),
-    [graph, folderCollapse, collapsedFolders, split, traceView],
+        keep: traceView?.nodeIds,
+      }),
+    [graph, layoutMode, zoneMode, collapsedFolders, splitPipelines, traceView],
   )
 
   // traced nodes (2.3) grow by their column rows; the layout makes room for them
@@ -197,19 +189,11 @@ export function GraphCanvas() {
   }, [centerRequest, layout, view, setCenter, toggleFolder])
 
   // ------------------------------------------------------------------ derived nodes/edges
-  const isolating = focusMode === 'isolate' && highlightedIds.size > 0
-
   /** a summary node counts as in `ids` when any model it stands for is */
-  const touches = useCallback(
-    (id: string, ids: ReadonlySet<string>) => view.members.get(id)?.some((m) => ids.has(m)) ?? ids.has(id),
-    [view],
-  )
+  const touches = useCallback((id: string, ids: ReadonlySet<string>) => touchesIn(view, id, ids), [view])
 
-  const visibleIds = useMemo(() => {
-    if (!graph) return new Set<string>()
-    if (!isolating) return new Set(view.nodes.map((n) => n.id))
-    return new Set(view.nodes.filter((n) => touches(n.id, highlightedIds)).map((n) => n.id))
-  }, [graph, view, isolating, highlightedIds, touches])
+  // shared with the export, so an export always contains what the canvas shows
+  const visibleIds = useMemo(() => visibleSubgraph(view, focusMode, highlightedIds).ids, [view, focusMode, highlightedIds])
 
   const nodes = useMemo<(ModelNodeType | FolderNodeType)[]>(() => {
     if (!graph) return []
@@ -242,7 +226,8 @@ export function GraphCanvas() {
               inFocus,
               active: activeId !== null && members.includes(activeId),
               searchHit: pulseId !== null && members.includes(pulseId),
-              changed: node.change === 'modified',
+              // state comparison: what the folder's models changed (mixed -> modified)
+              change: node.change ?? undefined,
             },
           }
         }
@@ -512,7 +497,7 @@ export function GraphCanvas() {
                       toggleFolder(box.key)
                     }}
                   >
-                    <Chevron size={28} className="folder-band__chevron" />
+                    <Chevron size={14} className="folder-band__chevron" />
                     {box.folder ?? '(root)'}
                     <span className="row-band__count">{count}</span>
                   </button>

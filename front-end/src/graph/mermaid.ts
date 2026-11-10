@@ -19,6 +19,8 @@ export interface MermaidOptions {
   byChange?: boolean
   /** first comment line, e.g. what was exported and when */
   title?: string
+  /** collapsed folder boxes: summary node id -> the models it stands for */
+  collapsed?: ReadonlyMap<string, readonly string[]>
 }
 
 const SHAPES: Record<Materialization, [string, string]> = {
@@ -62,15 +64,26 @@ function subgraphId(pipeline: string): string {
 }
 
 export function toMermaid(nodes: GraphNode[], edges: GraphEdge[], options: MermaidOptions = {}): string {
-  const { direction = 'LR', byChange = false, title } = options
+  const { direction = 'LR', byChange = false, title, collapsed } = options
   const ids = new Map(nodes.map((node, index) => [node.id, `n${index + 1}`]))
   const lines: string[] = []
 
   if (title) lines.push(`%% ${title}`)
-  lines.push(`%% ${nodes.length} models / sources, shapes: cylinder = source, rounded = view, stadium = ephemeral`)
+  lines.push(
+    `%% ${nodes.length} nodes, shapes: cylinder = source, rounded = view, stadium = ephemeral` +
+      (collapsed?.size ? ', double-bordered = collapsed group' : ''),
+  )
   lines.push(`flowchart ${direction}`)
 
   const shape = (node: GraphNode) => {
+    const members = collapsed?.get(node.id)
+    if (members) {
+      // a collapsed folder box: one "subroutine" node standing for its models
+      const count = `${members.length} model${members.length === 1 ? '' : 's'}`
+      // every stage has a "(root)" group: name the stage so they can be told apart
+      const name = node.folder ? node.name : `(root, ${node.stage})`
+      return `${ids.get(node.id)}[[${mermaidLabel(`${name} (${count})`)}]]`
+    }
     const [open, close] = SHAPES[node.materialization] ?? SHAPES.other
     return `${ids.get(node.id)}${open}${mermaidLabel(node.name)}${close}`
   }
