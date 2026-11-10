@@ -92,6 +92,8 @@ interface ExplorerState {
   columnTrace: ColumnTrace | null
 
   compare: CompareState | null
+  /** true while an image export renders the canvas: nodes draw full detail at any zoom */
+  exporting: boolean
   compareDialogOpen: boolean
   compareLoading: boolean
   compareError: string | null
@@ -125,6 +127,7 @@ interface ExplorerState {
   setTraceDirection: (direction: TraceDirection) => Promise<void>
   clearColumnTrace: () => void
 
+  setExporting: (exporting: boolean) => void
   setCompareDialogOpen: (open: boolean) => void
   startCompare: (manifest: File, catalog?: File | null, label?: string, pipeline?: string) => Promise<boolean>
   exitCompare: () => Promise<void>
@@ -200,6 +203,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   columnTrace: null,
 
   compare: null,
+  exporting: false,
   compareDialogOpen: false,
   compareLoading: false,
   compareError: null,
@@ -435,6 +439,8 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     set({ columnTrace: null })
     set((state) => computeHighlight(state))
   },
+
+  setExporting: (exporting) => set({ exporting }),
 
   // ------------------------------------------------------------------ state comparison
   setCompareDialogOpen: (open) => set({ compareDialogOpen: open, compareError: open ? get().compareError : null }),

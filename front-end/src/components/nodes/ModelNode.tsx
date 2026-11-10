@@ -9,6 +9,7 @@ import { memo } from 'react'
 import type { GraphNode } from '../../api/types'
 import { MAX_TRACE_ROWS, type TracedColumn, rowHandleId, visibleRows } from '../../graph/columnTrace'
 import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../../graph/diff'
+import { useExplorerStore } from '../../store/useExplorerStore'
 import { MATERIALIZATION_ICONS, useStageColor } from '../visual'
 
 export type ModelNodeData = {
@@ -29,7 +30,10 @@ export type ModelNodeType = Node<ModelNodeData, 'model'>
 const COMPACT_ZOOM = 0.55
 
 function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
-  const compact = useStore((state) => state.transform[2] < COMPACT_ZOOM)
+  const zoomedOut = useStore((state) => state.transform[2] < COMPACT_ZOOM)
+  // an image export always shows the full node, whatever the current zoom
+  const exporting = useExplorerStore((s) => s.exporting)
+  const compact = zoomedOut && !exporting
   const stageColor = useStageColor()
   const { node, dimmed, inFocus, active, searchHit, traceColumns, height } = data
   const rows = traceColumns ? visibleRows(traceColumns) : []

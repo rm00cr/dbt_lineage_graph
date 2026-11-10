@@ -25,6 +25,7 @@ import type { GraphEdge, GraphNode } from '../api/types'
 import { boundaryViolations } from '../graph/boundary'
 import { edgeHandles, traceNodeHeight } from '../graph/columnTrace'
 import { NODE_HEIGHT, NODE_WIDTH, layoutGraph } from '../graph/layout'
+import { visibleSubgraph } from '../graph/visible'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { useTheme } from '../theme/useTheme'
 import { ModelNode, type ModelNodeType } from './nodes/ModelNode'
@@ -143,13 +144,11 @@ export function GraphCanvas() {
   }, [centerRequest, layout, setCenter])
 
   // ------------------------------------------------------------------ derived nodes/edges
-  const isolating = focusMode === 'isolate' && highlightedIds.size > 0
-
-  const visibleIds = useMemo(() => {
-    if (!graph) return new Set<string>()
-    if (!isolating) return new Set(graph.nodes.map((n) => n.id))
-    return new Set(graph.nodes.filter((n) => highlightedIds.has(n.id)).map((n) => n.id))
-  }, [graph, isolating, highlightedIds])
+  // shared with the export, so an export always contains what the canvas shows
+  const visibleIds = useMemo(
+    () => visibleSubgraph(graph, focusMode, highlightedIds).ids,
+    [graph, focusMode, highlightedIds],
+  )
 
   const nodes = useMemo<ModelNodeType[]>(() => {
     if (!graph) return []

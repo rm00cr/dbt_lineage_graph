@@ -2529,3 +2529,74 @@ mark {
 .code-diff__line[data-kind='note'] .code-diff__text {
   padding-left: 6px;
 }
+
+/* ===================================== export ============================= */
+
+.export {
+  position: relative;
+}
+.export__menu {
+  position: absolute;
+  top: calc(100% + 8px);
+  right: 0;
+  z-index: 60;
+  width: 300px;
+  padding: 6px;
+  border-radius: var(--radius);
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-panel);
+  animation: pop-in 0.14s ease-out;
+}
+.export__scope {
+  padding: 6px 9px 8px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  color: var(--text-faint);
+}
+.export__item {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  width: 100%;
+  padding: 8px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  text-align: left;
+  cursor: pointer;
+}
+.export__item:hover:not(:disabled) {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.export__item:disabled {
+  opacity: 0.5;
+  cursor: progress;
+}
+.export__item span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  min-width: 0;
+}
+.export__item strong {
+  font-size: 12.5px;
+  font-weight: 600;
+  color: var(--text);
+}
+.export__item small {
+  font-size: 11px;
+  color: var(--text-faint);
+}
+.export__hint {
+  margin-top: 4px;
+  padding: 8px 9px 4px;
+  border-top: 1px solid var(--border);
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}

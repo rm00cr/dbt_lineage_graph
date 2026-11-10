@@ -345,6 +345,8 @@ pipeline (with a warning). Without `pipeline`, the one whose manifest has the sa
   (dbt semantics). Parsed and
   resolved client-side; the resolved selector string is shown so it can be copied into a
   real `dbt run` / `dbt build` call.
+- **Export** — PNG / SVG (the rendered canvas, `front-end/src/export/`) and Mermaid
+  (`front-end/src/graph/mermaid.ts`) are generated in the browser from what the canvas shows.
 - **Layout** — dagre, left-to-right, computed client-side so the backend stays stateless.
 - **Shareable view** — the UI keeps `?model=<id>&tab=<overview|code|schema|lineage>&layout=<dag|lanes>&focus=<off|dim|isolate>&select=<selector>&col=<model id>|<column>&coldir=<up|down>`
   in the address bar and restores it on load. Purely client-side.

@@ -73,6 +73,7 @@ cd front-end && npm test
 | Zoom to fit | `Z` |
 | Share a view | the URL carries `?model=…&tab=…&layout=…&focus=…&select=…` |
 | Switch theme | sun / monitor / moon in the top bar — light, follow the system, dark (remembered per browser) |
+| Export for documentation | **Export** in the top bar: PNG or SVG image, a Mermaid file (`.mmd`), or Mermaid copied as a Markdown block (GitHub, GitLab, Confluence, Notion). Exports what the canvas shows: filters and focus *isolate* apply, compare-mode colours are kept; images always show full-detail nodes |
 | Compare with a dev state | **Compare** in the top bar: upload one pipeline's `manifest.json` (+ optional `catalog.json`) from a dev state and pick the pipeline it replaces. Nodes and edges turn green (added), yellow (modified) or red (removed); a changed node opens on a **Changes** tab with the field, column and SQL diff. **Select changes** + focus mode shows what the changes affect. Try it with `fixtures/dev_state/` (a dev version of `bestand_mfp`) |
 
 ---
