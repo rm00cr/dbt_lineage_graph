@@ -150,7 +150,6 @@ interface ExplorerState {
   clearSelection: () => void
   applySelector: (input: string) => void
   setSelectorInput: (input: string) => void
-  expandSelectionLineage: () => void
   dbtSelectorString: () => string
 
   openModel: (id: string, options?: { center?: boolean; tab?: OverlayTab }) => Promise<void>
@@ -516,15 +515,6 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   },
 
   setSelectorInput: (input) => set({ selectorInput: input }),
-
-  expandSelectionLineage: () => {
-    const { index, selectedIds, activeId } = get()
-    const seeds = new Set(selectedIds)
-    if (activeId) seeds.add(activeId)
-    if (seeds.size === 0) return
-    set({ selectedIds: lineageClosure(index, seeds) })
-    set((state) => computeHighlight(state))
-  },
 
   dbtSelectorString: () => {
     const { index, selectedIds, activeId } = get()

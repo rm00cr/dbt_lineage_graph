@@ -35,10 +35,6 @@ export function useKeyboardShortcuts() {
           event.preventDefault()
           store.setLayoutMode(store.layoutMode === 'dag' ? 'lanes' : 'dag')
           break
-        case 'e':
-          event.preventDefault()
-          store.expandSelectionLineage()
-          break
         case 'escape':
           event.preventDefault()
           if (store.columnTrace) store.clearColumnTrace()

@@ -12,7 +12,6 @@ import {
   EyeOff,
   Filter,
   GitBranch,
-  Layers,
   Map as MapIcon,
   Maximize2,
   MousePointerSquareDashed,
@@ -76,7 +75,6 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const applySelector = useExplorerStore((s) => s.applySelector)
   const selectedIds = useExplorerStore((s) => s.selectedIds)
   const clearSelection = useExplorerStore((s) => s.clearSelection)
-  const expandSelectionLineage = useExplorerStore((s) => s.expandSelectionLineage)
   const dbtSelectorString = useExplorerStore((s) => s.dbtSelectorString)
 
   const filters = useExplorerStore((s) => s.filters)
@@ -255,14 +253,6 @@ export function Toolbar({ onToast }: ToolbarProps) {
           title="Resolve the selector and select the matching nodes"
         >
           Apply
-        </button>
-        <button
-          className="btn btn--sm"
-          onClick={expandSelectionLineage}
-          disabled={selectedIds.size === 0}
-          title="Grow the selection to the full upstream + downstream lineage"
-        >
-          <Layers size={13} /> + lineage +
         </button>
         <button className="btn btn--sm" onClick={() => void copySelector()} title="Copy dbt run command">
           <Copy size={13} /> dbt run
