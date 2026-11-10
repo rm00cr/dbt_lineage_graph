@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GraphNode, GraphResponse } from '../api/types'
-import { changedIds, parseUnifiedDiff } from './diff'
+import { changedIds, lineDiff, parseUnifiedDiff } from './diff'
 import { filterGraph } from './filter'
 
 const node = (name: string, change: GraphNode['change'], pipeline = 'p1', stage: GraphNode['stage'] = 'int'): GraphNode => ({
@@ -65,5 +65,38 @@ describe('changedIds / filterGraph', () => {
     expect(filtered.nodes.map((n) => n.name)).toEqual(['a', 'b'])
     expect(filtered.edges).toEqual([graph.edges[0]])
     expect(filtered.stats).toMatchObject({ node_count: 2, edge_count: 1, pipelines: ['p1'], stages: ['int'] })
+  })
+})
+
+describe('lineDiff', () => {
+  it('finds added, removed and changed lines with numbers on both sides', () => {
+    const lines = lineDiff('select a,\n  b\nfrom x', 'select a,\n  b,\n  c\nfrom x')
+    expect(lines.map((l) => [l.kind, l.text])).toEqual([
+      ['context', 'select a,'],
+      ['del', '  b'],
+      ['add', '  b,'],
+      ['add', '  c'],
+      ['context', 'from x'],
+    ])
+    expect(lines[3]).toMatchObject({ oldNo: null, newNo: 3 })
+    expect(lines[4]).toMatchObject({ oldNo: 3, newNo: 4 })
+  })
+
+  it('folds long unchanged runs but keeps context around changes', () => {
+    const base = Array.from({ length: 30 }, (_, i) => `line ${i}`)
+    const changed = [...base]
+    changed[15] = 'line 15 changed'
+    const lines = lineDiff(base.join('\n'), changed.join('\n'), 3)
+    const kinds = lines.map((l) => l.kind)
+    expect(kinds.filter((k) => k === 'hunk')).toHaveLength(2)
+    expect(lines.find((l) => l.kind === 'hunk')?.text).toBe('⋯ 12 unchanged lines')
+    expect(lines.filter((l) => l.kind === 'context')).toHaveLength(6)
+    expect(lines.find((l) => l.kind === 'add')).toMatchObject({ text: 'line 15 changed', newNo: 16 })
+  })
+
+  it('returns only context for identical texts, folded', () => {
+    const text = Array.from({ length: 20 }, (_, i) => `l${i}`).join('\n')
+    expect(lineDiff(text, text).every((l) => l.kind === 'hunk' || l.kind === 'context')).toBe(true)
+    expect(lineDiff('a', 'a')).toEqual([{ kind: 'context', text: 'a', oldNo: 1, newNo: 1 }])
   })
 })

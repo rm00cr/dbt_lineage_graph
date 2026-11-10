@@ -122,6 +122,7 @@ Ids are URL-encoded in `/api/model/{id}`.
 | `POST` | `/api/diff` | compare the running state with an uploaded manifest (+ catalog) | diff |
 | `GET` | `/api/pipelines` | configured pipelines, their execution modes, which mode is shown | modes |
 | `POST` | `/api/pipelines/{name}/mode` | show another execution mode of a pipeline (generates it if missing) | modes |
+| `POST` | `/api/pipelines/{name}/modes` | show several modes stacked, one in front (generates missing ones) | modes |
 | `POST` | `/api/pipelines/{name}/generate` | rerun `dbt docs generate` in the background (shown mode, or body `mode`) | modes |
 | `POST` | `/api/pipelines/{name}/modes/{mode}/generate` | same for one execution mode | modes |
 | `GET` | `/api/jobs` | background dbt runs: running + recent finished, with live output | modes |
@@ -385,6 +386,33 @@ shown mode stays until the job is done, then switches by itself (a failed job ab
 switch). Without `project_dir`: `409`. `404` for an unknown pipeline or mode. Built graphs
 are cached per combination of modes, so switching back is instant; `POST /api/reload`
 clears the cache.
+
+### 2.8b Stacked execution modes — `POST /api/pipelines/{name}/modes`
+
+Several modes of one pipeline can be shown at once: one **front** mode (= `active_mode`, read
+by every endpoint as before) and **back** modes stacked behind it. Body
+`{ "selected": ["full", "incremental"], "front": "full" }`; `front` must be one of `selected`
+(else `422`), unknown names `404`. A back mode without artifacts is generated in the
+background (needs `project_dir`, else `409`) and joins the stack when done. Selecting only
+the front mode un-stacks the pipeline. `PipelineInfo.stacked_modes` lists the back modes.
+
+While a pipeline is stacked, `/api/graph` is the **union** of its selected modes. For every
+back mode the graph is built with only that pipeline switched to it, so links to other
+pipelines come out as they are in that mode. Extra fields (outside a stack they keep their
+defaults):
+
+| Field | On | Meaning |
+|---|---|---|
+| `modes: string[] \| null` | node | selected modes of its pipeline that contain the node, front mode first; `null` for single-mode pipelines |
+| `front: bool` | node | `false`: a **ghost** - the model exists only in back modes |
+| `sql_differs: string[]` | node | back modes that compile the model to other SQL than the front mode (vars change the compiled SQL) |
+| `front: bool` | edge | `false`: the edge exists only in a back mode |
+
+Edges are sorted by id while stacked, so swapping the front mode does not move the layout.
+`GET /api/model/{id}?mode=<mode>` reads the model from that mode of its pipeline (`404` if
+the mode does not have it, `409` if the mode is not generated); without `mode` a ghost is
+read from the first back mode that has it. A state comparison (`POST /api/diff`) only uses
+the front modes; the UI shows the stack again after leaving it.
 
 ### 2.9 Generation — `POST …/generate`, `GET /api/jobs`
 

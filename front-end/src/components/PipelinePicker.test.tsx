@@ -1,8 +1,8 @@
 /**
  * @vitest-environment jsdom
  *
- * Execution modes in the pipeline picker: only pipelines with modes get the dropdown, it shows
- * the active mode, and picking another one goes through the store.
+ * Execution modes in the pipeline picker: only pipelines with modes get mode chips; ticked
+ * modes are stacked, the starred one is in front, and every change goes through the store.
  */
 
 import { cleanup, render, screen } from '@testing-library/react'
@@ -28,16 +28,23 @@ const PIPELINES: PipelineInfo[] = [
   { name: 'schaden_claims', active_mode: null, available: true, generated_at: null, modes: [] },
 ]
 
-function prime(setPipelineMode = vi.fn().mockResolvedValue(undefined)) {
+function prime(setPipelineModes = vi.fn().mockResolvedValue(undefined), info: PipelineInfo[] = PIPELINES) {
   useExplorerStore.setState({
     meta: { pipelines: ['bestand_mfp', 'schaden_claims'] } as MetaResponse,
-    pipelineInfo: PIPELINES,
+    pipelineInfo: info,
     modeSwitching: null,
     modeError: null,
     jobs: [],
-    setPipelineMode,
+    setPipelineModes,
   })
-  return setPipelineMode
+  return setPipelineModes
+}
+
+async function openPicker() {
+  const user = userEvent.setup()
+  render(<PipelinePicker />)
+  await user.click(screen.getByTitle(/choose which pipelines/i))
+  return user
 }
 
 afterEach(() => {
@@ -46,28 +53,46 @@ afterEach(() => {
 })
 
 describe('PipelinePicker execution modes', () => {
-  it('shows a mode dropdown only for pipelines with modes', async () => {
+  it('shows mode chips only for pipelines with modes, the shown one ticked and in front', async () => {
     prime()
-    const user = userEvent.setup()
-    render(<PipelinePicker />)
-    await user.click(screen.getByTitle(/choose which pipelines/i))
+    await openPicker()
 
-    const select = screen.getByLabelText('Execution mode of bestand_mfp') as HTMLSelectElement
-    expect(select.value).toBe('full')
-    expect(screen.queryByLabelText('Execution mode of schaden_claims')).toBeNull()
+    expect(screen.getByRole('group', { name: 'Execution modes of bestand_mfp' })).toBeDefined()
+    expect(screen.queryByRole('group', { name: 'Execution modes of schaden_claims' })).toBeNull()
 
-    const monthly = screen.getByRole('option', { name: /monthly · not available/ }) as HTMLOptionElement
+    expect(screen.getByLabelText('Hide mode full').getAttribute('aria-pressed')).toBe('true')
+    expect(screen.getByLabelText('full is in front')).toBeDefined()
+    expect(screen.getByLabelText('Show mode incremental').getAttribute('aria-pressed')).toBe('false')
+    // not on disk and no project_dir to generate it
+    const monthly = screen.getByLabelText('Show mode monthly') as HTMLButtonElement
     expect(monthly.disabled).toBe(true)
+    expect(monthly.textContent).toContain('monthly · not available')
   })
 
-  it('switches the mode through the store', async () => {
-    const setPipelineMode = prime()
-    const user = userEvent.setup()
-    render(<PipelinePicker />)
-    await user.click(screen.getByTitle(/choose which pipelines/i))
+  it('stacks modes and brings one to the front through the store', async () => {
+    const setPipelineModes = prime()
+    const user = await openPicker()
 
-    await user.selectOptions(screen.getByLabelText('Execution mode of bestand_mfp'), 'incremental')
-    expect(setPipelineMode).toHaveBeenCalledWith('bestand_mfp', 'incremental')
+    await user.click(screen.getByLabelText('Show mode incremental'))
+    expect(setPipelineModes).toHaveBeenLastCalledWith('bestand_mfp', ['full', 'incremental'], 'full')
+
+    await user.click(screen.getByLabelText('Bring incremental to the front'))
+    expect(setPipelineModes).toHaveBeenLastCalledWith('bestand_mfp', ['full', 'incremental'], 'incremental')
+  })
+
+  it('hiding the front mode moves the next one to the front, the last mode stays', async () => {
+    const setPipelineModes = prime(undefined, [{ ...PIPELINES[0], stacked_modes: ['incremental'] }, PIPELINES[1]])
+    const user = await openPicker()
+
+    await user.click(screen.getByLabelText('Hide mode full'))
+    expect(setPipelineModes).toHaveBeenLastCalledWith('bestand_mfp', ['incremental'], 'incremental')
+
+    cleanup()
+    setPipelineModes.mockClear()
+    prime(setPipelineModes)
+    const again = await openPicker()
+    await again.click(screen.getByLabelText('Hide mode full')) // the only shown mode
+    expect(setPipelineModes).not.toHaveBeenCalled()
   })
 
   it('offers generation for missing modes and regenerates the shown one', async () => {
@@ -90,14 +115,14 @@ describe('PipelinePicker execution modes', () => {
       jobs: [running],
       pipelineInfo: [{ ...PIPELINES[0], can_generate: true, pending_mode: 'incremental' }, PIPELINES[1]],
     })
-    const user = userEvent.setup()
-    render(<PipelinePicker />)
-    await user.click(screen.getByTitle(/choose which pipelines/i))
+    const user = await openPicker()
 
-    const monthly = screen.getByRole('option', { name: /monthly · not generated/ }) as HTMLOptionElement
+    const monthly = screen.getByLabelText('Show mode monthly') as HTMLButtonElement
     expect(monthly.disabled).toBe(false)
-    expect(screen.getByRole('option', { name: /incremental · generating…/ })).toBeDefined()
+    expect(monthly.textContent).toContain('monthly · not generated')
+    expect(screen.getByLabelText('Show mode incremental').textContent).toContain('incremental · generating…')
     expect(screen.getByLabelText('generating incremental')).toBeDefined()
+    expect(screen.getByLabelText('full is in front')).toBeDefined() // still, until it is done
 
     await user.click(screen.getByLabelText('Regenerate bestand_mfp (full)'))
     expect(regenerate).toHaveBeenCalledWith('bestand_mfp', 'full')

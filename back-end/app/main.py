@@ -26,6 +26,7 @@ from .schemas import (
     PipelineInfo,
     SearchResponse,
     SetModeRequest,
+    SetModesRequest,
 )
 from .service import (
     ArtifactError,
@@ -115,6 +116,22 @@ def set_pipeline_mode(service: ServiceDep, name: str, body: SetModeRequest) -> P
         raise HTTPException(status_code=404, detail=error.args[0]) from None
     except ModeUnavailableError as error:
         raise HTTPException(status_code=409, detail=str(error)) from None
+
+
+@app.post("/api/pipelines/{name}/modes", response_model=PipelineInfo, tags=["pipelines"])
+def set_pipeline_modes(service: ServiceDep, name: str, body: SetModesRequest) -> PipelineInfo:
+    """Show several execution modes of a pipeline stacked: `front` in front, the other
+    `selected` modes behind it. The graph then carries `modes` / `front` / `sql_differs`.
+
+    Missing back modes are generated in the background and join the stack when done."""
+    try:
+        return service.set_modes(name, body.selected, body.front)
+    except UnknownPipelineError as error:
+        raise HTTPException(status_code=404, detail=error.args[0]) from None
+    except ModeUnavailableError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
 
 
 def _generate(service: GraphService, name: str, mode: str | None) -> PipelineInfo:
@@ -230,14 +247,21 @@ def model_detail(
     service: ServiceDep,
     model_id: str,
     state: Annotated[str | None, Query(description="state_id of a comparison: read from that state")] = None,
+    mode: Annotated[
+        str | None, Query(description="execution mode of the model's pipeline to read it from")
+    ] = None,
 ) -> ModelDetail:
     """Detail for the overlay. Accepts the dbt `unique_id` or a plain model name."""
     try:
-        detail = service.model_detail(model_id, state=state)
+        detail = service.model_detail(model_id, state=state, mode=mode)
     except UnknownStateError:
         raise HTTPException(
             status_code=404, detail=f"comparison state '{state}' is gone - upload the files again"
         ) from None
+    except UnknownPipelineError as error:
+        raise HTTPException(status_code=404, detail=error.args[0]) from None
+    except ModeUnavailableError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from None
     if detail is None:
         raise HTTPException(status_code=404, detail=f"model '{model_id}' not found")
     return detail

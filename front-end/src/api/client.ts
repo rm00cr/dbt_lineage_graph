@@ -81,6 +81,14 @@ export const api = {
       body: JSON.stringify({ mode }),
     }),
 
+  /** show several modes stacked: `front` in front, the other `selected` behind it */
+  setPipelineModes: (name: string, selected: string[], front: string) =>
+    request<PipelineInfo>(`/api/pipelines/${encodeURIComponent(name)}/modes`, undefined, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ selected, front }),
+    }),
+
   /** regenerate a pipeline's artifacts in the background (`mode`: default the shown one) */
   generatePipeline: (name: string, mode?: string | null) =>
     request<PipelineInfo>(`/api/pipelines/${encodeURIComponent(name)}/generate`, undefined, {
@@ -100,7 +108,9 @@ export const api = {
     }),
 
   /** `state`: the state_id of a comparison, to read the uploaded version of the node */
-  model: (id: string, state?: string) => get<ModelDetail>(`/api/model/${encodeURIComponent(id)}`, { state }),
+  /** `mode`: read the model from that execution mode of its pipeline (stacked modes) */
+  model: (id: string, state?: string, mode?: string) =>
+    get<ModelDetail>(`/api/model/${encodeURIComponent(id)}`, { state, mode }),
 
   /** compare the running state with an uploaded manifest (+ catalog) */
   /** `pipeline`: the pipelines.yaml name of the pipeline the upload replaces */

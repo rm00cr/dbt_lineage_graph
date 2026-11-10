@@ -37,6 +37,11 @@ class GraphNode(NodeRef):
     execution_mode: str | None = None
     # only set in a state comparison (POST /api/diff), null on the normal graph
     change: ChangeStatus | None = None
+    # stacked execution modes: the selected modes of this node's pipeline containing it,
+    # front mode first; null when its pipeline shows a single mode
+    modes: list[str] | None = None
+    front: bool = True  # false: a ghost, only in back modes
+    sql_differs: list[str] = Field(default_factory=list)  # back modes with other SQL
 
 
 class GraphEdge(BaseModel):
@@ -45,6 +50,7 @@ class GraphEdge(BaseModel):
     target: str
     cross_pipeline: bool = False
     change: ChangeStatus | None = None
+    front: bool = True  # false: the edge exists only in a back mode of a stacked pipeline
 
 
 class GraphStats(BaseModel):
@@ -167,7 +173,8 @@ class PipelineInfo(BaseModel):
     """A configured pipeline and - if it has execution modes - which one is shown."""
 
     name: str
-    active_mode: str | None = None  # null: the pipeline has no execution modes
+    active_mode: str | None = None  # null: the pipeline has no execution modes = the front mode
+    stacked_modes: list[str] = Field(default_factory=list)  # selected back modes, shown behind
     pending_mode: str | None = None  # being generated; shown once done
     available: bool  # the shown artifacts are on disk
     generated_at: str | None = None
@@ -182,6 +189,11 @@ class GenerateRequest(BaseModel):
 
 class SetModeRequest(BaseModel):
     mode: str
+
+
+class SetModesRequest(BaseModel):
+    selected: list[str] = Field(min_length=1, description="modes to show, stacked")
+    front: str = Field(description="the selected mode shown in front")
 
 
 class HealthResponse(BaseModel):

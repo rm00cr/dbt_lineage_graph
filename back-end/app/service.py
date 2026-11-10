@@ -48,6 +48,7 @@ from .schemas import (
     StateInfo,
 )
 from .search import score_name, score_substring
+from .stack import ModeStack, build_stack
 
 BQ_CONSOLE = "https://console.cloud.google.com/bigquery"
 MAX_QUERY_DEEPLINK_CHARS = 7000
@@ -82,6 +83,11 @@ class GraphService:
         }
         # pipeline name -> mode to switch to once its artifacts are generated
         self.pending_modes: dict[str, str] = {}
+        # pipeline name -> selected back modes, stacked behind the front (= active) mode
+        self.stacked_modes: dict[str, list[str]] = {}
+        self.stack: ModeStack | None = None
+        # back-mode graphs (no column lineage needed), same keys as _cache
+        self._graph_cache: dict[tuple[tuple[str, str], ...], LineageGraph] = {}
         # built graphs per combination of active modes, so switching back is instant
         self._cache: dict[tuple[tuple[str, str], ...], tuple[LineageGraph, ColumnLineageIndex]] = {}
         self._lock = threading.RLock()
@@ -96,17 +102,19 @@ class GraphService:
         """Re-read the artifacts from disk (handy when a fresh dbt run just finished)."""
         with self._lock:
             self._cache.clear()
+            self._graph_cache.clear()
             self._activate()
             return self.graph
 
-    def _effective_pairs(self) -> list[ArtifactPair]:
-        """The configured pipelines, each with the artifacts of its active execution mode."""
-        return [
-            pair.for_mode(self.active_modes[pair.name]) if pair.modes else pair for pair in self.settings.artifacts
-        ]
+    def _effective_pairs(self, modes: dict[str, str] | None = None) -> list[ArtifactPair]:
+        """The configured pipelines, each with the artifacts of its active execution mode
+        (or of ``modes``, a full pipeline -> mode mapping)."""
+        modes = self.active_modes if modes is None else modes
+        return [pair.for_mode(modes[pair.name]) if pair.modes else pair for pair in self.settings.artifacts]
 
     def _activate(self) -> None:
-        """Point ``graph``/``column_lineage`` at the active modes (built once per combination)."""
+        """Point ``graph``/``column_lineage`` at the active modes (built once per combination)
+        and rebuild the stack of selected back modes."""
         key = tuple(sorted(self.active_modes.items()))
         built = self._cache.get(key)
         if built is None:
@@ -114,6 +122,28 @@ class GraphService:
             built = (graph, build_column_lineage(graph))
             self._cache[key] = built
         self.graph, self.column_lineage = built
+        self.stack = self._build_stack()
+
+    def _graph_for(self, modes: dict[str, str]) -> LineageGraph:
+        """Graph of any combination of modes; reuses the front cache, no column lineage."""
+        key = tuple(sorted(modes.items()))
+        if key in self._cache:
+            return self._cache[key][0]
+        graph = self._graph_cache.get(key)
+        if graph is None:
+            graph = load_graph(self._effective_pairs(modes))
+            self._graph_cache[key] = graph
+        return graph
+
+    def _build_stack(self) -> ModeStack | None:
+        back: dict[tuple[str, str], LineageGraph] = {}
+        for pipeline, modes in self.stacked_modes.items():
+            pair = self._pair(pipeline)
+            for mode in modes:
+                if mode == self.active_modes.get(pipeline) or not pair.mode(mode).manifest.is_file():
+                    continue  # the front mode itself / still being generated
+                back[(pipeline, mode)] = self._graph_for({**self.active_modes, pipeline: mode})
+        return build_stack(self.graph, self.active_modes, back) if back else None
 
     # ------------------------------------------------------------------ execution modes
     def pipelines_info(self) -> list[PipelineInfo]:
@@ -141,6 +171,37 @@ class GraphService:
             if self.runner.active_job(pipeline, mode) is None:
                 self.runner.start(pair, target, "mode-switch", self._on_job_done)
         return self._pipeline_info(pair)
+
+    def set_modes(self, pipeline: str, selected: list[str], front: str) -> PipelineInfo:
+        """Show several execution modes of ``pipeline`` stacked, ``front`` in front.
+
+        The front mode is switched like :meth:`set_mode` (generated first if needed). Back
+        modes without artifacts are generated in the background and join the stack when
+        done; without ``project_dir`` that is an error (ModeUnavailableError)."""
+        pair = self._pair(pipeline)
+        if front not in selected:
+            raise ValueError(f"front mode '{front}' must be one of the selected modes")
+        for mode in selected:
+            self._mode(pair, mode)  # unknown -> UnknownPipelineError
+        order = [m.name for m in pair.modes]
+        back = sorted({m for m in selected if m != front}, key=order.index)
+        missing = [m for m in back if not pair.mode(m).manifest.is_file()]
+        if missing and pair.project_dir is None:
+            raise ModeUnavailableError(
+                f"execution mode(s) {', '.join(missing)} of '{pipeline}' have no artifacts yet "
+                "and the pipeline has no 'project_dir' to generate them"
+            )
+        with self._lock:
+            self.set_mode(pipeline, front)
+            if back:
+                self.stacked_modes[pipeline] = back
+            else:
+                self.stacked_modes.pop(pipeline, None)
+            for mode in missing:
+                if self.runner.active_job(pipeline, mode) is None:
+                    self.runner.start(pair, pair.mode(mode), "mode-switch", self._on_job_done)
+            self.stack = self._build_stack()
+            return self._pipeline_info(pair)
 
     def generate(self, pipeline: str, mode: str | None = None, trigger: JobTrigger = "user") -> PipelineInfo:
         """Regenerate a pipeline's artifacts with dbt (for a pipeline with modes: ``mode``,
@@ -177,13 +238,15 @@ class GraphService:
                     self.pending_modes.pop(job.pipeline, None)  # the switch is abandoned
                 return
             # drop every cached graph built from the old files of this pipeline / mode
-            for key in list(self._cache):
-                if job.mode is None or (job.pipeline, job.mode) in key:
-                    del self._cache[key]
+            for cache in (self._cache, self._graph_cache):
+                for key in list(cache):
+                    if job.mode is None or (job.pipeline, job.mode) in key:
+                        del cache[key]
             if pending is not None and pending == job.mode:
                 self.pending_modes.pop(job.pipeline, None)
                 self.active_modes[job.pipeline] = job.mode
-            if job.mode is None or self.active_modes.get(job.pipeline) == job.mode:
+            stacked = job.mode in self.stacked_modes.get(job.pipeline, [])
+            if job.mode is None or self.active_modes.get(job.pipeline) == job.mode or stacked:
                 self._activate()
 
     def _pair(self, pipeline: str) -> ArtifactPair:
@@ -209,6 +272,7 @@ class GraphService:
         return PipelineInfo(
             name=pair.name,
             active_mode=active,
+            stacked_modes=list(self.stacked_modes.get(pair.name, [])),
             pending_mode=self.pending_modes.get(pair.name),
             available=manifest.is_file(),
             generated_at=_generated_at(manifest),
@@ -263,8 +327,9 @@ class GraphService:
         stages: list[str] | None = None,
         include_sources: bool = True,
     ) -> GraphResponse:
+        stack = self.stack
         selected: dict[str, LineageNode] = {}
-        for node in self.graph.nodes.values():
+        for node in (stack.nodes if stack else self.graph.nodes).values():
             if pipelines and node.pipeline not in pipelines:
                 continue
             if stages and node.stage not in stages:
@@ -273,7 +338,17 @@ class GraphService:
                 continue
             selected[node.id] = node
 
-        return self._build_graph(selected, self.graph.edges)
+        response = self._build_graph(selected, stack.edges if stack else self.graph.edges)
+        if stack:
+            for graph_node in response.nodes:
+                graph_node.modes = stack.node_modes.get(graph_node.id)
+                graph_node.front = stack.in_front(graph_node.id)
+                graph_node.sql_differs = stack.sql_differs.get(graph_node.id, [])
+            for edge in response.edges:
+                edge.front = (edge.source, edge.target) not in stack.back_edges
+            # the same order whichever mode is in front, so the layout does not move on a swap
+            response.edges.sort(key=lambda e: e.id)
+        return response
 
     def _build_graph(
         self,
@@ -314,10 +389,18 @@ class GraphService:
         )
 
     # ------------------------------------------------------------------ detail
-    def model_detail(self, node_id: str, state: str | None = None) -> ModelDetail | None:
+    def model_detail(
+        self, node_id: str, state: str | None = None, mode: str | None = None
+    ) -> ModelDetail | None:
         """Detail of one node. With ``state`` it is read from that comparison state, falling
-        back to the running graph for nodes the state does not have (removed ones)."""
+        back to the running graph for nodes the state does not have (removed ones). With
+        ``mode`` from that execution mode of the node's pipeline (``None`` if the mode does
+        not have the node). A ghost of a stacked back mode is read from that mode."""
         graph = self.graph
+        if mode:
+            return self._model_in_mode(node_id, mode)
+        if self.stack and graph.get(node_id) is None:
+            graph = self.stack.graph_with(node_id) or graph
         if state:
             head = self.get_state(state)
             if (head.get(node_id) or self._find_by_name(node_id, head)) is not None:
@@ -325,9 +408,11 @@ class GraphService:
         node = graph.get(node_id) or self._find_by_name(node_id, graph)
         if node is None:
             return None
-        # column lineage is only built for the running graph
-        with_lineage = graph is self.graph
+        return self._detail(node, graph)
 
+    def _detail(self, node: LineageNode, graph: LineageGraph) -> ModelDetail:
+        # column lineage is only built for the running (front) graph
+        with_lineage = graph is self.graph
         return ModelDetail(
             id=node.id,
             name=node.name,
@@ -355,6 +440,20 @@ class GraphService:
             bigquery=self._bigquery_ref(node),
             dbt_run_command=self._dbt_run_command(node),
         )
+
+    def _model_in_mode(self, node_id: str, mode: str) -> ModelDetail | None:
+        known = (self.stack.nodes if self.stack else self.graph.nodes).get(node_id) or self._find_by_name(node_id)
+        if known is None:
+            return None
+        pair = self._pair(known.pipeline)
+        target = self._mode(pair, mode)
+        if mode == self.active_modes.get(pair.name):
+            return self.model_detail(known.id)
+        if not target.manifest.is_file():
+            raise ModeUnavailableError(f"execution mode '{mode}' of '{pair.name}' has no artifacts yet")
+        graph = self._graph_for({**self.active_modes, pair.name: mode})
+        node = graph.get(known.id)
+        return self._detail(node, graph) if node else None
 
     # ------------------------------------------------------------------ column lineage (2.3)
     def column_lineage_trace(

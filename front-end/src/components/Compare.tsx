@@ -23,7 +23,7 @@ import {
 import { useId, useState } from 'react'
 
 import type { ChangeStatus, NodeChange, NodeRef } from '../api/types'
-import { CHANGE_LABELS, CHANGE_SYMBOLS, parseUnifiedDiff } from '../graph/diff'
+import { CHANGE_LABELS, CHANGE_SYMBOLS, type DiffLine, parseUnifiedDiff } from '../graph/diff'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { formatBytes } from './visual'
 
@@ -463,8 +463,13 @@ function ChangedRef({ node, status, onPick }: { node: NodeRef; status: 'added' |
 export function CodeDiff({ diff }: { diff: string | null }) {
   const lines = parseUnifiedDiff(diff).filter((line) => line.kind !== 'file')
   if (lines.length === 0) return <div className="empty">Only whitespace changed.</div>
+  return <DiffLines lines={lines} />
+}
+
+/** Numbered, coloured diff lines (shared by the comparison and the stacked modes). */
+export function DiffLines({ lines, label = 'SQL diff' }: { lines: DiffLine[]; label?: string }) {
   return (
-    <div className="code-diff" role="table" aria-label="SQL diff">
+    <div className="code-diff" role="table" aria-label={label}>
       {lines.map((line, index) => (
         <div key={index} className="code-diff__line" data-kind={line.kind} role="row">
           <span className="code-diff__no">{line.oldNo ?? ''}</span>

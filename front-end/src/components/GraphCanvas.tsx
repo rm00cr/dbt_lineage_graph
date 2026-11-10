@@ -25,6 +25,7 @@ import type { GraphEdge, GraphNode } from '../api/types'
 import { boundaryViolations } from '../graph/boundary'
 import { edgeHandles, traceNodeHeight } from '../graph/columnTrace'
 import { NODE_HEIGHT, NODE_WIDTH, layoutGraph } from '../graph/layout'
+import { STACK_HEAD, isStacked } from '../graph/stack'
 import { visibleSubgraph } from '../graph/visible'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { useTheme } from '../theme/useTheme'
@@ -68,12 +69,17 @@ export function GraphCanvas() {
 
   // ------------------------------------------------------------------ layout
   // traced nodes (2.3) grow by their column rows; the layout makes room for them
+  // nodes of stacked execution modes get head room above the card for mode tabs + back cards
   const heights = useMemo(() => {
     const map = new Map<string, number>()
-    if (!traceView) return map
-    for (const [id, columns] of traceView.columnsByNode) map.set(id, traceNodeHeight(NODE_HEIGHT, columns))
+    if (traceView) {
+      for (const [id, columns] of traceView.columnsByNode) map.set(id, traceNodeHeight(NODE_HEIGHT, columns))
+    }
+    for (const node of graph?.nodes ?? []) {
+      if (isStacked(node)) map.set(node.id, (map.get(node.id) ?? NODE_HEIGHT) + STACK_HEAD)
+    }
     return map
-  }, [traceView])
+  }, [traceView, graph])
 
   const layout = useMemo(
     () =>
@@ -190,6 +196,7 @@ export function GraphCanvas() {
       [
         edge.cross_pipeline ? `edge--cross${violations.has(edge.id) ? ' edge--violation' : ''}` : '',
         edge.change === 'added' || edge.change === 'removed' ? `edge--${edge.change}` : '',
+        edge.front === false ? 'edge--back' : '',
       ]
         .filter(Boolean)
         .join(' ')

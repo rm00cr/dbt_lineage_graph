@@ -29,6 +29,13 @@ export interface GraphNode extends NodeRef {
   execution_mode: string | null
   /** only set in a state comparison (POST /api/diff) */
   change?: ChangeStatus | null
+  /** stacked execution modes: selected modes of its pipeline that contain it, front mode
+   *  first; null when the pipeline shows a single mode */
+  modes?: string[] | null
+  /** false: a ghost, the model exists only in back modes */
+  front?: boolean
+  /** back modes that compile this model to other SQL than the front mode */
+  sql_differs?: string[]
 }
 
 export interface GraphEdge {
@@ -37,6 +44,8 @@ export interface GraphEdge {
   target: string
   cross_pipeline: boolean
   change?: ChangeStatus | null
+  /** false: the edge exists only in a back mode of a stacked pipeline */
+  front?: boolean
 }
 
 export interface GraphStats {
@@ -156,8 +165,10 @@ export interface PipelineModeInfo {
 
 export interface PipelineInfo {
   name: string
-  /** the shown execution mode; null when the pipeline has none */
+  /** the shown execution mode (= the front mode); null when the pipeline has none */
   active_mode: string | null
+  /** selected back modes, stacked behind the front mode */
+  stacked_modes?: string[]
   /** being generated, shown once that is done */
   pending_mode?: string | null
   available: boolean

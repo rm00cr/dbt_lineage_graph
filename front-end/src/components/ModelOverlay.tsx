@@ -25,7 +25,7 @@ import { useState } from 'react'
 import type { ModelDetail, NodeRef } from '../api/types'
 import { type OverlayTab, useExplorerStore } from '../store/useExplorerStore'
 import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../graph/diff'
-import { CodeViewer } from './CodeViewer'
+import { ModeCode } from './ModeCode'
 import { ChangesPanel } from './Compare'
 import { SchemaTable } from './SchemaTable'
 import {
@@ -54,9 +54,14 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
   const tab = useExplorerStore((s) => s.overlayTab)
   const setTab = useExplorerStore((s) => s.setOverlayTab)
   const [copied, setCopied] = useState(false)
+  // stacked execution modes: the Code tab's side-by-side view needs a wider panel
+  const [codeWide, setCodeWide] = useState(false)
   const stageColor = useStageColor()
   // state comparison: what changed on this node (null when not comparing or unchanged)
   const change = useExplorerStore((s) => (s.activeId ? s.compare?.changes.get(s.activeId) : undefined) ?? null)
+  // stacked execution modes: which mode the panel shows (front, or a ghost's back mode)
+  const stackNode = useExplorerStore((s) => (s.activeId ? s.index.byId.get(s.activeId) : undefined))
+  const shownMode = stackNode?.modes?.[0]
 
   if (!activeId) return null
   const showChanges = tab === 'changes' && change !== null
@@ -82,9 +87,23 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
   }
 
   return (
-    <aside className="overlay" style={{ ['--stage-color' as string]: color }}>
+    <aside className={`overlay${tab === 'code' && codeWide ? ' overlay--wide' : ''}`} style={{ ['--stage-color' as string]: color }}>
       <header className="overlay__head">
         <div className="overlay__eyebrow">
+          {shownMode && (
+            <span
+              className="node__badge overlay__mode"
+              data-ghost={stackNode?.front === false || undefined}
+              title={
+                stackNode?.front === false
+                  ? `only in back mode(s) ${stackNode.modes?.join(', ')}; shown: ${shownMode}`
+                  : `execution mode in front: ${shownMode}`
+              }
+            >
+              <Layers size={10} /> {shownMode}
+              {stackNode?.front === false ? ' · back mode' : ''}
+            </span>
+          )}
           {change && (
             <span className="diff-chip" data-change={change.status}>
               {CHANGE_SYMBOLS[change.status]} {CHANGE_LABELS[change.status]}
@@ -200,9 +219,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
         {!showChanges && detail && !loading && (
           <>
             {(tab === 'overview' || tab === 'changes') && <OverviewTab detail={detail} />}
-            {tab === 'code' && (
-              <CodeViewer compiled={detail.compiled_code} raw={detail.raw_code} fileName={detail.name} />
-            )}
+            {tab === 'code' && <ModeCode detail={detail} onWideChange={setCodeWide} />}
             {tab === 'schema' && <SchemaTable columns={detail.columns} modelId={detail.id} />}
             {tab === 'lineage' && (
               <>

@@ -243,7 +243,8 @@ input {
   background: var(--bg-topbar);
   backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--border);
-  z-index: 20;
+  /* above the side panel (30): menus opening from the top bar must not end up behind it */
+  z-index: 45;
 }
 
 .brand {
@@ -2865,4 +2866,338 @@ mark {
   font-size: 11px;
   line-height: 1.45;
   color: var(--text-faint);
+}
+
+/* ============================ stacked execution modes ===================== */
+
+/* a node of a stacked pipeline: [mode tabs][card], back cards offset behind the card */
+.stack {
+  position: relative;
+}
+.stack__tabs {
+  position: absolute;
+  top: 0;
+  left: 12px;
+  z-index: 2;
+  display: flex;
+  align-items: flex-end; /* tabs stand on the card edges below them */
+  gap: 3px;
+  pointer-events: none;
+}
+.stack__tab {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  height: 20px;
+  padding: 0 8px;
+  border-radius: 7px 7px 0 0;
+  font: inherit;
+  font-size: 10.5px;
+  font-weight: 650;
+  letter-spacing: 0.02em;
+  white-space: nowrap;
+  color: var(--text-muted);
+  background: var(--bg-panel-solid);
+  border: 1.5px solid color-mix(in srgb, var(--stage-color) 65%, var(--border-strong));
+  border-bottom: 0;
+  cursor: pointer;
+  pointer-events: auto;
+  max-width: 132px;
+}
+.stack__tab-name {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.stack__tab:hover:not(:disabled) {
+  color: var(--text);
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+}
+/* the front mode: solid, it is what the card shows */
+.stack__tab[data-front='true'] {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+  cursor: default;
+}
+.stack__differs {
+  padding: 0 4px;
+  border-radius: 4px;
+  font-size: 9.5px;
+  color: var(--warn);
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+}
+.stack__layer {
+  position: absolute;
+  width: 268px;
+  border-radius: 14px;
+  background: var(--bg-elevated);
+  border: 1.5px solid color-mix(in srgb, var(--stage-color) 65%, var(--border-strong));
+  box-shadow: var(--shadow-node);
+}
+.stack__layer::before {
+  content: '';
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 5px;
+  border-radius: 14px 0 0 14px;
+  background: color-mix(in srgb, var(--stage-color) 55%, transparent);
+}
+/* a model only in back modes: dashed and faded, clearly not "in front" */
+.node[data-ghost='true'] {
+  border: 1.5px dashed var(--border-strong);
+  background: color-mix(in srgb, var(--node-bg-flat, var(--bg-elevated)) 55%, transparent);
+  box-shadow: none;
+}
+.node[data-ghost='true'] .node__main {
+  opacity: 0.6;
+}
+.node[data-ghost='true']:hover .node__main {
+  opacity: 1;
+}
+.stack[data-dimmed='true'] .stack__tabs,
+.stack[data-dimmed='true'] .stack__layer {
+  opacity: var(--dim-opacity);
+  filter: saturate(0.15);
+}
+/* edges that exist only in a back mode */
+.edge--back .react-flow__edge-path {
+  stroke-dasharray: 3 6;
+  opacity: 0.55;
+}
+
+/* pipeline picker: mode chips under each pipeline */
+.pipeline-picker__row {
+  flex-wrap: wrap;
+}
+.mode-chips {
+  flex: 1 0 100%;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 5px;
+  padding: 2px 8px 8px 32px;
+}
+.mode-chip {
+  white-space: nowrap;
+  display: inline-flex;
+  align-items: stretch;
+  border-radius: 99px;
+  border: 1px solid var(--border);
+  background: var(--bg-input);
+  overflow: hidden;
+}
+.mode-chip[data-on='true'] {
+  border-color: var(--accent-ring);
+  background: var(--accent-soft);
+}
+.mode-chip[data-front='true'] {
+  border-color: var(--accent);
+}
+.mode-chip button {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border: 0;
+  background: transparent;
+  color: var(--text-muted);
+  font: inherit;
+  font-size: 11.5px;
+  cursor: pointer;
+}
+.mode-chip[data-on='true'] .mode-chip__toggle {
+  color: var(--accent-chip-text);
+  font-weight: 600;
+}
+.mode-chip__toggle {
+  padding: 3px 4px 3px 9px;
+}
+.mode-chip__front {
+  padding: 3px 8px 3px 5px;
+}
+.mode-chip[data-front='true'] .mode-chip__front {
+  color: var(--accent);
+}
+.mode-chip button:disabled {
+  cursor: default;
+}
+.mode-chip button:disabled:not(.mode-chip__front) {
+  opacity: 0.5;
+}
+.mode-chip button:hover:not(:disabled) {
+  color: var(--text);
+}
+.mode-chips__busy {
+  color: var(--text-faint);
+}
+
+/* Code tab of a stacked model: mode switch, side by side, diff */
+.overlay--wide {
+  width: min(1120px, 86vw);
+}
+.mode-code {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.mode-code__bar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+}
+.mode-code__bar .segmented button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+}
+.mode-code__sentence {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 7px;
+  padding: 7px 10px;
+  border-radius: var(--radius-sm);
+  background: var(--chip-bg);
+  border: 1px solid var(--border);
+  font-size: 12.5px;
+  color: var(--text-muted);
+}
+.mode-code__base {
+  padding: 2px 9px;
+  border-radius: 7px;
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--accent-chip-text);
+  background: var(--accent-chip-bg);
+}
+.mode-code__hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
+/* popover picker used in the sentence */
+.mode-menu {
+  position: relative;
+  display: inline-flex;
+}
+.mode-menu__button {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  height: 26px;
+  padding: 0 9px;
+  border-radius: 7px;
+  border: 1px solid var(--accent-ring);
+  background: var(--bg-elevated);
+  color: var(--text);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 600;
+  cursor: pointer;
+  transition:
+    border-color 0.15s ease,
+    background 0.15s ease;
+}
+.mode-menu__button:hover:not(:disabled),
+.mode-menu__button[data-open='true'] {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.mode-menu__button:disabled {
+  cursor: default;
+  border-color: var(--border-strong);
+}
+.mode-menu__caret {
+  color: var(--text-faint);
+  transition: transform 0.15s ease;
+}
+.mode-menu__button[data-open='true'] .mode-menu__caret {
+  transform: rotate(180deg);
+}
+.mode-menu__list {
+  position: absolute;
+  top: calc(100% + 6px);
+  left: 0;
+  z-index: 10;
+  display: flex;
+  flex-direction: column;
+  min-width: 180px;
+  padding: 5px;
+  border-radius: var(--radius);
+  background: var(--bg-panel-solid);
+  border: 1px solid var(--border-strong);
+  box-shadow: var(--shadow-panel);
+  animation: pop-in 0.12s ease-out;
+}
+.mode-menu__item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 9px;
+  border: 0;
+  border-radius: var(--radius-sm);
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--mono);
+  font-size: 12px;
+  text-align: left;
+  cursor: pointer;
+}
+.mode-menu__item:hover,
+.mode-menu__item[aria-selected='true'] {
+  background: var(--accent-soft);
+  color: var(--text);
+}
+.mode-menu__check {
+  display: inline-grid;
+  width: 12px;
+  color: var(--accent);
+}
+.mode-code__side {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+  min-width: 0;
+}
+.mode-code__side > div {
+  min-width: 0;
+}
+.mode-code__head {
+  display: inline-block;
+  margin-bottom: 6px;
+  padding: 2px 9px;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 650;
+  color: var(--text-muted);
+  border: 1px solid var(--border-strong);
+}
+.mode-code__head[data-base='true'] {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.mode-code__legend {
+  display: flex;
+  gap: 14px;
+  font-size: 11.5px;
+}
+
+/* the picker needs room for the mode chips */
+.pipeline-picker__menu:has(.mode-chips) {
+  min-width: 380px;
+}
+.overlay__mode {
+  color: #fff;
+  background: var(--accent);
+  border-color: var(--accent);
+}
+.overlay__mode[data-ghost='true'] {
+  color: var(--text-muted);
+  background: transparent;
+  border: 1px dashed var(--border-strong);
 }

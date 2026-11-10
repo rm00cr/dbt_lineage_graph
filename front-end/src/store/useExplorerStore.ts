@@ -126,6 +126,10 @@ interface ExplorerState {
   refresh: () => Promise<void>
   setFilters: (patch: Partial<Filters>) => Promise<void>
   setPipelineMode: (pipeline: string, mode: string) => Promise<void>
+  /** stacked execution modes: show `selected` modes of a pipeline, `front` in front */
+  setPipelineModes: (pipeline: string, selected: string[], front: string) => Promise<void>
+  /** a mode tab on the canvas: bring that (already stacked) mode of a pipeline to the front */
+  bringModeToFront: (pipeline: string, mode: string) => Promise<void>
   /** run dbt for a pipeline in the background (`mode`: default the shown one) */
   regenerate: (pipeline: string, mode?: string | null) => Promise<void>
   pollJobs: () => Promise<void>
@@ -378,6 +382,29 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     }
   },
 
+  setPipelineModes: async (pipeline, selected, front) => {
+    const current = get().pipelineInfo.find((p) => p.name === pipeline)
+    if (!current || get().modeSwitching || selected.length === 0) return
+    set({ modeSwitching: pipeline, modeError: null })
+    try {
+      const info = await api.setPipelineModes(pipeline, selected, front)
+      set((state) => ({ pipelineInfo: replaceInfo(state.pipelineInfo, info) }))
+      // missing modes are generated first and join once done (see pollJobs)
+      if (info.pending_mode || info.modes.some((m) => selected.includes(m.name) && !m.available)) kickJobPolling()
+      await reloadShownGraph(get)
+      set({ modeSwitching: null })
+    } catch (error) {
+      set({ modeSwitching: null, modeError: errorText(error) })
+    }
+  },
+
+  bringModeToFront: async (pipeline, mode) => {
+    const info = get().pipelineInfo.find((p) => p.name === pipeline)
+    if (!info?.active_mode || info.active_mode === mode) return
+    const selected = [info.active_mode, ...(info.stacked_modes ?? [])]
+    await get().setPipelineModes(pipeline, selected.includes(mode) ? selected : [...selected, mode], mode)
+  },
+
   regenerate: async (pipeline, mode) => {
     set({ modeError: null })
     try {
@@ -412,8 +439,11 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     // the backend has already switched / rebuilt; fetch the new mode state and redraw
     const pipelineInfo = await api.pipelines().catch(() => get().pipelineInfo)
     set({ pipelineInfo })
-    const shown = (job: GenerationJob) =>
-      job.mode === null || pipelineInfo.find((p) => p.name === job.pipeline)?.active_mode === job.mode
+    const shown = (job: GenerationJob) => {
+      const info = pipelineInfo.find((p) => p.name === job.pipeline)
+      // the front mode, or a stacked back mode that just got its artifacts
+      return job.mode === null || info?.active_mode === job.mode || Boolean(info?.stacked_modes?.includes(job.mode))
+    }
     const redraw = finished.some((job) => job.status === 'done' && shown(job)) && !get().compare
     if (redraw) await reloadShownGraph(get)
 

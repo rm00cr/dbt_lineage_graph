@@ -1,6 +1,11 @@
 /**
  * Custom React Flow node (AP-2): stage colour, materialization badge, large label,
  * zoom-dependent detail (feature 1.6 / 1.8).
+ *
+ * Stacked execution modes: a node of a stacked pipeline gets a row of mode tabs above its
+ * card (the front mode solid, back modes outlined, click one to bring it to the front) and
+ * an offset back card per other mode that has the model. A model that exists only in back
+ * modes is drawn as a dashed ghost card.
  */
 
 import { Handle, type Node, type NodeProps, Position, useStore } from '@xyflow/react'
@@ -9,6 +14,8 @@ import { memo } from 'react'
 import type { GraphNode } from '../../api/types'
 import { MAX_TRACE_ROWS, type TracedColumn, rowHandleId, visibleRows } from '../../graph/columnTrace'
 import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../../graph/diff'
+import { NODE_HEIGHT, NODE_WIDTH } from '../../graph/layout'
+import { STACK_HEAD, STACK_OFFSET, backLayers, isGhost, isStacked, stackTabs, tabDepth } from '../../graph/stack'
 import { useExplorerStore } from '../../store/useExplorerStore'
 import { MATERIALIZATION_ICONS, useStageColor } from '../visual'
 
@@ -21,7 +28,7 @@ export type ModelNodeData = {
   searchHit: boolean
   /** column-lineage trace (2.3): the traced columns of this node, rendered as rows */
   traceColumns?: TracedColumn[]
-  /** explicit height while column rows are shown */
+  /** explicit height: column rows (2.3) and / or the stacked-modes head */
   height?: number
 }
 
@@ -42,11 +49,21 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
   // state comparison: added / removed / modified (unchanged nodes get no tag)
   const change = node.change ?? undefined
   const changed = change && change !== 'unchanged'
+  // stacked execution modes
+  const stacked = isStacked(node)
+  const ghost = isGhost(node)
+  const bringModeToFront = useExplorerStore((s) => s.bringModeToFront)
+  const cardHeight = stacked ? (height ?? NODE_HEIGHT + STACK_HEAD) - STACK_HEAD : height
 
-  return (
+  const card = (
     <div
       className={`node${compact ? ' node--compact' : ''}${rows.length > 0 ? ' node--traced' : ''}`}
-      style={{ ['--stage-color' as string]: stageColor(node.stage), ...(height ? { height } : {}) }}
+      style={{
+        ['--stage-color' as string]: stageColor(node.stage),
+        ...(cardHeight ? { height: cardHeight } : {}),
+        ...(stacked ? { position: 'absolute', top: STACK_HEAD, left: 0 } : {}),
+      }}
+      data-ghost={ghost || undefined}
       data-selected={selected}
       data-active={active}
       data-dimmed={dimmed}
@@ -121,6 +138,64 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
         </div>
       )}
 
+    </div>
+  )
+
+  if (!stacked) return card
+
+  const layers = backLayers(node)
+  return (
+    <div
+      className="stack"
+      style={{
+        width: NODE_WIDTH,
+        height: (cardHeight ?? NODE_HEIGHT) + STACK_HEAD,
+        ['--stage-color' as string]: stageColor(node.stage),
+      }}
+      data-dimmed={dimmed}
+      data-ghost={ghost || undefined}
+    >
+      {/* each tab stands on the top edge of its own card: the front tab on the front card,
+          back tabs on their offset back cards, so they step up like folder tabs */}
+      <div className="stack__tabs" style={{ height: STACK_HEAD }}>
+        {stackTabs(node).map((tab, index) => (
+          <button
+            key={tab.mode}
+            type="button"
+            className="stack__tab nodrag"
+            style={{ marginBottom: tabDepth(node, index) * STACK_OFFSET }}
+            data-front={tab.front}
+            data-differs={tab.differs || undefined}
+            disabled={tab.front}
+            title={
+              tab.front
+                ? `${tab.mode} is in front`
+                : `${node.name} in ${tab.mode}${tab.differs ? ': compiles to other SQL' : ''} - click to bring ${tab.mode} to the front`
+            }
+            onClick={(event) => {
+              event.stopPropagation()
+              void bringModeToFront(node.pipeline, tab.mode)
+            }}
+          >
+            <span className="stack__tab-name">{tab.mode}</span>
+            {tab.differs && <span className="stack__differs">≠</span>}
+          </button>
+        ))}
+      </div>
+      {/* back cards, furthest first; offset up and right so they peek out behind the card */}
+      {Array.from({ length: layers }, (_, i) => layers - i).map((depth) => (
+        <div
+          key={depth}
+          className="stack__layer"
+          style={{
+            ['--stage-color' as string]: stageColor(node.stage),
+            top: STACK_HEAD - depth * STACK_OFFSET,
+            left: depth * STACK_OFFSET,
+            height: cardHeight ?? NODE_HEIGHT,
+          }}
+        />
+      ))}
+      {card}
     </div>
   )
 }
