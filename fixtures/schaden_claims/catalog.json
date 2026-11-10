@@ -4,14 +4,14 @@
     "dbt_version": "1.8.7",
     "generated_at": "2026-10-27T21:14:09.482173Z",
     "invocation_id": "9f1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
-    "project_name": "schaden_claims",
+    "project_name": "dbt_pnc",
     "project_id": "schadenclaims0000000000000000000",
     "adapter_type": "bigquery",
     "env": {}
   },
   "nodes": {
-    "model.schaden_claims.src_claims_cases": {
-      "unique_id": "model.schaden_claims.src_claims_cases",
+    "model.dbt_pnc.src_claims_cases": {
+      "unique_id": "model.dbt_pnc.src_claims_cases",
       "metadata": {
         "type": "VIEW",
         "database": "pnc-analytics-prd",
@@ -93,8 +93,8 @@
         }
       }
     },
-    "model.schaden_claims.src_claims_payments": {
-      "unique_id": "model.schaden_claims.src_claims_payments",
+    "model.dbt_pnc.src_claims_payments": {
+      "unique_id": "model.dbt_pnc.src_claims_payments",
       "metadata": {
         "type": "VIEW",
         "database": "pnc-analytics-prd",
@@ -158,8 +158,8 @@
         }
       }
     },
-    "model.schaden_claims.src_claims_mfp_contracts": {
-      "unique_id": "model.schaden_claims.src_claims_mfp_contracts",
+    "model.dbt_pnc.src_claims_mfp_contracts": {
+      "unique_id": "model.dbt_pnc.src_claims_mfp_contracts",
       "metadata": {
         "type": "VIEW",
         "database": "pnc-analytics-prd",
@@ -217,8 +217,8 @@
         }
       }
     },
-    "model.schaden_claims.src_claims_mfp_portfolio": {
-      "unique_id": "model.schaden_claims.src_claims_mfp_portfolio",
+    "model.dbt_pnc.src_claims_mfp_portfolio": {
+      "unique_id": "model.dbt_pnc.src_claims_mfp_portfolio",
       "metadata": {
         "type": "VIEW",
         "database": "pnc-analytics-prd",
@@ -270,8 +270,8 @@
         }
       }
     },
-    "model.schaden_claims.src_claims_mfp_premium": {
-      "unique_id": "model.schaden_claims.src_claims_mfp_premium",
+    "model.dbt_pnc.src_claims_mfp_premium": {
+      "unique_id": "model.dbt_pnc.src_claims_mfp_premium",
       "metadata": {
         "type": "VIEW",
         "database": "pnc-analytics-prd",
@@ -323,8 +323,8 @@
         }
       }
     },
-    "model.schaden_claims.int_claims_cases": {
-      "unique_id": "model.schaden_claims.int_claims_cases",
+    "model.dbt_pnc.int_claims_cases": {
+      "unique_id": "model.dbt_pnc.int_claims_cases",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -424,8 +424,8 @@
         }
       }
     },
-    "model.schaden_claims.int_claims_payments": {
-      "unique_id": "model.schaden_claims.int_claims_payments",
+    "model.dbt_pnc.int_claims_payments": {
+      "unique_id": "model.dbt_pnc.int_claims_payments",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -483,8 +483,8 @@
         }
       }
     },
-    "model.schaden_claims.int_claims_loss_ratio": {
-      "unique_id": "model.schaden_claims.int_claims_loss_ratio",
+    "model.dbt_pnc.int_claims_loss_ratio": {
+      "unique_id": "model.dbt_pnc.int_claims_loss_ratio",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -560,8 +560,8 @@
         }
       }
     },
-    "model.schaden_claims.out_claims_kpi_daily": {
-      "unique_id": "model.schaden_claims.out_claims_kpi_daily",
+    "model.dbt_pnc.out_claims_kpi_daily": {
+      "unique_id": "model.dbt_pnc.out_claims_kpi_daily",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -631,8 +631,8 @@
         }
       }
     },
-    "model.schaden_claims.out_claims_reserve_report": {
-      "unique_id": "model.schaden_claims.out_claims_reserve_report",
+    "model.dbt_pnc.out_claims_reserve_report": {
+      "unique_id": "model.dbt_pnc.out_claims_reserve_report",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -702,8 +702,8 @@
         }
       }
     },
-    "model.schaden_claims.out_pnc_combined_ratio": {
-      "unique_id": "model.schaden_claims.out_pnc_combined_ratio",
+    "model.dbt_pnc.out_pnc_combined_ratio": {
+      "unique_id": "model.dbt_pnc.out_pnc_combined_ratio",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -781,8 +781,8 @@
     }
   },
   "sources": {
-    "source.schaden_claims.raw_claims.claims": {
-      "unique_id": "source.schaden_claims.raw_claims.claims",
+    "source.dbt_pnc.raw_claims.claims": {
+      "unique_id": "source.dbt_pnc.raw_claims.claims",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-raw-prd",
@@ -858,8 +858,8 @@
         }
       }
     },
-    "source.schaden_claims.raw_claims.payments": {
-      "unique_id": "source.schaden_claims.raw_claims.payments",
+    "source.dbt_pnc.raw_claims.payments": {
+      "unique_id": "source.dbt_pnc.raw_claims.payments",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-raw-prd",
@@ -923,8 +923,8 @@
         }
       }
     },
-    "source.schaden_claims.bestand_mfp.out_mfp_contracts": {
-      "unique_id": "source.schaden_claims.bestand_mfp.out_mfp_contracts",
+    "source.dbt_pnc.bestand_mfp.out_mfp_contracts": {
+      "unique_id": "source.dbt_pnc.bestand_mfp.out_mfp_contracts",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -1000,8 +1000,8 @@
         }
       }
     },
-    "source.schaden_claims.bestand_mfp.out_mfp_portfolio_daily": {
-      "unique_id": "source.schaden_claims.bestand_mfp.out_mfp_portfolio_daily",
+    "source.dbt_pnc.bestand_mfp.out_mfp_portfolio_daily": {
+      "unique_id": "source.dbt_pnc.bestand_mfp.out_mfp_portfolio_daily",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -1083,8 +1083,8 @@
         }
       }
     },
-    "source.schaden_claims.bestand_mfp.out_mfp_premium_report": {
-      "unique_id": "source.schaden_claims.bestand_mfp.out_mfp_premium_report",
+    "source.dbt_pnc.bestand_mfp.out_mfp_premium_report": {
+      "unique_id": "source.dbt_pnc.bestand_mfp.out_mfp_premium_report",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",

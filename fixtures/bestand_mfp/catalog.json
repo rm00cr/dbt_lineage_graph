@@ -4,14 +4,14 @@
     "dbt_version": "1.8.7",
     "generated_at": "2026-10-27T21:14:09.482173Z",
     "invocation_id": "9f1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
-    "project_name": "bestand_mfp",
+    "project_name": "dbt_pnc",
     "project_id": "bestandmfp0000000000000000000000",
     "adapter_type": "bigquery",
     "env": {}
   },
   "nodes": {
-    "model.bestand_mfp.src_mfp_contracts": {
-      "unique_id": "model.bestand_mfp.src_mfp_contracts",
+    "model.dbt_pnc.src_mfp_contracts": {
+      "unique_id": "model.dbt_pnc.src_mfp_contracts",
       "metadata": {
         "type": "VIEW",
         "database": "pnc-analytics-prd",
@@ -87,8 +87,8 @@
         }
       }
     },
-    "model.bestand_mfp.src_mfp_partners": {
-      "unique_id": "model.bestand_mfp.src_mfp_partners",
+    "model.dbt_pnc.src_mfp_partners": {
+      "unique_id": "model.dbt_pnc.src_mfp_partners",
       "metadata": {
         "type": "VIEW",
         "database": "pnc-analytics-prd",
@@ -164,8 +164,8 @@
         }
       }
     },
-    "model.bestand_mfp.src_mfp_coverages": {
-      "unique_id": "model.bestand_mfp.src_mfp_coverages",
+    "model.dbt_pnc.src_mfp_coverages": {
+      "unique_id": "model.dbt_pnc.src_mfp_coverages",
       "metadata": {
         "type": "VIEW",
         "database": "pnc-analytics-prd",
@@ -241,8 +241,8 @@
         }
       }
     },
-    "model.bestand_mfp.src_mfp_tariffs": {
-      "unique_id": "model.bestand_mfp.src_mfp_tariffs",
+    "model.dbt_pnc.src_mfp_tariffs": {
+      "unique_id": "model.dbt_pnc.src_mfp_tariffs",
       "metadata": {
         "type": "VIEW",
         "database": "pnc-analytics-prd",
@@ -300,8 +300,8 @@
         }
       }
     },
-    "model.bestand_mfp.int_mfp_contracts": {
-      "unique_id": "model.bestand_mfp.int_mfp_contracts",
+    "model.dbt_pnc.int_mfp_contracts": {
+      "unique_id": "model.dbt_pnc.int_mfp_contracts",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -395,8 +395,8 @@
         }
       }
     },
-    "model.bestand_mfp.int_mfp_coverages": {
-      "unique_id": "model.bestand_mfp.int_mfp_coverages",
+    "model.dbt_pnc.int_mfp_coverages": {
+      "unique_id": "model.dbt_pnc.int_mfp_coverages",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -478,8 +478,8 @@
         }
       }
     },
-    "model.bestand_mfp.int_mfp_contract_coverage": {
-      "unique_id": "model.bestand_mfp.int_mfp_contract_coverage",
+    "model.dbt_pnc.int_mfp_contract_coverage": {
+      "unique_id": "model.dbt_pnc.int_mfp_contract_coverage",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -585,8 +585,8 @@
         }
       }
     },
-    "model.bestand_mfp.out_mfp_portfolio_daily": {
-      "unique_id": "model.bestand_mfp.out_mfp_portfolio_daily",
+    "model.dbt_pnc.out_mfp_portfolio_daily": {
+      "unique_id": "model.dbt_pnc.out_mfp_portfolio_daily",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -668,8 +668,8 @@
         }
       }
     },
-    "model.bestand_mfp.out_mfp_premium_report": {
-      "unique_id": "model.bestand_mfp.out_mfp_premium_report",
+    "model.dbt_pnc.out_mfp_premium_report": {
+      "unique_id": "model.dbt_pnc.out_mfp_premium_report",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -733,8 +733,8 @@
         }
       }
     },
-    "model.bestand_mfp.out_mfp_customer_360": {
-      "unique_id": "model.bestand_mfp.out_mfp_customer_360",
+    "model.dbt_pnc.out_mfp_customer_360": {
+      "unique_id": "model.dbt_pnc.out_mfp_customer_360",
       "metadata": {
         "type": "VIEW",
         "database": "pnc-analytics-prd",
@@ -816,8 +816,8 @@
         }
       }
     },
-    "model.bestand_mfp.out_mfp_contracts": {
-      "unique_id": "model.bestand_mfp.out_mfp_contracts",
+    "model.dbt_pnc.out_mfp_contracts": {
+      "unique_id": "model.dbt_pnc.out_mfp_contracts",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-analytics-prd",
@@ -895,8 +895,8 @@
     }
   },
   "sources": {
-    "source.bestand_mfp.raw_mfp.contracts": {
-      "unique_id": "source.bestand_mfp.raw_mfp.contracts",
+    "source.dbt_pnc.raw_mfp.contracts": {
+      "unique_id": "source.dbt_pnc.raw_mfp.contracts",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-raw-prd",
@@ -972,8 +972,8 @@
         }
       }
     },
-    "source.bestand_mfp.raw_mfp.partners": {
-      "unique_id": "source.bestand_mfp.raw_mfp.partners",
+    "source.dbt_pnc.raw_mfp.partners": {
+      "unique_id": "source.dbt_pnc.raw_mfp.partners",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-raw-prd",
@@ -1043,8 +1043,8 @@
         }
       }
     },
-    "source.bestand_mfp.raw_mfp.coverages": {
-      "unique_id": "source.bestand_mfp.raw_mfp.coverages",
+    "source.dbt_pnc.raw_mfp.coverages": {
+      "unique_id": "source.dbt_pnc.raw_mfp.coverages",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-raw-prd",
@@ -1120,8 +1120,8 @@
         }
       }
     },
-    "source.bestand_mfp.raw_mfp.tariffs": {
-      "unique_id": "source.bestand_mfp.raw_mfp.tariffs",
+    "source.dbt_pnc.raw_mfp.tariffs": {
+      "unique_id": "source.dbt_pnc.raw_mfp.tariffs",
       "metadata": {
         "type": "BASE TABLE",
         "database": "pnc-raw-prd",
