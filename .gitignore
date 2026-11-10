@@ -36,3 +36,8 @@ examples/**/.user.yml
 examples/*/dbt_packages/
 *.duckdb
 *.duckdb.wal
+dump/0001-feat-sparkles-groups-for-the-different-stages.patch
+dump/0002-feat-wrap-full-model-names-on-graph-nodes-and-tighte.patch
+dump/0003-refactor-remove-the-expand-lineage-E-action.patch
+dump/0004-refactor-ambulance-quick-fix-for-groups-and-stages.patch
+dump/combined_0a194a8..329123a.diff
