@@ -14,7 +14,7 @@ import { memo } from 'react'
 import type { GraphNode } from '../../api/types'
 import { MAX_TRACE_ROWS, type TracedColumn, rowHandleId, visibleRows } from '../../graph/columnTrace'
 import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../../graph/diff'
-import { NODE_HEIGHT, NODE_WIDTH } from '../../graph/layout'
+import { NODE_HEIGHT, NODE_WIDTH, cardHeight as cardHeightOf } from '../../graph/layout'
 import { STACK_HEAD, STACK_OFFSET, backLayers, isGhost, isStacked, stackTabs, tabDepth } from '../../graph/stack'
 import { useExplorerStore } from '../../store/useExplorerStore'
 import { MATERIALIZATION_ICONS, useStageColor } from '../visual'
@@ -64,12 +64,15 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
   const ghost = isGhost(node)
   const bringModeToFront = useExplorerStore((s) => s.bringModeToFront)
   const cardHeight = stacked ? (height ?? NODE_HEIGHT + STACK_HEAD) - STACK_HEAD : height
+  // the name part of the card; traced column rows (2.3) are added below it
+  const mainHeight = cardHeightOf(node) - 2
 
   const card = (
     <div
       className={`node${compact ? ' node--compact' : ''}${rows.length > 0 ? ' node--traced' : ''}`}
       style={{
         ['--stage-color' as string]: stageColor(node.stage),
+        ['--main-height' as string]: `${mainHeight}px`,
         ...(cardHeight ? { height: cardHeight } : {}),
         ...(stacked ? { position: 'absolute', top: STACK_HEAD, left: 0 } : {}),
       }}

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GraphEdge, GraphNode, Stage } from '../api/types'
-import { NODE_HEIGHT, NODE_WIDTH, effectiveZoneMode, layoutGraph, orderPipelines } from './layout'
+import { NODE_WIDTH, cardHeight, effectiveZoneMode, layoutGraph, orderPipelines } from './layout'
 
 const node = (
   id: string,
@@ -64,7 +64,7 @@ describe('lanes layout', () => {
       for (const n of nodes.filter((x) => (x.group ?? null) === row.group)) {
         const p = positions.get(n.id)!
         expect(p.y).toBeGreaterThanOrEqual(row.y)
-        expect(p.y + NODE_HEIGHT).toBeLessThanOrEqual(row.y + row.height)
+        expect(p.y + cardHeight(n)).toBeLessThanOrEqual(row.y + row.height)
         expect(p.x + NODE_WIDTH).toBeLessThanOrEqual(row.x + row.width)
       }
     }
@@ -185,7 +185,7 @@ describe("folders layout (stage boxes with one box per model sub-folder)", () =>
       expect(p.x).toBeGreaterThanOrEqual(box.x)
       expect(p.y).toBeGreaterThanOrEqual(box.y)
       expect(p.x + NODE_WIDTH).toBeLessThanOrEqual(box.x + box.width)
-      expect(p.y + NODE_HEIGHT).toBeLessThanOrEqual(box.y + box.height)
+      expect(p.y + cardHeight(n)).toBeLessThanOrEqual(box.y + box.height)
     }
   })
 
@@ -245,7 +245,7 @@ describe("folders layout (stage boxes with one box per model sub-folder)", () =>
     const raw = result.positions.get('raw')!
     expect(raw.x).toBeGreaterThanOrEqual(box.x)
     expect(raw.y).toBeGreaterThanOrEqual(box.y)
-    expect(raw.y + NODE_HEIGHT).toBeLessThanOrEqual(box.y + box.height)
+    expect(raw.y + cardHeight(src[0])).toBeLessThanOrEqual(box.y + box.height)
     expect(result.folders.filter((f) => f.stage === 'src').map((f) => f.folder).sort()).toEqual(['adam', 'claim'])
   })
 

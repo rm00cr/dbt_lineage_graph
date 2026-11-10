@@ -9,7 +9,45 @@ import dagre from 'dagre'
 import type { GraphEdge, GraphNode, Stage } from '../api/types'
 
 export const NODE_WIDTH = 268
+/** height of a card with a long (three-line) name; the fallback where no node is known */
 export const NODE_HEIGHT = 124
+
+// card height follows the model name, which wraps at `_` and `.` (see ModelNode):
+// padding + header + meta badges around max(icon row, name lines)
+const CARD_CHROME = 55
+const ICON_ROW = 23
+export const NAME_LINE_HEIGHT = 18
+export const MAX_NAME_LINES = 4
+/** characters per name line; fewer while a compare tag sits next to the name */
+const NAME_CHARS = 23
+const NAME_CHARS_WITH_TAG = 12
+
+/** How many lines `name` takes when wrapped at `_` / `.` with `perLine` characters a line. */
+export function nameLines(name: string, perLine: number): number {
+  let lines = 1
+  let used = 0
+  for (const part of name.split(/(?<=[_.])/)) {
+    if (used > 0 && used + part.length > perLine) {
+      lines += 1
+      used = 0
+    }
+    if (part.length > perLine) {
+      // no break point: the browser breaks the part anywhere
+      lines += Math.ceil(part.length / perLine) - 1
+      used = part.length % perLine || perLine
+    } else {
+      used += part.length
+    }
+  }
+  return lines
+}
+
+/** Height of a node's card: short names get a compact card, long ones the lines they need. */
+export function cardHeight(node: Pick<GraphNode, 'name' | 'change'>): number {
+  const tagged = Boolean(node.change && node.change !== 'unchanged')
+  const lines = Math.min(MAX_NAME_LINES, nameLines(node.name, tagged ? NAME_CHARS_WITH_TAG : NAME_CHARS))
+  return CARD_CHROME + Math.max(ICON_ROW, lines * NAME_LINE_HEIGHT)
+}
 
 export type LayoutMode = 'dag' | 'lanes'
 /**
@@ -128,13 +166,14 @@ export function layoutGraph(
   nodes: GraphNode[],
   edges: GraphEdge[],
   mode: LayoutMode = 'dag',
-  /** per-node heights, e.g. nodes that show traced columns (2.3); default NODE_HEIGHT */
+  /** per-node heights, e.g. nodes that show traced columns (2.3); default cardHeight(node) */
   heights?: Map<string, number>,
   /** what the 'lanes' (zones) layout draws */
   zoneOptions: Partial<ZoneOptions> = {},
 ): LayoutResult {
   if (nodes.length === 0) return { positions: new Map(), lanes: [], rows: [], folders: [], pipelines: [] }
-  const heightOf = (id: string) => heights?.get(id) ?? NODE_HEIGHT
+  const cards = new Map(nodes.map((n) => [n.id, cardHeight(n)]))
+  const heightOf = (id: string) => heights?.get(id) ?? cards.get(id) ?? NODE_HEIGHT
   const options: ZoneOptions = { zones: 'both', splitPipelines: false, ...zoneOptions }
   options.zones = effectiveZoneMode(options.zones, nodes)
   return mode === 'lanes' ? layoutZones(nodes, edges, heightOf, options) : layoutDag(nodes, edges, heightOf)
