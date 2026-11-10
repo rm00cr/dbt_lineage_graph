@@ -437,6 +437,7 @@ class GraphService:
             pipeline=node.pipeline,
             resource_type=node.resource_type,
             group=node.group,
+            folder=node.folder,
             description=node.description,
             tags=node.tags,
             schema_name=node.schema_name,
@@ -806,6 +807,7 @@ class GraphService:
             pipeline=node.pipeline,
             resource_type=node.resource_type,  # type: ignore[arg-type]
             group=node.group,
+            folder=node.folder,
             schema_name=node.schema_name,
             database=node.database,
             description=node.description,

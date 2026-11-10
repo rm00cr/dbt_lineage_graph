@@ -21,9 +21,9 @@ import type {
   TraceDirection,
 } from '../api/types'
 import { type TraceView, buildTraceView } from '../graph/columnTrace'
+import { DEFAULT_ZONE_MODE, type LayoutMode, type ZoneMode } from '../graph/layout'
 import { changedIds } from '../graph/diff'
 import { type GraphFilters, filterGraph } from '../graph/filter'
-import type { LayoutMode, ZoneMode } from '../graph/layout'
 import {
   type AdjacencyIndex,
   buildIndex,
@@ -91,7 +91,7 @@ interface ExplorerState {
 
   filters: Filters
   layoutMode: LayoutMode
-  /** which zones the 'lanes' layout draws: stage columns, dbt-group rows, or both */
+  /** which zones the 'lanes' layout draws: stage columns, folder boxes, dbt-group rows, or both */
   zoneMode: ZoneMode
   /** zones layout: one grid per pipeline, placed left to right by pipeline dependency */
   focusMode: FocusMode
@@ -148,7 +148,6 @@ interface ExplorerState {
   clearSelection: () => void
   applySelector: (input: string) => void
   setSelectorInput: (input: string) => void
-  expandSelectionLineage: () => void
   dbtSelectorString: () => string
 
   openModel: (id: string, options?: { center?: boolean; tab?: OverlayTab }) => Promise<void>
@@ -271,7 +270,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   filters: { pipelines: pipelinesFromUrl(), stages: [], includeSources: true },
   layoutMode: 'dag',
-  zoneMode: 'both',
+  zoneMode: DEFAULT_ZONE_MODE,
   focusMode: 'dim',
   showMiniMap: true,
   selectionDrag: false,
@@ -512,15 +511,6 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   },
 
   setSelectorInput: (input) => set({ selectorInput: input }),
-
-  expandSelectionLineage: () => {
-    const { index, selectedIds, activeId } = get()
-    const seeds = new Set(selectedIds)
-    if (activeId) seeds.add(activeId)
-    if (seeds.size === 0) return
-    set({ selectedIds: lineageClosure(index, seeds) })
-    set((state) => computeHighlight(state))
-  },
 
   dbtSelectorString: () => {
     const { index, selectedIds, activeId } = get()

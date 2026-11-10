@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GraphEdge, GraphNode, Stage } from '../api/types'
-import { NODE_HEIGHT, NODE_WIDTH, layoutGraph, orderPipelines } from './layout'
+import { NODE_WIDTH, cardHeight, effectiveZoneMode, layoutGraph, orderPipelines } from './layout'
 
-const node = (id: string, stage: Stage, group: string | null = null, pipeline = 'p'): GraphNode => ({
+const node = (
+  id: string,
+  stage: Stage,
+  group: string | null = null,
+  pipeline = 'p',
+  folder: string | null = null,
+): GraphNode => ({
   id,
   name: id,
   stage,
@@ -11,6 +17,7 @@ const node = (id: string, stage: Stage, group: string | null = null, pipeline = 
   pipeline,
   resource_type: 'model',
   group,
+  folder,
   schema_name: null,
   database: null,
   description: null,
@@ -57,7 +64,7 @@ describe('lanes layout', () => {
       for (const n of nodes.filter((x) => (x.group ?? null) === row.group)) {
         const p = positions.get(n.id)!
         expect(p.y).toBeGreaterThanOrEqual(row.y)
-        expect(p.y + NODE_HEIGHT).toBeLessThanOrEqual(row.y + row.height)
+        expect(p.y + cardHeight(n)).toBeLessThanOrEqual(row.y + row.height)
         expect(p.x + NODE_WIDTH).toBeLessThanOrEqual(row.x + row.width)
       }
     }
@@ -164,5 +171,150 @@ describe('lanes layout', () => {
       expect(positions.get('s')!.x).toBeLessThan(positions.get('i')!.x)
       expect(positions.get('i')!.x).toBeLessThan(positions.get('m')!.x)
     })
+  })
+})
+
+describe("folders layout (stage boxes with one box per model sub-folder)", () => {
+  const nodes = [
+    node('c_src', 'src', null, 'p', 'claim'),
+    node('k_src', 'src', null, 'p', 'contract'),
+    node('c_int', 'int', null, 'p', 'claim'),
+    node('j_int', 'int', null, 'p', 'contract_with_claim'),
+    node('j2_int', 'int', null, 'p', 'contract_with_claim'),
+    node('r_int', 'int', null, 'p', null), // directly in 02_intermediate
+    node('out', 'out', null, 'p', null),
+  ]
+  const edges = [edge('c_src', 'c_int'), edge('k_src', 'j_int'), edge('c_int', 'j_int'), edge('j_int', 'j2_int'), edge('j2_int', 'out')]
+  const run = () => layoutGraph(nodes, edges, 'lanes', undefined, { zones: 'folders' })
+  const boxOf = (result: ReturnType<typeof run>, stage: Stage, folder: string | null) =>
+    result.folders.find((f) => f.stage === stage && f.folder === folder)!
+
+  it('draws one stage lane per stage and one folder box per (stage, folder)', () => {
+    const { lanes, folders, rows } = run()
+    expect(lanes.map((l) => l.stage)).toEqual(['src', 'int', 'out'])
+    expect(rows).toEqual([]) // no dbt-group rows in this mode
+    expect(folders.map((f) => `${f.stage}/${f.folder ?? '(root)'}`).sort()).toEqual(
+      ['int/(root)', 'int/claim', 'int/contract_with_claim', 'out/(root)', 'src/claim', 'src/contract'].sort(),
+    )
+  })
+
+  it('puts every node inside the folder box of its own stage and folder', () => {
+    const result = run()
+    for (const n of nodes) {
+      const p = result.positions.get(n.id)!
+      const box = boxOf(result, n.stage, n.folder ?? null)
+      expect(p.x).toBeGreaterThanOrEqual(box.x)
+      expect(p.y).toBeGreaterThanOrEqual(box.y)
+      expect(p.x + NODE_WIDTH).toBeLessThanOrEqual(box.x + box.width)
+      expect(p.y + cardHeight(n)).toBeLessThanOrEqual(box.y + box.height)
+    }
+  })
+
+  it('keeps folder boxes of a stage apart, and inside their stage lane', () => {
+    const result = run()
+    for (const lane of result.lanes) {
+      const inStage = result.folders.filter((f) => f.stage === lane.stage)
+      for (const f of inStage) {
+        expect(f.x).toBeGreaterThanOrEqual(lane.x)
+        expect(f.x + f.width).toBeLessThanOrEqual(lane.x + lane.width)
+        expect(f.y + f.height).toBeLessThanOrEqual(lane.y + lane.height)
+      }
+      const sorted = [...inStage].sort((a, b) => a.y - b.y)
+      for (let i = 1; i < sorted.length; i++) {
+        expect(sorted[i].y).toBeGreaterThanOrEqual(sorted[i - 1].y + sorted[i - 1].height)
+      }
+    }
+  })
+
+  it('aligns sub-columns across folders of the same stage, and orders stages left to right', () => {
+    const result = run()
+    // int: depth-0 nodes of different folders ('claim', root) share a sub-column x
+    expect(result.positions.get('c_int')!.x).toBe(result.positions.get('r_int')!.x)
+    // a node one hop deeper inside the stage moves right, in every folder alike
+    expect(result.positions.get('j_int')!.x).toBeGreaterThan(result.positions.get('c_int')!.x)
+    expect(result.positions.get('j2_int')!.x).toBeGreaterThan(result.positions.get('j_int')!.x)
+    const lane = (stage: Stage) => result.lanes.find((l) => l.stage === stage)!
+    expect(lane('int').x).toBeGreaterThan(lane('src').x + lane('src').width - 1)
+    expect(lane('out').x).toBeGreaterThan(lane('int').x)
+  })
+
+  it('draws no box for sources without a folder: they sit in the stage above the folder boxes', () => {
+    const withSources = [
+      node('raw1', 'src', null, 'p', null),
+      node('raw2', 'src', null, 'p', null),
+      { ...node('s1', 'src', null, 'p', 'claim') },
+    ]
+    withSources[0].resource_type = 'source'
+    withSources[1].resource_type = 'source'
+    const result = layoutGraph(withSources, [edge('raw1', 's1'), edge('raw2', 's1')], 'lanes', undefined, { zones: 'folders' })
+    expect(result.folders.map((f) => f.folder)).toEqual(['claim']) // no source box
+    const folderTop = result.folders[0].y
+    expect(result.positions.get('raw1')!.y).toBeLessThan(folderTop)
+    expect(result.positions.get('raw2')!.y).toBeLessThan(folderTop)
+    const lane = result.lanes[0]
+    expect(result.positions.get('raw1')!.x).toBeGreaterThanOrEqual(lane.x)
+  })
+
+  it('puts a source with a folder inside that folder box, next to its consumers', () => {
+    const src = [
+      { ...node('raw', 'src', null, 'p', 'claim'), resource_type: 'source' as const },
+      node('m_src', 'src', null, 'p', 'claim'),
+      node('o_src', 'src', null, 'p', 'adam'),
+    ]
+    const result = layoutGraph(src, [edge('raw', 'm_src')], 'lanes', undefined, { zones: 'folders' })
+    const box = result.folders.find((f) => f.stage === 'src' && f.folder === 'claim')!
+    const raw = result.positions.get('raw')!
+    expect(raw.x).toBeGreaterThanOrEqual(box.x)
+    expect(raw.y).toBeGreaterThanOrEqual(box.y)
+    expect(raw.y + cardHeight(src[0])).toBeLessThanOrEqual(box.y + box.height)
+    expect(result.folders.filter((f) => f.stage === 'src').map((f) => f.folder).sort()).toEqual(['adam', 'claim'])
+  })
+
+  it('lists the (root) folder last inside its stage', () => {
+    const result = run()
+    const ints = result.folders.filter((f) => f.stage === 'int').sort((a, b) => a.y - b.y)
+    expect(ints.at(-1)!.folder).toBeNull()
+  })
+
+  it("'folders' ignores dbt groups even when they are set", () => {
+    const grouped = nodes.map((n, i) => ({ ...n, group: i % 2 ? 'finance' : 'claims' }))
+    const { rows, folders } = layoutGraph(grouped, edges, 'lanes', undefined, { zones: 'folders' })
+    expect(rows).toEqual([])
+    expect(folders.length).toBeGreaterThan(0)
+  })
+
+  it('places folder boxes inside each pipeline band', () => {
+    const multi = [
+      node('a_src', 'src', null, 'aa', 'claim'),
+      node('a_out', 'out', null, 'aa', null),
+      node('b_src', 'src', null, 'bb', 'contract'),
+      node('b_out', 'out', null, 'bb', null),
+    ]
+    const result = layoutGraph(multi, [edge('a_src', 'a_out'), edge('b_src', 'b_out')], 'lanes', undefined, {
+      zones: 'folders',
+    })
+    for (const f of result.folders) {
+      const band = result.pipelines.find((b) => b.pipeline === f.pipeline)!
+      expect(f.x).toBeGreaterThanOrEqual(band.x)
+      expect(f.x + f.width).toBeLessThanOrEqual(band.x + band.width)
+      expect(f.y + f.height).toBeLessThanOrEqual(band.y + band.height)
+    }
+  })
+})
+
+describe('folders zone mode without any model sub-folder', () => {
+  const flat = [node('a', 'src'), node('b', 'int'), node('c', 'out')]
+  const edges = [edge('a', 'b'), edge('b', 'c')]
+
+  it('falls back to plain stage columns instead of "(root)" boxes only', () => {
+    expect(effectiveZoneMode('folders', flat)).toBe('stages')
+    const result = layoutGraph(flat, edges, 'lanes', undefined, { zones: 'folders' })
+    expect(result.folders).toEqual([])
+    expect(result.lanes.map((l) => l.stage)).toEqual(['src', 'int', 'out'])
+  })
+
+  it('keeps folders as soon as one node has a sub-folder, and leaves other modes alone', () => {
+    expect(effectiveZoneMode('folders', [...flat, node('d', 'int', null, 'p', 'claim')])).toBe('folders')
+    expect(effectiveZoneMode('both', flat)).toBe('both')
   })
 })

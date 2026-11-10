@@ -14,7 +14,7 @@ import { memo } from 'react'
 import type { GraphNode } from '../../api/types'
 import { MAX_TRACE_ROWS, type TracedColumn, rowHandleId, visibleRows } from '../../graph/columnTrace'
 import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../../graph/diff'
-import { NODE_HEIGHT, NODE_WIDTH } from '../../graph/layout'
+import { NODE_HEIGHT, NODE_WIDTH, cardHeight as cardHeightOf } from '../../graph/layout'
 import { STACK_HEAD, STACK_OFFSET, backLayers, isGhost, isStacked, stackTabs, tabDepth } from '../../graph/stack'
 import { useExplorerStore } from '../../store/useExplorerStore'
 import { MATERIALIZATION_ICONS, useStageColor } from '../visual'
@@ -36,6 +36,16 @@ export type ModelNodeType = Node<ModelNodeData, 'model'>
 
 const COMPACT_ZOOM = 0.55
 
+/** Full name, wrapped at `_` and `.` so long snake_case names break at word boundaries. */
+function breakableName(name: string) {
+  return name.split(/(?<=[_.])/).map((part, i) => (
+    <span key={i}>
+      {i > 0 && <wbr />}
+      {part}
+    </span>
+  ))
+}
+
 function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
   const zoomedOut = useStore((state) => state.transform[2] < COMPACT_ZOOM)
   // an image export always shows the full node, whatever the current zoom
@@ -54,12 +64,15 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
   const ghost = isGhost(node)
   const bringModeToFront = useExplorerStore((s) => s.bringModeToFront)
   const cardHeight = stacked ? (height ?? NODE_HEIGHT + STACK_HEAD) - STACK_HEAD : height
+  // the name part of the card; traced column rows (2.3) are added below it
+  const mainHeight = cardHeightOf(node) - 2
 
   const card = (
     <div
       className={`node${compact ? ' node--compact' : ''}${rows.length > 0 ? ' node--traced' : ''}`}
       style={{
         ['--stage-color' as string]: stageColor(node),
+        ['--main-height' as string]: `${mainHeight}px`,
         ...(cardHeight ? { height: cardHeight } : {}),
         ...(stacked ? { position: 'absolute', top: STACK_HEAD, left: 0 } : {}),
       }}
@@ -83,7 +96,7 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
             <span className="node__icon">
               <Icon size={14} strokeWidth={2.2} />
             </span>
-            <span className="node__name">{node.name}</span>
+            <span className="node__name">{breakableName(node.name)}</span>
             {changed && (
               <span className="node__change" aria-label={CHANGE_LABELS[change]}>
                 {CHANGE_SYMBOLS[change]}
@@ -93,7 +106,6 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
           </div>
 
           <div className="node__meta">
-            <span className="node__badge node__badge--stage">{node.stage}</span>
             <span className="node__badge">
               <Icon size={10} strokeWidth={2.4} />
               {node.materialization}
@@ -101,11 +113,6 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
             {node.column_count > 0 && (
               <span className="node__badge node__badge--cols">{node.column_count} cols</span>
             )}
-          </div>
-
-          <div className="node__sub">
-            {node.pipeline}
-            {node.schema_name ? ` · ${node.schema_name}` : ''}
           </div>
         </div>
       </div>

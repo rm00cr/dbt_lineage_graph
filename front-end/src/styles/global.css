@@ -1204,7 +1204,7 @@ input {
 .node {
   position: relative;
   width: 268px;
-  height: 96px;
+  height: 124px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1233,7 +1233,7 @@ input {
 }
 
 .node--traced .node__main {
-  flex: 0 0 94px;
+  flex: 0 0 var(--main-height, 122px);
 }
 
 .node__accent {
@@ -1254,7 +1254,7 @@ input {
 
 .node__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
@@ -1274,9 +1274,13 @@ input {
   font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.015em;
-  white-space: nowrap;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 4;
   overflow: hidden;
-  text-overflow: ellipsis;
   flex: 1;
   min-width: 0;
 }
@@ -1312,14 +1316,6 @@ input {
 
 .node__badge--cols {
   font-family: var(--mono);
-}
-
-.node__sub {
-  font-size: 11px;
-  color: var(--text-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .node[data-selected='true'] {
@@ -1386,14 +1382,14 @@ input {
 }
 
 /* zoom-dependent detail (feature 1.8) */
-.node--compact .node__meta,
-.node--compact .node__sub {
+.node--compact .node__meta {
   display: none;
 }
 
 .node--compact .node__name {
-  font-size: 21px;
+  font-size: 18px;
   font-weight: 700;
+  line-height: 1.15;
 }
 
 .node--compact .node__inner {
@@ -1429,6 +1425,34 @@ input {
   letter-spacing: 0.04em;
   color: var(--text-faint);
   font-weight: 500;
+}
+
+/* model sub-folders: one box per folder inside a stage lane ('folders' zone mode) */
+.folder-band {
+  position: absolute;
+  border-radius: 12px;
+  border: 1px solid color-mix(in srgb, var(--stage-color) 30%, transparent);
+  background: color-mix(in srgb, var(--stage-color) 9%, transparent);
+  pointer-events: none;
+}
+
+.folder-band--root {
+  border-style: dashed;
+  background: transparent;
+}
+
+.folder-band__label {
+  position: absolute;
+  top: 6px;
+  left: 12px;
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 12px;
+  font-weight: 600;
+  letter-spacing: 0.04em;
+  white-space: nowrap;
+  color: color-mix(in srgb, var(--stage-color) 75%, var(--text-muted, var(--text-faint)));
 }
 
 /* dbt groups (domains): horizontal bands across the stage lanes */

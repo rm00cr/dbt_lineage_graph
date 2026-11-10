@@ -72,7 +72,6 @@ cd front-end && npm test
 | Search columns | switch the search toggle to **Columns** (hits `/api/search/columns`) |
 | Focus the lineage | `F` cycles **dim → isolate → off**; the path keeps a stage-coloured ring, everything else fades and blurs |
 | Select a subgraph | selector field: `+int_mfp_contracts+`, `tag:mfp`, `stage:out`, `2+out_claims_kpi_daily` |
-| Grow the selection | `E` or the **+ lineage +** button |
 | Copy a dbt command | **dbt run** button (toolbar = whole selection, overlay = one model) |
 | Stage zones | **Stage zones** toggle or `L` — src / int / out as columns |
 | Area select | Shift + drag, or toggle the box-select button for plain left drag |

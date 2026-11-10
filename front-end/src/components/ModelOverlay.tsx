@@ -12,7 +12,6 @@ import {
   Database,
   ExternalLink,
   FileCode2,
-  GitBranch,
   GitCompare,
   Info,
   Layers,
@@ -48,7 +47,6 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
   const closeOverlay = useExplorerStore((s) => s.closeOverlay)
   const openModel = useExplorerStore((s) => s.openModel)
   const select = useExplorerStore((s) => s.select)
-  const expandSelectionLineage = useExplorerStore((s) => s.expandSelectionLineage)
 
   const tab = useExplorerStore((s) => s.overlayTab)
   const setTab = useExplorerStore((s) => s.setOverlayTab)
@@ -77,12 +75,6 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
     setCopied(ok)
     onToast(ok ? 'dbt run command copied' : 'Copy failed')
     window.setTimeout(() => setCopied(false), 1400)
-  }
-
-  const focusLineage = () => {
-    select([activeId])
-    expandSelectionLineage()
-    onToast('Lineage selected')
   }
 
   return (
@@ -138,10 +130,6 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
         {detail?.description && <p className="overlay__desc">{detail.description}</p>}
 
         <div className="overlay__actions">
-          <button className="btn btn--sm" onClick={focusLineage} title="Select the full lineage of this model">
-            <GitBranch size={13} /> Select lineage
-          </button>
-
           {detail?.dbt_run_command && (
             <button className="btn btn--sm" onClick={() => void copyRunCommand()} title={detail.dbt_run_command}>
               {copied ? <Check size={13} color="var(--ok)" /> : <Play size={13} />} dbt run

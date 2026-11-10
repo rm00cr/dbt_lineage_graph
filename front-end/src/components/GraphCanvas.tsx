@@ -24,7 +24,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GraphEdge, GraphNode } from '../api/types'
 import { boundaryViolations } from '../graph/boundary'
 import { edgeHandles, traceNodeHeight } from '../graph/columnTrace'
-import { NODE_HEIGHT, NODE_WIDTH, layoutGraph } from '../graph/layout'
+import { NODE_HEIGHT, NODE_WIDTH, cardHeight, layoutGraph } from '../graph/layout'
 import { STACK_HEAD, isStacked } from '../graph/stack'
 import { visibleSubgraph } from '../graph/visible'
 import { useExplorerStore } from '../store/useExplorerStore'
@@ -71,12 +71,12 @@ export function GraphCanvas() {
   // traced nodes (2.3) grow by their column rows; the layout makes room for them
   // nodes of stacked execution modes get head room above the card for mode tabs + back cards
   const heights = useMemo(() => {
+    // every card is as tall as its name needs; traced columns and the stack head add to it
     const map = new Map<string, number>()
-    if (traceView) {
-      for (const [id, columns] of traceView.columnsByNode) map.set(id, traceNodeHeight(NODE_HEIGHT, columns))
-    }
     for (const node of graph?.nodes ?? []) {
-      if (isStacked(node)) map.set(node.id, (map.get(node.id) ?? NODE_HEIGHT) + STACK_HEAD)
+      let height = traceNodeHeight(cardHeight(node), traceView?.columnsByNode.get(node.id))
+      if (isStacked(node)) height += STACK_HEAD
+      map.set(node.id, height)
     }
     return map
   }, [traceView, graph])
@@ -144,7 +144,7 @@ export function GraphCanvas() {
     if (!centerRequest) return
     const position = dragged.get(centerRequest.id) ?? layout.positions.get(centerRequest.id)
     if (!position) return
-    setCenter(position.x + NODE_WIDTH / 2, position.y + NODE_HEIGHT / 2, {
+    setCenter(position.x + NODE_WIDTH / 2, position.y + (heights.get(centerRequest.id) ?? NODE_HEIGHT) / 2, {
       zoom: 1.05,
       duration: 700,
     })
@@ -398,6 +398,23 @@ export function GraphCanvas() {
                 <div className="lane__label" style={{ ['--stage-color' as string]: stageColor(lane.stage) }}>
                   {stageLabel(lane.stage)}
                   <span className="lane__count">{lane.count}</span>
+                </div>
+              </div>
+            ))}
+            {layout.folders.map((box) => (
+              <div
+                key={`${box.pipeline ?? ''}:${box.stage}:${box.folder ?? '__root__'}`}
+                className={`folder-band ${box.folder ? '' : 'folder-band--root'}`}
+                style={{
+                  ['--stage-color' as string]: stageColor(box.stage),
+                  transform: `translate(${box.x}px, ${box.y}px)`,
+                  width: box.width,
+                  height: box.height,
+                }}
+              >
+                <div className="folder-band__label">
+                  {box.folder ?? '(root)'}
+                  <span className="row-band__count">{box.count}</span>
                 </div>
               </div>
             ))}

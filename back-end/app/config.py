@@ -437,6 +437,27 @@ def _bare(folder: str) -> str:
     return _ORDERING_PREFIX.sub("", folder.lower())
 
 
+def _is_layer_folder(segment: str, layer: Layer) -> bool:
+    return any(segment.lower() == f.lower() or _bare(segment) == _bare(f) for f in layer.folders)
+
+
+def folder_of(original_file_path: str | None, layers: tuple[Layer, ...] = DEFAULT_LAYERS) -> str | None:
+    """The first sub-folder below the layer folder, e.g.
+    ``models/02_intermediate/contract_with_claim/int_x.sql`` -> ``contract_with_claim``.
+
+    Returns None when the model sits directly in the layer folder (``03_output/out_x.sql``)
+    or when no layer folder is found. Only one level is used; deeper folders are flattened.
+    """
+    segments = (original_file_path or "").replace("\\", "/").split("/")
+    for index, segment in enumerate(segments[:-1]):  # the last segment is the file itself
+        if any(_is_layer_folder(segment, layer) for layer in layers):
+            # the segment right after the layer folder, if it is not the file itself
+            if index + 1 < len(segments) - 1:
+                return segments[index + 1]
+            return None
+    return None
+
+
 def resolve_stage(
     *,
     name: str,
@@ -454,7 +475,7 @@ def resolve_stage(
     segments = (original_file_path or "").lower().replace("\\", "/").split("/")
     for segment in segments[:-1]:  # the last segment is the file
         for layer in layers:
-            if any(segment == f.lower() or _bare(segment) == _bare(f) for f in layer.folders):
+            if _is_layer_folder(segment, layer):
                 return layer.name
 
     lowered = name.lower()

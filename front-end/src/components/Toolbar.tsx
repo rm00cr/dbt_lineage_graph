@@ -12,7 +12,6 @@ import {
   EyeOff,
   Filter,
   GitBranch,
-  Layers,
   Map as MapIcon,
   Maximize2,
   MousePointerSquareDashed,
@@ -34,8 +33,7 @@ const FOCUS_ICON = { off: EyeOff, dim: Eye, isolate: Crosshair } as const
 
 const ZONE_OPTIONS: { mode: ZoneMode; label: string; title: string }[] = [
   { mode: 'stages', label: 'Stages', title: 'Stage columns only (one per layer)' },
-  { mode: 'both', label: 'Stages × Groups', title: 'Stage columns, one row per dbt group' },
-  { mode: 'groups', label: 'Groups', title: 'One row per dbt group, columns by DAG depth' },
+  { mode: 'folders', label: 'Groups', title: 'Stage columns, one box per model folder (group) inside each' },
 ]
 
 interface ToolbarProps {
@@ -47,7 +45,9 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const setLayoutMode = useExplorerStore((s) => s.setLayoutMode)
   const zoneMode = useExplorerStore((s) => s.zoneMode)
   const setZoneMode = useExplorerStore((s) => s.setZoneMode)
-  const hasGroups = useExplorerStore((s) => s.graph?.nodes.some((n) => n.group) ?? false)
+  const hasFolders = useExplorerStore((s) => s.graph?.nodes.some((n) => n.folder) ?? false)
+  // without model sub-folders the 'folders' (Groups) default is drawn as plain stages
+  const shownZoneMode = zoneMode === 'folders' && !hasFolders ? 'stages' : zoneMode
   const graph = useExplorerStore((s) => s.graph)
   const select = useExplorerStore((s) => s.select)
   const violations = useMemo(() => {
@@ -72,7 +72,6 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const applySelector = useExplorerStore((s) => s.applySelector)
   const selectedIds = useExplorerStore((s) => s.selectedIds)
   const clearSelection = useExplorerStore((s) => s.clearSelection)
-  const expandSelectionLineage = useExplorerStore((s) => s.expandSelectionLineage)
   const dbtSelectorString = useExplorerStore((s) => s.dbtSelectorString)
 
   const filters = useExplorerStore((s) => s.filters)
@@ -132,15 +131,15 @@ export function Toolbar({ onToast }: ToolbarProps) {
         {layoutMode === 'lanes' && (
           <div className="segmented toolbar__zones" role="group" aria-label="Zones">
             {ZONE_OPTIONS.map(({ mode, label, title }) => {
-              const needsGroups = mode !== 'stages'
-              const disabled = needsGroups && !hasGroups
+              const disabled = mode === 'folders' && !hasFolders
+              const reason = 'No model sub-folders in this project (put models in e.g. 02_intermediate/<folder>/)'
               return (
                 <button
                   key={mode}
-                  data-active={zoneMode === mode}
+                  data-active={shownZoneMode === mode}
                   disabled={disabled}
                   onClick={() => setZoneMode(mode)}
-                  title={disabled ? 'No dbt groups in this project (set `group:` on your models)' : title}
+                  title={disabled ? reason : title}
                 >
                   {label}
                 </button>
@@ -236,14 +235,6 @@ export function Toolbar({ onToast }: ToolbarProps) {
           title="Resolve the selector and select the matching nodes"
         >
           Apply
-        </button>
-        <button
-          className="btn btn--sm"
-          onClick={expandSelectionLineage}
-          disabled={selectedIds.size === 0}
-          title="Grow the selection to the full upstream + downstream lineage"
-        >
-          <Layers size={13} /> + lineage +
         </button>
         <button className="btn btn--sm" onClick={() => void copySelector()} title="Copy dbt run command">
           <Copy size={13} /> dbt run

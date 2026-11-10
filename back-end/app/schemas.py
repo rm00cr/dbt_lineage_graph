@@ -33,6 +33,7 @@ class GraphNode(NodeRef):
     """Node as rendered on the canvas — intentionally slim."""
 
     group: str | None = None  # dbt group = domain row in the stage-lanes layout
+    folder: str | None = None  # model sub-folder of the stage; sources: their consumers' folder
     schema_name: str | None = None
     database: str | None = None
     description: str | None = None
@@ -104,6 +105,7 @@ class ModelDetail(BaseModel):
     pipeline: str
     resource_type: ResourceType
     group: str | None = None
+    folder: str | None = None
     description: str | None = None
     tags: list[str] = Field(default_factory=list)
     schema_name: str | None = None
