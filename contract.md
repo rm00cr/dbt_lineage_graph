@@ -65,12 +65,13 @@ dbt `unique_id`, e.g. `model.pnc_analytics.int_mfp_contracts`,
 | `GET` | `/api/health` | liveness + which artifacts are loaded | — |
 | `GET` | `/api/meta` | pipelines, stages, materializations, counts (toolbar filters) | 1 |
 | `GET` | `/api/graph` | whole lineage graph, slim payload for rendering | 1.1 |
-| `GET` | `/api/model/{id}` | model detail for the overlay (lazy) | 1.2, 1.3, 2.1, 3.1 |
+| `GET` | `/api/model/{id}` | model detail for the overlay (lazy); `?state=` reads a compared state | 1.2, 1.3, 2.1, 3.1 |
 | `GET` | `/api/search` | fuzzy search over model names | 1.5 |
 | `GET` | `/api/search/columns` | search over column names | 2.2 |
 | `GET` | `/api/lineage/column` | column-level lineage of one column (origins / impact) | 2.3 |
 | `GET` | `/api/lineage/status` | which models the SQL parser understood (coverage) | 2.3 |
 | `POST` | `/api/reload` | re-read the artifacts from disk after a fresh `dbt docs generate` | — |
+| `POST` | `/api/diff` | compare the running state with an uploaded manifest (+ catalog) | diff |
 
 ### 2.1 `GET /api/graph`
 
@@ -231,6 +232,50 @@ is reported: columns used in `join` / `where` / `group by` are not edges (yet).
 `partial` = parsed, but some columns or relations could not be resolved; `failed` = SQL not
 parseable (the error is included); `skipped` = no compiled SQL.
 
+### 2.7 `POST /api/diff` — state comparison
+
+`multipart/form-data`: `manifest` (file, required), `catalog` (file, optional), `label`
+(text, optional, defaults to the manifest file name). The running graph is the **base**, the
+upload the **head**.
+
+```jsonc
+{
+  "state_id": "63499fe4fdc5",          // GET /api/model/{id}?state=<state_id> -> head version
+  "base": { "label": "running state", "project_names": ["pnc_analytics"], "dbt_version": "…",
+            "generated_at": "…", "catalog_loaded": true, "node_count": 29 },
+  "head": { "label": "feature/churn-risk", … },
+  "summary": { "added": 1, "removed": 1, "modified": 4, "unchanged": 24,
+               "edges_added": 1, "edges_removed": 2 },
+  "columns_compared": true,             // false unless both sides came with a catalog
+  "graph": { "nodes": […], "edges": […], "stats": {…} },   // a GraphResponse, see below
+  "changes": [                          // only added / removed / modified nodes
+    { "id": "model.pnc_analytics.int_mfp_contracts", "name": "int_mfp_contracts",
+      "status": "modified",
+      "fields":  [ { "field": "materialization", "base": "incremental", "head": "table" } ],
+      "columns": [ { "name": "is_active", "change": "added", "base_type": null, "head_type": "BOOL" } ],
+      "code_changed": true,
+      "code_diff": "--- running/int_mfp_contracts.sql\n+++ uploaded/…",   // unified diff of raw_code
+      "upstream_added": [ /* NodeRef */ ], "upstream_removed": [] }
+  ],
+  "warnings": ["No catalog.json for the uploaded state: column changes are not compared."]
+}
+```
+
+- `graph` is the **union** of both states as a normal `GraphResponse`: every `GraphNode` and
+  `GraphEdge` carries `change` = `added` | `removed` | `modified` | `unchanged` (outside a
+  comparison `change` is `null`). Nodes in both states are rendered in their head shape,
+  removed ones in their base shape.
+- **Modified** means: `raw_code` (whitespace-normalised), materialization, alias, group,
+  pipeline, stage, tags, execution mode, description, upstream dependencies, or columns
+  (added / removed / type) changed. For sources also `database` / `schema`.
+  **Not** compared: `compiled_code` and the `database` / `schema` of models — they depend
+  on the dbt target, so a dev manifest would otherwise show every model as modified (same
+  idea as dbt's `state:modified`).
+- The head graph is kept in memory (last 3 uploads). An unknown or evicted `state` on
+  `/api/model/{id}` returns 404. A node the state does not have (removed) falls back to the
+  running graph. Column-lineage counts are only computed for the running graph.
+- `422` when a file is not JSON or not a dbt manifest / catalog.
+
 ---
 
 ## 3. Frontend-only concepts (no API involved)
@@ -256,3 +301,4 @@ parseable (the error is included); `skipped` = no compiled SQL.
 | Multi-project merge (2.4) | loader already accepts a **list** of artifact pairs; only config + UI grouping missing |
 | BQ cost / `INFORMATION_SCHEMA` (4.2) | new adapter, new `stats` fields |
 | Server-side search as the primary path | endpoints exist; the UI currently prefers client-side Fuse.js for latency |
+| Compare against a GitHub branch | another source for the head state of `/api/diff` (e.g. the branch's CI artifacts); `app/diff.py` does not care where the head graph comes from |

@@ -11,6 +11,7 @@ import { decodeTraceParam, encodeTraceParam } from '../graph/columnTrace'
 import { type LayoutMode, ZONE_MODES, type ZoneMode } from '../graph/layout'
 import { type FocusMode, type OverlayTab, useExplorerStore } from '../store/useExplorerStore'
 
+// 'changes' only exists while comparing, which a link cannot restore
 const TABS: OverlayTab[] = ['overview', 'code', 'schema', 'lineage']
 const LAYOUTS: LayoutMode[] = ['dag', 'lanes']
 const FOCUS: FocusMode[] = ['off', 'dim', 'isolate']
@@ -84,7 +85,7 @@ export function useUrlSync() {
       value === null ? url.searchParams.delete(key) : url.searchParams.set(key, value)
 
     set('model', activeId)
-    set('tab', activeId && overlayTab !== 'overview' ? overlayTab : null)
+    set('tab', activeId && overlayTab !== 'overview' && overlayTab !== 'changes' ? overlayTab : null)
     set('layout', layoutMode === 'dag' ? null : layoutMode)
     set('zones', layoutMode === 'lanes' && zoneMode !== 'both' ? zoneMode : null)
     set('split', layoutMode === 'lanes' && splitPipelines ? 'pipeline' : null)

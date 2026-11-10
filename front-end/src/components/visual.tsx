@@ -12,7 +12,8 @@ import {
 
 import { useCallback } from 'react'
 
-import type { Materialization, Stage } from '../api/types'
+import type { ChangeStatus, Materialization, Stage } from '../api/types'
+import { CHANGE_PALETTES } from '../graph/diff'
 import { type ThemeName, useTheme } from '../theme/useTheme'
 
 /**
@@ -68,6 +69,15 @@ export function stageColor(stage: Stage, theme: ThemeName): string {
 export function useStageColor(): (stage: Stage) => string {
   const theme = useTheme((s) => s.resolved)
   return useCallback((stage: Stage) => stageColor(stage, theme), [theme])
+}
+
+/** State comparison colour resolver bound to the active theme. */
+export function useChangeColor(): (change: ChangeStatus | null | undefined) => string {
+  const theme = useTheme((s) => s.resolved)
+  return useCallback(
+    (change: ChangeStatus | null | undefined) => (CHANGE_PALETTES[theme] ?? CHANGE_PALETTES.dark)[change ?? 'unchanged'],
+    [theme],
+  )
 }
 
 export function formatCount(value: number | null | undefined): string {

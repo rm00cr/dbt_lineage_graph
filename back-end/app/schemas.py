@@ -10,6 +10,7 @@ from pydantic import BaseModel, Field
 Stage = Literal["src", "int", "out", "other"]
 Materialization = Literal["table", "view", "incremental", "ephemeral", "source", "other"]
 ResourceType = Literal["model", "source"]
+ChangeStatus = Literal["added", "removed", "modified", "unchanged"]
 
 
 class NodeRef(BaseModel):
@@ -33,6 +34,8 @@ class GraphNode(NodeRef):
     tags: list[str] = Field(default_factory=list)
     column_count: int = 0
     execution_mode: str | None = None
+    # only set in a state comparison (POST /api/diff), null on the normal graph
+    change: ChangeStatus | None = None
 
 
 class GraphEdge(BaseModel):
@@ -40,6 +43,7 @@ class GraphEdge(BaseModel):
     source: str
     target: str
     cross_pipeline: bool = False
+    change: ChangeStatus | None = None
 
 
 class GraphStats(BaseModel):
@@ -186,3 +190,64 @@ class LineageStatusResponse(BaseModel):
     edge_count: int
     counts: dict[str, int]
     models: list[ModelLineageInfo]
+
+
+# ----------------------------------------------------------------- state comparison (diff)
+
+ColumnChangeKind = Literal["added", "removed", "type_changed"]
+
+
+class FieldChange(BaseModel):
+    field: str
+    base: str | None = None
+    head: str | None = None
+
+
+class ColumnChange(BaseModel):
+    name: str
+    change: ColumnChangeKind
+    base_type: str | None = None
+    head_type: str | None = None
+
+
+class NodeChange(BaseModel):
+    """What changed on one node. Only present for added / removed / modified nodes."""
+
+    id: str
+    name: str
+    status: ChangeStatus
+    fields: list[FieldChange] = Field(default_factory=list)
+    columns: list[ColumnChange] = Field(default_factory=list)
+    code_changed: bool = False
+    code_diff: str | None = Field(default=None, description="unified diff of raw_code")
+    upstream_added: list[NodeRef] = Field(default_factory=list)
+    upstream_removed: list[NodeRef] = Field(default_factory=list)
+
+
+class StateInfo(BaseModel):
+    label: str
+    project_names: list[str]
+    dbt_version: str | None = None
+    generated_at: str | None = None
+    catalog_loaded: bool
+    node_count: int
+
+
+class DiffSummary(BaseModel):
+    added: int
+    removed: int
+    modified: int
+    unchanged: int
+    edges_added: int
+    edges_removed: int
+
+
+class DiffResponse(BaseModel):
+    state_id: str = Field(description="pass as ?state= to /api/model/{id} for the head version")
+    base: StateInfo
+    head: StateInfo
+    summary: DiffSummary
+    columns_compared: bool
+    graph: GraphResponse
+    changes: list[NodeChange]
+    warnings: list[str] = Field(default_factory=list)

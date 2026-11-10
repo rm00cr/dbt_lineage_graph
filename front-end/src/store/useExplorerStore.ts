@@ -10,8 +10,10 @@ import { create } from 'zustand'
 
 import { ApiError, api } from '../api/client'
 import { mockColumnLineage, mockGraph, mockModelDetail } from '../api/mock'
-import type { GraphResponse, MetaResponse, ModelDetail, TraceDirection } from '../api/types'
+import type { DiffResponse, GraphResponse, MetaResponse, ModelDetail, NodeChange, TraceDirection } from '../api/types'
 import { type TraceView, buildTraceView } from '../graph/columnTrace'
+import { changedIds } from '../graph/diff'
+import { type GraphFilters, filterGraph } from '../graph/filter'
 import type { LayoutMode, ZoneMode } from '../graph/layout'
 import {
   type AdjacencyIndex,
@@ -23,14 +25,10 @@ import {
 } from '../graph/selectors'
 
 export type FocusMode = 'off' | 'dim' | 'isolate'
-export type OverlayTab = 'overview' | 'code' | 'schema' | 'lineage'
+export type OverlayTab = 'overview' | 'code' | 'schema' | 'lineage' | 'changes'
 export type Status = 'loading' | 'ready' | 'error'
 
-export interface Filters {
-  pipelines: string[]
-  stages: string[]
-  includeSources: boolean
-}
+export type Filters = GraphFilters
 
 interface CenterRequest {
   id: string
@@ -46,6 +44,17 @@ export interface ColumnTrace {
   warnings: string[]
   loading: boolean
   error: string | null
+}
+
+/**
+ * State comparison: the running graph vs an uploaded manifest (+ catalog). While set, the
+ * canvas shows the merged diff graph (`response.graph`) instead of the running one.
+ */
+export interface CompareState {
+  stateId: string
+  label: string
+  response: DiffResponse
+  changes: Map<string, NodeChange>
 }
 
 interface ExplorerState {
@@ -82,6 +91,11 @@ interface ExplorerState {
   centerRequest: CenterRequest | null
   columnTrace: ColumnTrace | null
 
+  compare: CompareState | null
+  compareDialogOpen: boolean
+  compareLoading: boolean
+  compareError: string | null
+
   // actions
   init: () => Promise<void>
   refresh: () => Promise<void>
@@ -110,6 +124,11 @@ interface ExplorerState {
   traceColumn: (modelId: string, column: string, direction?: TraceDirection) => Promise<void>
   setTraceDirection: (direction: TraceDirection) => Promise<void>
   clearColumnTrace: () => void
+
+  setCompareDialogOpen: (open: boolean) => void
+  startCompare: (manifest: File, catalog?: File | null, label?: string) => Promise<boolean>
+  exitCompare: () => Promise<void>
+  selectChanges: () => void
 }
 
 const EMPTY_INDEX: AdjacencyIndex = {
@@ -148,29 +167,6 @@ function pipelinesFromUrl(): string[] {
   return raw ? raw.split(',').map((p) => p.trim()).filter(Boolean) : []
 }
 
-/** offline fallback: apply the same filters the API would */
-function filterMockGraph(filters: Filters): GraphResponse {
-  const nodes = mockGraph.nodes.filter(
-    (n) =>
-      (!filters.pipelines.length || filters.pipelines.includes(n.pipeline)) &&
-      (!filters.stages.length || filters.stages.includes(n.stage)) &&
-      (filters.includeSources || n.resource_type !== 'source'),
-  )
-  const ids = new Set(nodes.map((n) => n.id))
-  const edges = mockGraph.edges.filter((e) => ids.has(e.source) && ids.has(e.target))
-  return {
-    nodes,
-    edges,
-    stats: {
-      ...mockGraph.stats,
-      node_count: nodes.length,
-      edge_count: edges.length,
-      pipelines: mockGraph.stats.pipelines.filter((p) => nodes.some((n) => n.pipeline === p)),
-      stages: mockGraph.stats.stages.filter((s) => nodes.some((n) => n.stage === s)),
-    },
-  }
-}
-
 export const useExplorerStore = create<ExplorerState>((set, get) => ({
   status: 'loading',
   errorMessage: null,
@@ -203,11 +199,24 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   centerRequest: null,
   columnTrace: null,
 
+  compare: null,
+  compareDialogOpen: false,
+  compareLoading: false,
+  compareError: null,
+
   // ------------------------------------------------------------------ loading
   init: async () => {
-    set({ status: 'loading', errorMessage: null })
-    const { filters } = get()
+    const { filters, compare } = get()
 
+    // comparing: the diff graph is already here, only the filters need applying
+    if (compare) {
+      const graph = filterGraph(compare.response.graph, filters)
+      set({ graph, index: buildIndex(graph.nodes, graph.edges), status: 'ready' })
+      set((state) => computeHighlight(state))
+      return
+    }
+
+    set({ status: 'loading', errorMessage: null })
     try {
       const [graph, meta] = await Promise.all([
         api.graph({
@@ -229,7 +238,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     } catch (error) {
       // AP-2/AP-3 can keep working offline against the mock graph.
       const message = error instanceof ApiError ? error.message : String(error)
-      const graph = filterMockGraph(filters)
+      const graph = filterGraph(mockGraph, filters)
       set({
         graph,
         meta: null,
@@ -311,12 +320,16 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   // ------------------------------------------------------------------ overlay
   openModel: async (id, options) => {
-    const { detailCache, usingMock } = get()
-    set({ activeId: id, detailError: null, overlayTab: options?.tab ?? 'overview' })
+    const { detailCache, usingMock, compare } = get()
+    // comparing: a changed node opens on what changed
+    const defaultTab: OverlayTab = compare?.changes.has(id) ? 'changes' : 'overview'
+    set({ activeId: id, detailError: null, overlayTab: options?.tab ?? defaultTab })
     set((state) => computeHighlight(state))
     if (options?.center !== false) get().requestCenter(id)
 
-    const cached = detailCache.get(id)
+    // comparing: read the uploaded version of the node (the API falls back for removed ones)
+    const cacheKey = compare ? `${compare.stateId}|${id}` : id
+    const cached = detailCache.get(cacheKey)
     if (cached) {
       set({ detail: cached, detailLoading: false })
       return
@@ -325,18 +338,18 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     if (usingMock) {
       const detail = mockModelDetail(id)
       set({ detail, detailLoading: false })
-      set((state) => ({ detailCache: new Map(state.detailCache).set(id, detail) }))
+      set((state) => ({ detailCache: new Map(state.detailCache).set(cacheKey, detail) }))
       return
     }
 
     set({ detailLoading: true, detail: null })
     try {
-      const detail = await api.model(id)
+      const detail = await api.model(id, compare?.stateId)
       if (get().activeId !== id) return // user moved on while we were loading
       set((state) => ({
         detail,
         detailLoading: false,
-        detailCache: new Map(state.detailCache).set(id, detail),
+        detailCache: new Map(state.detailCache).set(cacheKey, detail),
       }))
     } catch (error) {
       if (get().activeId !== id) return
@@ -420,6 +433,64 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   clearColumnTrace: () => {
     if (!get().columnTrace) return
     set({ columnTrace: null })
+    set((state) => computeHighlight(state))
+  },
+
+  // ------------------------------------------------------------------ state comparison
+  setCompareDialogOpen: (open) => set({ compareDialogOpen: open, compareError: open ? get().compareError : null }),
+
+  startCompare: async (manifest, catalog, label) => {
+    if (get().usingMock) {
+      set({ compareError: 'Comparing needs the backend: start it with `uv run lineage-api`.' })
+      return false
+    }
+    set({ compareLoading: true, compareError: null })
+    try {
+      const response = await api.diff(manifest, catalog, label)
+      set({
+        compare: {
+          stateId: response.state_id,
+          label: response.head.label,
+          response,
+          changes: new Map(response.changes.map((c) => [c.id, c])),
+        },
+        compareLoading: false,
+        compareDialogOpen: false,
+        // node ids and details differ between the states: start clean
+        selectedIds: new Set(),
+        selectorInput: '',
+        columnTrace: null,
+        activeId: null,
+        detail: null,
+        detailError: null,
+        detailCache: new Map(),
+      })
+      await get().init()
+      return true
+    } catch (error) {
+      set({ compareLoading: false, compareError: error instanceof ApiError ? error.message : String(error) })
+      return false
+    }
+  },
+
+  exitCompare: async () => {
+    if (!get().compare) return
+    set({
+      compare: null,
+      selectedIds: new Set(),
+      selectorInput: '',
+      activeId: null,
+      detail: null,
+      detailError: null,
+      detailCache: new Map(),
+    })
+    await get().init()
+  },
+
+  selectChanges: () => {
+    const { graph } = get()
+    if (!graph) return
+    set({ selectedIds: new Set(changedIds(graph.nodes)) })
     set((state) => computeHighlight(state))
   },
 }))

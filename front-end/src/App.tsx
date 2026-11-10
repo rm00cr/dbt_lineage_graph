@@ -3,6 +3,7 @@ import { GitFork, TriangleAlert } from 'lucide-react'
 import { useEffect, useState } from 'react'
 
 import { TraceBar } from './components/ColumnTrace'
+import { CompareButton, CompareDialog } from './components/Compare'
 import { GraphCanvas } from './components/GraphCanvas'
 import { Legend } from './components/Legend'
 import { ModelOverlay } from './components/ModelOverlay'
@@ -63,6 +64,7 @@ function Explorer() {
         <SearchBar />
         <span className="topbar__spacer" />
 
+        <CompareButton />
         <ThemeToggle />
 
         <div className="topbar__stats">
@@ -126,6 +128,7 @@ function Explorer() {
           </>
         )}
       </div>
+      <CompareDialog />
     </div>
   )
 }

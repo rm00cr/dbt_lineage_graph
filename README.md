@@ -49,8 +49,8 @@ The Vite dev server proxies `/api` to `127.0.0.1:8000`, so there is no CORS setu
 ### Tests
 
 ```bash
-cd back-end  && uv run pytest && uv run ruff check .   # 23 tests
-cd front-end && npm test                               # 32 tests
+cd back-end  && uv run pytest && uv run ruff check .
+cd front-end && npm test
 ```
 
 ---
@@ -72,6 +72,7 @@ cd front-end && npm test                               # 32 tests
 | Zoom to fit | `Z` |
 | Share a view | the URL carries `?model=…&tab=…&layout=…&focus=…&select=…` |
 | Switch theme | sun / monitor / moon in the top bar — light, follow the system, dark (remembered per browser) |
+| Compare with a dev state | **Compare** in the top bar: upload a `manifest.json` (+ optional `catalog.json`). Nodes and edges turn green (added), yellow (modified) or red (removed); a changed node opens on a **Changes** tab with the field, column and SQL diff. **Select changes** + focus mode shows what the changes affect. Try it with `fixtures/dev_state/` |
 
 ---
 

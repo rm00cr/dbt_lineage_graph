@@ -206,6 +206,24 @@ def load_graph(pairs: Iterable[ArtifactPair]) -> LineageGraph:
     return graph
 
 
+def load_graph_from_artifacts(
+    artifacts: Iterable[tuple[dict[str, Any], dict[str, Any] | None]],
+    label: str = "upload",
+) -> LineageGraph:
+    """Same as :func:`load_graph`, from already parsed ``(manifest, catalog)`` dicts.
+
+    Used for states that never touch the disk (an uploaded dev manifest to compare against).
+    """
+    graph = LineageGraph()
+    for position, (manifest, catalog) in enumerate(artifacts):
+        if catalog:
+            graph.catalog_loaded = True
+        graph.artifacts.append(f"{label}:{position}")
+        _ingest(graph, manifest, catalog)
+    _link(graph)
+    return graph
+
+
 def _ingest(graph: LineageGraph, manifest: dict[str, Any], catalog: dict[str, Any] | None) -> None:
     metadata = manifest.get("metadata") or {}
     project = metadata.get("project_name") or "dbt"

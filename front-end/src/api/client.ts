@@ -8,6 +8,7 @@
 
 import type {
   ColumnLineageResponse,
+  DiffResponse,
   GraphResponse,
   LineageStatusResponse,
   MetaResponse,
@@ -28,7 +29,13 @@ export class ApiError extends Error {
   }
 }
 
-async function get<T>(path: string, params?: Record<string, string | string[] | boolean | number>): Promise<T> {
+type Params = Record<string, string | string[] | boolean | number | undefined>
+
+async function get<T>(path: string, params?: Params): Promise<T> {
+  return request<T>(path, params)
+}
+
+async function request<T>(path: string, params?: Params, init?: RequestInit): Promise<T> {
   const url = new URL(`${BASE}${path}`, window.location.origin)
   for (const [key, value] of Object.entries(params ?? {})) {
     if (value === undefined || value === null) continue
@@ -38,7 +45,7 @@ async function get<T>(path: string, params?: Record<string, string | string[] | 
 
   let response: Response
   try {
-    response = await fetch(url, { headers: { Accept: 'application/json' } })
+    response = await fetch(url, { ...init, headers: { Accept: 'application/json', ...init?.headers } })
   } catch (cause) {
     throw new ApiError(`API not reachable at ${url.pathname} (${(cause as Error).message})`)
   }
@@ -46,7 +53,9 @@ async function get<T>(path: string, params?: Record<string, string | string[] | 
   if (!response.ok) {
     let detail = response.statusText
     try {
-      detail = ((await response.json()) as { detail?: string }).detail ?? detail
+      const body = (await response.json()) as { detail?: string | { msg: string }[] }
+      if (typeof body.detail === 'string') detail = body.detail
+      else if (Array.isArray(body.detail)) detail = body.detail.map((d) => d.msg).join('; ')
     } catch {
       /* body was not JSON — keep statusText */
     }
@@ -66,7 +75,17 @@ export const api = {
       ...(options.includeSources === false ? { include_sources: false } : {}),
     }),
 
-  model: (id: string) => get<ModelDetail>(`/api/model/${encodeURIComponent(id)}`),
+  /** `state`: the state_id of a comparison, to read the uploaded version of the node */
+  model: (id: string, state?: string) => get<ModelDetail>(`/api/model/${encodeURIComponent(id)}`, { state }),
+
+  /** compare the running state with an uploaded manifest (+ catalog) */
+  diff: (manifest: File, catalog?: File | null, label?: string) => {
+    const form = new FormData()
+    form.append('manifest', manifest)
+    if (catalog) form.append('catalog', catalog)
+    if (label) form.append('label', label)
+    return request<DiffResponse>('/api/diff', undefined, { method: 'POST', body: form })
+  },
 
   searchModels: (q: string, limit = 20) => get<SearchResponse>('/api/search', { q, limit }),
 

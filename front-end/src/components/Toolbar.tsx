@@ -27,6 +27,7 @@ import { useMemo, useState } from 'react'
 import { VIOLATION_LABELS, boundaryViolations } from '../graph/boundary'
 import type { ZoneMode } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
+import { CompareBar } from './Compare'
 import { STAGE_LABELS, copyToClipboard, useStageColor } from './visual'
 
 const FOCUS_LABEL = { off: 'Focus off', dim: 'Focus: dim', isolate: 'Focus: isolate' } as const
@@ -312,6 +313,9 @@ export function Toolbar({ onToast }: ToolbarProps) {
           </button>
         </div>
       )}
+
+      {/* state comparison summary: a row of the toolbar, so the two never overlap */}
+      <CompareBar onToast={onToast} />
     </div>
   )
 }

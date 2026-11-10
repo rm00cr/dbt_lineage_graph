@@ -6,6 +6,8 @@
 export type Stage = 'src' | 'int' | 'out' | 'other'
 export type Materialization = 'table' | 'view' | 'incremental' | 'ephemeral' | 'source' | 'other'
 export type ResourceType = 'model' | 'source'
+/** state comparison: how a node / edge differs between the running and the uploaded state */
+export type ChangeStatus = 'added' | 'removed' | 'modified' | 'unchanged'
 
 export interface NodeRef {
   id: string
@@ -25,6 +27,8 @@ export interface GraphNode extends NodeRef {
   tags: string[]
   column_count: number
   execution_mode: string | null
+  /** only set in a state comparison (POST /api/diff) */
+  change?: ChangeStatus | null
 }
 
 export interface GraphEdge {
@@ -32,6 +36,7 @@ export interface GraphEdge {
   source: string
   target: string
   cross_pipeline: boolean
+  change?: ChangeStatus | null
 }
 
 export interface GraphStats {
@@ -166,4 +171,65 @@ export interface LineageStatusResponse {
   edge_count: number
   counts: Record<ModelLineageStatus, number>
   models: ModelLineageInfo[]
+}
+
+// ------------------------------------------------------------------ state comparison (diff)
+
+export type ColumnChangeKind = 'added' | 'removed' | 'type_changed'
+
+export interface FieldChange {
+  field: string
+  base: string | null
+  head: string | null
+}
+
+export interface ColumnChange {
+  name: string
+  change: ColumnChangeKind
+  base_type: string | null
+  head_type: string | null
+}
+
+/** what changed on one node; only present for added / removed / modified nodes */
+export interface NodeChange {
+  id: string
+  name: string
+  status: Exclude<ChangeStatus, 'unchanged'>
+  fields: FieldChange[]
+  columns: ColumnChange[]
+  code_changed: boolean
+  /** unified diff of raw_code (running -> uploaded) */
+  code_diff: string | null
+  upstream_added: NodeRef[]
+  upstream_removed: NodeRef[]
+}
+
+export interface StateInfo {
+  label: string
+  project_names: string[]
+  dbt_version: string | null
+  generated_at: string | null
+  catalog_loaded: boolean
+  node_count: number
+}
+
+export interface DiffSummary {
+  added: number
+  removed: number
+  modified: number
+  unchanged: number
+  edges_added: number
+  edges_removed: number
+}
+
+export interface DiffResponse {
+  /** pass as ?state= to /api/model/{id} to read the uploaded version of a node */
+  state_id: string
+  base: StateInfo
+  head: StateInfo
+  summary: DiffSummary
+  columns_compared: boolean
+  graph: GraphResponse
+  changes: NodeChange[]
+  warnings: string[]
 }

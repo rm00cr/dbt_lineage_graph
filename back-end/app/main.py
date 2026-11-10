@@ -5,13 +5,14 @@ from __future__ import annotations
 from functools import lru_cache
 from typing import Annotated
 
-from fastapi import Depends, FastAPI, HTTPException, Query
+from fastapi import Depends, FastAPI, File, Form, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 
 from .column_lineage import Direction
 from .config import Settings
 from .schemas import (
     ColumnLineageResponse,
+    DiffResponse,
     GraphResponse,
     HealthResponse,
     LineageStatusResponse,
@@ -19,13 +20,14 @@ from .schemas import (
     ModelDetail,
     SearchResponse,
 )
-from .service import GraphService
+from .service import ArtifactError, GraphService, UnknownStateError
 
 API_DESCRIPTION = """
 Interactive dbt Lineage Explorer — backend.
 
 Reads dbt artifacts (`manifest.json` + `catalog.json`) and serves a slim lineage graph,
-per-model details (compiled SQL, dependencies, schema) and fuzzy search.
+per-model details (compiled SQL, dependencies, schema) and fuzzy search, and compares the
+running state with another state of the project (`POST /api/diff`).
 """
 
 
@@ -124,10 +126,39 @@ def lineage_status(service: ServiceDep) -> LineageStatusResponse:
     return service.lineage_status()
 
 
+@app.post("/api/diff", response_model=DiffResponse, tags=["diff"])
+async def diff_state(
+    service: ServiceDep,
+    manifest: Annotated[UploadFile, File(description="manifest.json of the state to compare")],
+    catalog: Annotated[UploadFile | None, File(description="catalog.json of that state (optional)")] = None,
+    label: Annotated[str | None, Form(description="name shown for the uploaded state")] = None,
+) -> DiffResponse:
+    """Compare the running state with an uploaded one: every node and edge gets a `change`."""
+    manifest_bytes = await manifest.read()
+    catalog_bytes = await catalog.read() if catalog is not None else None
+    try:
+        return service.compare(
+            manifest_bytes,
+            catalog_bytes or None,
+            label=(label or "").strip() or manifest.filename or "uploaded state",
+        )
+    except ArtifactError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from None
+
+
 @app.get("/api/model/{model_id:path}", response_model=ModelDetail, tags=["graph"])
-def model_detail(service: ServiceDep, model_id: str) -> ModelDetail:
+def model_detail(
+    service: ServiceDep,
+    model_id: str,
+    state: Annotated[str | None, Query(description="state_id of a comparison: read from that state")] = None,
+) -> ModelDetail:
     """Detail for the overlay. Accepts the dbt `unique_id` or a plain model name."""
-    detail = service.model_detail(model_id)
+    try:
+        detail = service.model_detail(model_id, state=state)
+    except UnknownStateError:
+        raise HTTPException(
+            status_code=404, detail=f"comparison state '{state}' is gone - upload the files again"
+        ) from None
     if detail is None:
         raise HTTPException(status_code=404, detail=f"model '{model_id}' not found")
     return detail

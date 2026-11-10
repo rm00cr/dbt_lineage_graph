@@ -13,6 +13,7 @@ import {
   ExternalLink,
   FileCode2,
   GitBranch,
+  GitCompare,
   Info,
   Layers,
   Play,
@@ -23,7 +24,9 @@ import { useState } from 'react'
 
 import type { ModelDetail, NodeRef } from '../api/types'
 import { type OverlayTab, useExplorerStore } from '../store/useExplorerStore'
+import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../graph/diff'
 import { CodeViewer } from './CodeViewer'
+import { ChangesPanel } from './Compare'
 import { SchemaTable } from './SchemaTable'
 import {
   MATERIALIZATION_ICONS,
@@ -52,8 +55,15 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
   const setTab = useExplorerStore((s) => s.setOverlayTab)
   const [copied, setCopied] = useState(false)
   const stageColor = useStageColor()
+  // state comparison: what changed on this node (null when not comparing or unchanged)
+  const change = useExplorerStore((s) => (s.activeId ? s.compare?.changes.get(s.activeId) : undefined) ?? null)
 
   if (!activeId) return null
+  const showChanges = tab === 'changes' && change !== null
+  const pick = (id: string) => {
+    select([id])
+    void openModel(id)
+  }
 
   const color = stageColor(detail?.stage ?? 'other')
 
@@ -75,6 +85,11 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
     <aside className="overlay" style={{ ['--stage-color' as string]: color }}>
       <header className="overlay__head">
         <div className="overlay__eyebrow">
+          {change && (
+            <span className="diff-chip" data-change={change.status}>
+              {CHANGE_SYMBOLS[change.status]} {CHANGE_LABELS[change.status]}
+            </span>
+          )}
           <span className="node__badge node__badge--stage" style={{ ['--stage-color' as string]: color }}>
             {STAGE_LABELS[detail?.stage ?? 'other']}
           </span>
@@ -142,7 +157,16 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
       </header>
 
       <nav className="tabs">
-        <button className="tab" data-active={tab === 'overview'} onClick={() => setTab('overview' satisfies OverlayTab)}>
+        {change && (
+          <button className="tab" data-active={tab === 'changes'} onClick={() => setTab('changes')}>
+            <GitCompare size={13} /> Changes
+          </button>
+        )}
+        <button
+          className="tab"
+          data-active={tab === 'overview' || (tab === 'changes' && !change)}
+          onClick={() => setTab('overview' satisfies OverlayTab)}
+        >
           <Info size={13} /> Overview
         </button>
         <button className="tab" data-active={tab === 'code'} onClick={() => setTab('code')}>
@@ -161,18 +185,21 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
       </nav>
 
       <div className="overlay__body">
-        {loading && (
+        {/* comes with the comparison, not with the detail: shown even while that loads */}
+        {showChanges && <ChangesPanel change={change} onPick={pick} />}
+
+        {!showChanges && loading && (
           <div style={{ padding: '40px 0', textAlign: 'center', color: 'var(--text-faint)' }}>
             <div className="spinner" />
             Loading model detail…
           </div>
         )}
 
-        {error && <div className="empty">Could not load this model: {error}</div>}
+        {!showChanges && error && <div className="empty">Could not load this model: {error}</div>}
 
-        {detail && !loading && (
+        {!showChanges && detail && !loading && (
           <>
-            {tab === 'overview' && <OverviewTab detail={detail} />}
+            {(tab === 'overview' || tab === 'changes') && <OverviewTab detail={detail} />}
             {tab === 'code' && (
               <CodeViewer compiled={detail.compiled_code} raw={detail.raw_code} fileName={detail.name} />
             )}
@@ -184,20 +211,14 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
                   icon={<ArrowUpRight size={12} />}
                   nodes={detail.dependencies}
                   emptyText="No upstream models — this is a root node."
-                  onPick={(id) => {
-                    select([id])
-                    void openModel(id)
-                  }}
+                  onPick={pick}
                 />
                 <DependencySection
                   title="Downstream dependents"
                   icon={<ArrowDownRight size={12} />}
                   nodes={detail.dependents}
                   emptyText="Nothing depends on this model — it is a leaf."
-                  onPick={(id) => {
-                    select([id])
-                    void openModel(id)
-                  }}
+                  onPick={pick}
                 />
               </>
             )}

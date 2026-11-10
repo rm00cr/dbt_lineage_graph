@@ -45,10 +45,11 @@ def test_graph_shape(client: TestClient) -> None:
         "tags": ["core", "mfp"],
         "column_count": 11,
         "execution_mode": "daily",
+        "change": None,
     }
 
     edge = next(e for e in body["edges"] if e["target"] == CONTRACTS)
-    assert set(edge) == {"id", "source", "target", "cross_pipeline"}
+    assert set(edge) == {"id", "source", "target", "cross_pipeline", "change"}
     assert edge["id"] == f"{edge['source']}->{edge['target']}"
     assert any(e["cross_pipeline"] for e in body["edges"])
 

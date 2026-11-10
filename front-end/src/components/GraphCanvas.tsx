@@ -28,7 +28,7 @@ import { NODE_HEIGHT, NODE_WIDTH, layoutGraph } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { useTheme } from '../theme/useTheme'
 import { ModelNode, type ModelNodeType } from './nodes/ModelNode'
-import { STAGE_LABELS, useStageColor } from './visual'
+import { STAGE_LABELS, useChangeColor, useStageColor } from './visual'
 
 const NODE_TYPES = { model: ModelNode }
 const PULSE_MS = 1900
@@ -47,6 +47,7 @@ export function GraphCanvas() {
   const activeId = useExplorerStore((s) => s.activeId)
   const centerRequest = useExplorerStore((s) => s.centerRequest)
   const traceView = useExplorerStore((s) => s.columnTrace?.view ?? null)
+  const comparing = useExplorerStore((s) => s.compare !== null)
 
   const select = useExplorerStore((s) => s.select)
   const openModel = useExplorerStore((s) => s.openModel)
@@ -57,6 +58,7 @@ export function GraphCanvas() {
   const canvasRef = useRef<HTMLDivElement>(null)
   const theme = useTheme((s) => s.resolved)
   const stageColor = useStageColor()
+  const changeColor = useChangeColor()
 
   const [dragged, setDragged] = useState<Map<string, XYPosition>>(new Map())
   const [pulseId, setPulseId] = useState<string | null>(null)
@@ -186,7 +188,15 @@ export function GraphCanvas() {
     if (!graph) return []
     const dimming = focusMode !== 'off' && highlightedEdgeIds.size > 0
     const crossClass = (edge: GraphEdge) =>
-      edge.cross_pipeline ? `edge--cross${violations.has(edge.id) ? ' edge--violation' : ''}` : ''
+      [
+        edge.cross_pipeline ? `edge--cross${violations.has(edge.id) ? ' edge--violation' : ''}` : '',
+        edge.change === 'added' || edge.change === 'removed' ? `edge--${edge.change}` : '',
+      ]
+        .filter(Boolean)
+        .join(' ')
+    // state comparison: added / removed edges keep their colour, also on the arrow head
+    const arrowColor = (edge: GraphEdge, fallback: string) =>
+      edge.change === 'added' || edge.change === 'removed' ? changeColor(edge.change) : fallback
 
     // while a column is traced, the model edges on its path are replaced by column edges
     if (traceView) {
@@ -198,7 +208,7 @@ export function GraphCanvas() {
           source: edge.source,
           target: edge.target,
           className: `edge--dim ${crossClass(edge)}`.trim(),
-          markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: edgeColor },
+          markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: arrowColor(edge, edgeColor) },
         }))
       const columnEdges = traceView.edges
         .filter((edge) => visibleIds.has(edge.source_model) && visibleIds.has(edge.target_model))
@@ -234,11 +244,11 @@ export function GraphCanvas() {
             type: MarkerType.ArrowClosed,
             width: 16,
             height: 16,
-            color: highlighted ? accentColor : edgeColor,
+            color: arrowColor(edge, highlighted ? accentColor : edgeColor),
           },
         }
       })
-  }, [graph, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor, traceView, violations])
+  }, [graph, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor, traceView, violations, changeColor])
 
   // ------------------------------------------------------------------ interaction
   const onNodesChange = useCallback(
@@ -322,7 +332,10 @@ export function GraphCanvas() {
             pannable
             zoomable
             maskColor={theme === 'light' ? 'rgba(226, 232, 240, 0.62)' : 'rgba(8, 11, 18, 0.72)'}
-            nodeColor={(node) => stageColor((node.data as { node: GraphNode }).node.stage)}
+            nodeColor={(node) => {
+              const data = (node.data as { node: GraphNode }).node
+              return comparing ? changeColor(data.change) : stageColor(data.stage)
+            }}
             nodeStrokeWidth={0}
             style={{ width: 190, height: 130 }}
           />
