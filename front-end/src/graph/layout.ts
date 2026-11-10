@@ -8,7 +8,7 @@ import dagre from 'dagre'
 import type { GraphEdge, GraphNode, Stage } from '../api/types'
 
 export const NODE_WIDTH = 268
-export const NODE_HEIGHT = 96
+export const NODE_HEIGHT = 124
 
 export type LayoutMode = 'dag' | 'lanes'
 /** zones of the 'lanes' layout: stage columns, dbt-group rows, or both */
@@ -108,7 +108,7 @@ export function layoutGraph(
 /** Classic left-to-right dagre layout. */
 function layoutDag(nodes: GraphNode[], edges: GraphEdge[], heightOf: (id: string) => number): LayoutResult {
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'LR', nodesep: 44, ranksep: 140, marginx: 40, marginy: 40, ranker: 'network-simplex' })
+  g.setGraph({ rankdir: 'LR', nodesep: 20, ranksep: 70, marginx: 40, marginy: 40, ranker: 'network-simplex' })
   g.setDefaultEdgeLabel(() => ({}))
 
   for (const node of nodes) g.setNode(node.id, { width: NODE_WIDTH, height: heightOf(node.id) })

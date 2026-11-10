@@ -1204,7 +1204,7 @@ input {
 .node {
   position: relative;
   width: 268px;
-  height: 96px;
+  height: 124px;
   display: flex;
   flex-direction: column;
   overflow: hidden;
@@ -1233,7 +1233,7 @@ input {
 }
 
 .node--traced .node__main {
-  flex: 0 0 94px;
+  flex: 0 0 122px;
 }
 
 .node__accent {
@@ -1254,7 +1254,7 @@ input {
 
 .node__head {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 8px;
   min-width: 0;
 }
@@ -1274,9 +1274,9 @@ input {
   font-size: 15px;
   font-weight: 650;
   letter-spacing: -0.015em;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
+  line-height: 1.2;
+  white-space: normal;
+  overflow-wrap: anywhere;
   flex: 1;
   min-width: 0;
 }
@@ -1312,14 +1312,6 @@ input {
 
 .node__badge--cols {
   font-family: var(--mono);
-}
-
-.node__sub {
-  font-size: 11px;
-  color: var(--text-faint);
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
 }
 
 .node[data-selected='true'] {
@@ -1386,14 +1378,14 @@ input {
 }
 
 /* zoom-dependent detail (feature 1.8) */
-.node--compact .node__meta,
-.node--compact .node__sub {
+.node--compact .node__meta {
   display: none;
 }
 
 .node--compact .node__name {
-  font-size: 21px;
+  font-size: 18px;
   font-weight: 700;
+  line-height: 1.15;
 }
 
 .node--compact .node__inner {
