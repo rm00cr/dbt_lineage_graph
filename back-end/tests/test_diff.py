@@ -1,34 +1,46 @@
 """State comparison: diff engine (app/diff.py) and the POST /api/diff contract.
 
-The head state is fixtures/dev_state/ (built by fixtures/generate_dev_state.py, whose
-docstring lists the intended changes). It also re-targets every model to a dev database /
-schema with dev compiled SQL: none of that may show up as a change.
+The head state is fixtures/dev_state/: a dev version of the bestand_mfp pipeline built by
+fixtures/generate_dev_state.py (its docstring lists the intended changes). It also
+re-targets every model to a dev database / schema with dev compiled SQL: none of that may
+show up as a change. An upload replaces one pipeline, the others stay as they are.
 """
 
 from __future__ import annotations
 
+import copy
 import json
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import DEFAULT_MANIFEST
+from app.config import DEFAULT_PIPELINES_CONFIG, Settings
 from app.diff import diff_graphs
-from app.loader import LineageGraph, load_graph_from_artifacts
+from app.loader import LineageGraph, LoadedArtifacts, build_graph, read_artifacts
 
-DEV = DEFAULT_MANIFEST.parent / "dev_state"
-P = "model.pnc_analytics."
+DEV = DEFAULT_PIPELINES_CONFIG.parent / "dev_state"
+P = "model.bestand_mfp."
 ADDED = P + "out_mfp_churn_risk"
 REMOVED = P + "out_mfp_customer_360"
 CONTRACTS = P + "int_mfp_contracts"
 COVERAGES = P + "int_mfp_coverages"
 OUT_CONTRACTS = P + "out_mfp_contracts"
-PAYMENTS = "source.pnc_analytics.raw_claims.payments"
+TARIFFS = "source.bestand_mfp.raw_mfp.tariffs"
+CHANGED = {ADDED, REMOVED, CONTRACTS, COVERAGES, OUT_CONTRACTS, TARIFFS}
 
 
 def _read(path: Path) -> dict:
     return json.loads(path.read_text(encoding="utf-8"))
+
+
+def _swap(settings: Settings, manifest: dict, catalog: dict | None) -> LineageGraph:
+    """The running pipelines with bestand_mfp swapped for the given artifacts."""
+    items = read_artifacts(settings.artifacts)
+    for item in items:
+        if item.project_name == "bestand_mfp":
+            item.manifest, item.catalog = manifest, catalog
+    return build_graph(items)
 
 
 @pytest.fixture(scope="module")
@@ -37,8 +49,8 @@ def dev_files() -> tuple[bytes, bytes]:
 
 
 @pytest.fixture(scope="module")
-def head() -> LineageGraph:
-    return load_graph_from_artifacts([(_read(DEV / "manifest.json"), _read(DEV / "catalog.json"))])
+def head(settings: Settings) -> LineageGraph:
+    return _swap(settings, _read(DEV / "manifest.json"), _read(DEV / "catalog.json"))
 
 
 # ------------------------------------------------------------------------- engine
@@ -53,11 +65,20 @@ def test_statuses(graph: LineageGraph, head: LineageGraph) -> None:
         CONTRACTS: "modified",
         COVERAGES: "modified",
         OUT_CONTRACTS: "modified",
-        PAYMENTS: "modified",
+        TARIFFS: "modified",
     }
-    # dev database / schema / compiled SQL on every model is target noise, not a change
+    # dev database / schema / compiled SQL is target noise; the other pipeline is untouched
     assert diff.count("unchanged") == len(graph.nodes) - 5
     assert diff.columns_compared and diff.warnings == []
+
+
+def test_pipeline_names_and_links_are_kept(graph: LineageGraph, head: LineageGraph) -> None:
+    for node_id, node in graph.nodes.items():
+        if node_id in head.nodes:
+            assert head.nodes[node_id].pipeline == node.pipeline, node_id
+    # schaden_claims still reads bestand_mfp's outputs: the cross-pipeline edges survive
+    cross = {e for e in graph.edges if graph.nodes[e[0]].pipeline != graph.nodes[e[1]].pipeline}
+    assert cross and cross <= set(head.edges)
 
 
 def test_what_changed(graph: LineageGraph, head: LineageGraph) -> None:
@@ -76,7 +97,7 @@ def test_what_changed(graph: LineageGraph, head: LineageGraph) -> None:
     (column,) = nodes[OUT_CONTRACTS].columns
     assert column.change == "type_changed" and column.base_type != column.head_type
 
-    assert [(f.field, f.head) for f in nodes[PAYMENTS].fields] == [("schema", "raw_claims_v2")]
+    assert [(f.field, f.head) for f in nodes[TARIFFS].fields] == [("schema", "raw_mfp_v2")]
 
 
 def test_edges(graph: LineageGraph, head: LineageGraph) -> None:
@@ -94,14 +115,18 @@ def test_same_state_is_unchanged(graph: LineageGraph) -> None:
     assert set(diff.edges.values()) == {"unchanged"}
 
 
-def test_without_catalog_columns_are_not_compared(graph: LineageGraph) -> None:
-    head = load_graph_from_artifacts([(_read(DEV / "manifest.json"), None)])
-    diff = diff_graphs(graph, head)
+def test_columns_can_be_switched_off(graph: LineageGraph, settings: Settings) -> None:
+    head = _swap(settings, _read(DEV / "manifest.json"), None)
+    diff = diff_graphs(graph, head, compare_columns=False)
     assert not diff.columns_compared
-    assert "column changes are not compared" in diff.warnings[0]
-    # otherwise every catalog column would look removed
+    # otherwise every catalog column of bestand_mfp would look removed
     assert diff.nodes[OUT_CONTRACTS].status == "unchanged"
     assert all(not d.columns for d in diff.nodes.values())
+
+
+def test_loaded_artifacts_project_name() -> None:
+    assert LoadedArtifacts(manifest={"metadata": {"project_name": "x"}}).project_name == "x"
+    assert LoadedArtifacts(manifest={}).project_name == "dbt"
 
 
 # ------------------------------------------------------------------------- HTTP
@@ -114,32 +139,36 @@ def _upload(client: TestClient, manifest: bytes, catalog: bytes | None = None, *
     return client.post("/api/diff", files=files, data=form)
 
 
-def test_diff_endpoint(client: TestClient, dev_files: tuple[bytes, bytes]) -> None:
+def test_diff_endpoint(client: TestClient, graph: LineageGraph, dev_files: tuple[bytes, bytes]) -> None:
     response = _upload(client, *dev_files, label="feature/churn-risk")
     assert response.status_code == 200
     body = response.json()
 
+    assert body["pipeline"] == "bestand_mfp"
     assert body["summary"] == {
         "added": 1,
         "removed": 1,
         "modified": 4,
-        "unchanged": 24,
+        "unchanged": len(graph.nodes) - 5,
         "edges_added": 1,
         "edges_removed": 2,
     }
     assert body["head"]["label"] == "feature/churn-risk"
     assert body["base"]["label"] == "running state"
     assert body["columns_compared"] is True
+    assert body["warnings"] == []
 
     # the graph is a normal GraphResponse over the union of both states
-    graph = body["graph"]
-    assert graph["stats"]["node_count"] == len(graph["nodes"]) == 30  # 29 running + 1 added
-    by_id = {n["id"]: n for n in graph["nodes"]}
+    graph_body = body["graph"]
+    assert graph_body["stats"]["node_count"] == len(graph_body["nodes"]) == len(graph.nodes) + 1
+    by_id = {n["id"]: n for n in graph_body["nodes"]}
     assert by_id[ADDED]["change"] == "added"
+    assert by_id[ADDED]["pipeline"] == "bestand_mfp"
     assert by_id[REMOVED]["change"] == "removed"
     assert by_id[P + "src_mfp_contracts"]["change"] == "unchanged"
+    assert by_id["model.schaden_claims.int_claims_cases"]["change"] == "unchanged"
     assert by_id[COVERAGES]["materialization"] == "table"  # head shape wins
-    edge = next(e for e in graph["edges"] if e["target"] == REMOVED)
+    edge = next(e for e in graph_body["edges"] if e["target"] == REMOVED)
     assert edge["change"] == "removed"
 
     assert [c["status"] for c in body["changes"]] == ["added", *["modified"] * 4, "removed"]
@@ -168,8 +197,37 @@ def test_model_detail_from_state(client: TestClient, dev_files: tuple[bytes, byt
 def test_diff_without_catalog(client: TestClient, dev_files: tuple[bytes, bytes]) -> None:
     body = _upload(client, dev_files[0]).json()
     assert body["columns_compared"] is False
-    assert body["head"]["catalog_loaded"] is False
-    assert body["warnings"]
+    assert body["warnings"] == ["No catalog.json for the upload: column changes are not compared."]
+    assert body["summary"]["modified"] == 3  # out_mfp_contracts only changed a column type
+
+
+def test_unknown_project_is_a_new_pipeline(
+    client: TestClient, graph: LineageGraph, dev_files: tuple[bytes, bytes]
+) -> None:
+    manifest = json.loads(dev_files[0])
+    renamed = copy.deepcopy(manifest)
+    renamed["metadata"]["project_name"] = "finance_controlling"
+    # its own ids and table names: pipelines are linked by output table name, which must be
+    # unique across pipelines (a copy of bestand_mfp's tables would re-wire schaden_claims)
+    renamed["nodes"] = {
+        k.replace("bestand_mfp", "finance_controlling"): {
+            **v,
+            "unique_id": k.replace("bestand_mfp", "finance_controlling"),
+            "name": "fc_" + v["name"],
+            "alias": "fc_" + (v.get("alias") or v["name"]),
+        }
+        for k, v in manifest["nodes"].items()
+    }
+    renamed["sources"] = {}
+    body = _upload(client, json.dumps(renamed).encode()).json()
+
+    assert body["pipeline"] == "finance_controlling"
+    assert "not one of the running pipelines (bestand_mfp, schaden_claims)" in body["warnings"][0]
+    assert body["summary"]["removed"] == 0 and body["summary"]["modified"] == 0
+    assert body["summary"]["unchanged"] == len(graph.nodes)
+    assert body["summary"]["added"] == sum(
+        1 for n in renamed["nodes"].values() if n["resource_type"] == "model"
+    )
 
 
 @pytest.mark.parametrize(

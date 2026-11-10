@@ -103,23 +103,22 @@ class GraphDiff:
 # --------------------------------------------------------------------------------------
 
 
-def diff_graphs(base: LineageGraph, head: LineageGraph) -> GraphDiff:
-    """Compare two lineage graphs node by node (keyed on the dbt ``unique_id``)."""
-    columns_compared = base.catalog_loaded and head.catalog_loaded
-    warnings: list[str] = []
-    if not columns_compared:
-        missing = "the uploaded state" if base.catalog_loaded else "the running state"
-        if not base.catalog_loaded and not head.catalog_loaded:
-            missing = "both states"
-        warnings.append(f"No catalog.json for {missing}: column changes are not compared.")
+def diff_graphs(base: LineageGraph, head: LineageGraph, *, compare_columns: bool | None = None) -> GraphDiff:
+    """Compare two lineage graphs node by node (keyed on the dbt ``unique_id``).
 
-    base_projects, head_projects = set(base.project_names), set(head.project_names)
-    if base_projects and head_projects and not base_projects & head_projects:
-        warnings.append(
-            "The two states share no dbt project "
-            f"({', '.join(sorted(base_projects))} vs {', '.join(sorted(head_projects))}): "
-            "every node shows as removed or added."
-        )
+    ``compare_columns``: whether column changes count. Default: only when both graphs have a
+    catalog. A caller that knows better (e.g. only one pipeline's catalog is missing) passes
+    it explicitly and explains it in its own warnings.
+    """
+    warnings: list[str] = []
+    if compare_columns is None:
+        compare_columns = base.catalog_loaded and head.catalog_loaded
+        if not compare_columns:
+            missing = "the uploaded state" if base.catalog_loaded else "the running state"
+            if not base.catalog_loaded and not head.catalog_loaded:
+                missing = "both states"
+            warnings.append(f"No catalog.json for {missing}: column changes are not compared.")
+    columns_compared = compare_columns
 
     nodes: dict[str, NodeDiff] = {}
     for node_id in base.nodes.keys() | head.nodes.keys():

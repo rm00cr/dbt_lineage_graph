@@ -225,6 +225,8 @@ export interface DiffSummary {
 export interface DiffResponse {
   /** pass as ?state= to /api/model/{id} to read the uploaded version of a node */
   state_id: string
+  /** the pipeline the upload replaced (or adds, if it is not running yet) */
+  pipeline: string
   base: StateInfo
   head: StateInfo
   summary: DiffSummary

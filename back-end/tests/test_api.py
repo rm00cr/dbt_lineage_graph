@@ -4,16 +4,16 @@ from __future__ import annotations
 
 from fastapi.testclient import TestClient
 
-CONTRACTS = "model.pnc_analytics.int_mfp_contracts"
-PREMIUM_CALC = "model.pnc_analytics.int_mfp_premium_calc"
-RAW_CONTRACTS = "source.pnc_analytics.raw_mfp.contracts"
+CONTRACTS = "model.bestand_mfp.int_mfp_contracts"
+PREMIUM_CALC = "model.bestand_mfp.int_mfp_premium_calc"
+RAW_CONTRACTS = "source.bestand_mfp.raw_mfp.contracts"
 
 
 def test_health(client: TestClient) -> None:
     body = client.get("/api/health").json()
     assert body["status"] == "ok"
     assert body["catalog_loaded"] is True
-    assert body["node_count"] == 29
+    assert body["node_count"] == 32  # 23 models + 6 raw sources + 3 imported outputs
 
 
 def test_meta(client: TestClient) -> None:
@@ -21,14 +21,14 @@ def test_meta(client: TestClient) -> None:
     assert body["pipelines"] == ["bestand_mfp", "schaden_claims"]
     assert body["stages"] == ["src", "int", "out"]
     assert "incremental" in body["materializations"]
-    assert body["model_count"] == 23 and body["source_count"] == 6
+    assert body["model_count"] == 23 and body["source_count"] == 9
     assert "mfp" in body["tags"]
 
 
 def test_graph_shape(client: TestClient) -> None:
     body = client.get("/api/graph").json()
-    assert body["stats"]["node_count"] == len(body["nodes"]) == 29
-    assert body["stats"]["edge_count"] == len(body["edges"]) == 34
+    assert body["stats"]["node_count"] == len(body["nodes"]) == 32
+    assert body["stats"]["edge_count"] == len(body["edges"]) == 37  # incl. one hop per imported output (out -> source -> src)
 
     node = next(n for n in body["nodes"] if n["id"] == CONTRACTS)
     assert node == {
@@ -94,7 +94,7 @@ def test_column_lineage_upstream(client: TestClient) -> None:
         "/api/lineage/column",
         params={"model": "out_pnc_combined_ratio", "column": "INCURRED_CHF", "direction": "up"},
     ).json()
-    assert body["root"]["model_id"] == "model.pnc_analytics.out_pnc_combined_ratio"
+    assert body["root"]["model_id"] == "model.schaden_claims.out_pnc_combined_ratio"
     assert body["root"]["column"] == "incurred_chf"
     assert body["root"]["distance"] == 0
     reached = {(n["model_name"], n["column"]) for n in body["nodes"]}
@@ -160,7 +160,7 @@ def test_model_detail_by_name_and_source(client: TestClient) -> None:
 
 
 def test_model_detail_404(client: TestClient) -> None:
-    response = client.get("/api/model/model.pnc_analytics.does_not_exist")
+    response = client.get("/api/model/model.bestand_mfp.does_not_exist")
     assert response.status_code == 404
     assert "not found" in response.json()["detail"]
 
@@ -209,4 +209,4 @@ def test_search_columns(client: TestClient) -> None:
 def test_reload_endpoint(client: TestClient) -> None:
     body = client.post("/api/reload").json()
     assert body["status"] == "ok"
-    assert body["node_count"] == 29
+    assert body["node_count"] == 32

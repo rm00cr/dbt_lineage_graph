@@ -36,7 +36,7 @@ from sqlglot.lineage import Node, lineage
 from sqlglot.optimizer.qualify import qualify
 from sqlglot.optimizer.scope import build_scope
 
-from .loader import LineageGraph, LineageNode
+from .loader import LineageGraph, LineageNode, table_name
 
 log = logging.getLogger(__name__)
 
@@ -179,10 +179,6 @@ def _norm(value: str | None) -> str:
     return (value or "").strip('`"').lower()
 
 
-def _table_name(node: LineageNode) -> str:
-    return node.alias or node.name.split(".")[-1]
-
-
 def _topological(graph: LineageGraph) -> list[LineageNode]:
     indegree = {nid: len(n.depends_on) for nid, n in graph.nodes.items()}
     queue = deque(sorted(nid for nid, d in indegree.items() if d == 0))
@@ -214,9 +210,13 @@ class _Builder:
         self.schema: dict[str, dict[str, dict[str, dict[str, str]]]] = {}
 
         for node in graph.nodes.values():
-            db, sch, tbl = _norm(node.database), _norm(node.schema_name), _norm(_table_name(node))
-            self.relations[(db, sch, tbl)] = node.id
-            self.relations_no_db.setdefault((sch, tbl), node.id)
+            db, sch, tbl = _norm(node.database), _norm(node.schema_name), _norm(table_name(node))
+            # A pipeline importing another's output declares the very same relation as a
+            # source; the importing SQL must resolve to that source, not the upstream model.
+            if node.resource_type == "source" or (db, sch, tbl) not in self.relations:
+                self.relations[(db, sch, tbl)] = node.id
+            if node.resource_type == "source" or (sch, tbl) not in self.relations_no_db:
+                self.relations_no_db[(sch, tbl)] = node.id
             if node.materialization == "ephemeral":
                 self.ephemerals[_norm(node.name)] = node
             self._register_columns(node, {c.name: c.type for c in node.columns})
@@ -236,7 +236,7 @@ class _Builder:
             return
         self.columns[node.id] = {name.lower(): name for name in columns}
         tables = self.schema.setdefault(node.database or "", {}).setdefault(node.schema_name, {})
-        tables[_table_name(node)] = {name: self._safe_type(t) for name, t in columns.items()}
+        tables[table_name(node)] = {name: self._safe_type(t) for name, t in columns.items()}
 
     def _column_name(self, node_id: str, column: str) -> str:
         """Return the catalog spelling of a column, falling back to sqlglot's."""
@@ -254,6 +254,9 @@ class _Builder:
     # ------------------------------------------------------------------ main loop
     def build(self) -> ColumnLineageIndex:
         for node in _topological(self.graph):
+            if node.resource_type == "source":
+                self._pipeline_import(node)
+                continue
             if node.resource_type != "model":
                 continue
             if not node.compiled_code or not node.compiled_code.strip():
@@ -319,6 +322,17 @@ class _Builder:
             result.status = "partial"
             result.warnings.append("relations not found in the manifest: " + ", ".join(sorted(unknown)))
 
+    def _pipeline_import(self, source: LineageNode) -> None:
+        """A source stitched to another pipeline's model (loader._stitch_pipelines) is that
+        very table: link every column it shares with the upstream model 1:1."""
+        source_columns = self.columns.get(source.id, {})
+        for upstream_id in source.depends_on:
+            for lowered, column in self.columns.get(upstream_id, {}).items():
+                if lowered in source_columns:
+                    self.index.add(
+                        ColumnEdge(upstream_id, column, source.id, source_columns[lowered], "passthrough")
+                    )
+
     # ------------------------------------------------------------------ helpers
     def _inline_ephemerals(self, query: exp.Query, result: ModelLineage) -> exp.Query:
         """Replace dbt's ``__dbt__cte__<name>`` CTEs by a reference to the ephemeral node."""
@@ -347,7 +361,7 @@ class _Builder:
             if isinstance(node, exp.Table) and not node.db and node.name.lower() in replacements:
                 target = replacements[node.name.lower()]
                 return exp.table_(
-                    _table_name(target),
+                    table_name(target),
                     db=target.schema_name,
                     catalog=target.database,
                     quoted=True,

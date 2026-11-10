@@ -244,6 +244,7 @@ class DiffSummary(BaseModel):
 
 class DiffResponse(BaseModel):
     state_id: str = Field(description="pass as ?state= to /api/model/{id} for the head version")
+    pipeline: str = Field(description="the pipeline the upload replaced (or adds, if new)")
     base: StateInfo
     head: StateInfo
     summary: DiffSummary

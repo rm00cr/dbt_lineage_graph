@@ -12,7 +12,7 @@ from urllib.parse import quote, urlencode
 from .column_lineage import ColumnLineageIndex, Direction, build_column_lineage
 from .config import STAGE_ORDER, Settings
 from .diff import GraphDiff, diff_graphs
-from .loader import LineageGraph, LineageNode, load_graph, load_graph_from_artifacts
+from .loader import LineageGraph, LineageNode, LoadedArtifacts, build_graph, load_graph, read_artifacts
 from .schemas import (
     BigQueryRef,
     ChangeStatus,
@@ -283,7 +283,13 @@ class GraphService:
         catalog: bytes | None = None,
         label: str = "uploaded state",
     ) -> DiffResponse:
-        """Compare the running graph (base) with another state of the project (head).
+        """Compare the running graph (base) with another state of one pipeline (head).
+
+        An upload is one dbt project = one pipeline. The head graph is the running pipelines
+        with that pipeline's artifacts swapped for the upload (matched on the manifest's
+        ``project_name``), built by the same loader - so pipeline names from pipelines.yaml
+        and the links between pipelines stay as they are, and only real changes show. A
+        project that is not running yet is added as a new pipeline.
 
         The head graph is kept in memory under the returned ``state_id`` so the overlay can
         load the head version of a node (``/api/model/{id}?state=...``).
@@ -295,15 +301,42 @@ class GraphService:
         if catalog_data is not None and not isinstance(catalog_data.get("nodes"), dict):
             raise ArtifactError("catalog.json has no 'nodes': is this a dbt catalog?")
 
-        head = load_graph_from_artifacts([(manifest_data, catalog_data)], label=label)
-        if not head.nodes:
+        has_models = any(n.get("resource_type") == "model" for n in manifest_data["nodes"].values())
+        if not has_models and not manifest_data.get("sources"):
             raise ArtifactError("manifest.json contains no models or sources")
+
+        upload = LoadedArtifacts(manifest=manifest_data, catalog=catalog_data, source=f"upload:{label}")
+        running = read_artifacts(self.settings.artifacts)
+        position = next((i for i, item in enumerate(running) if item.project_name == upload.project_name), None)
+
+        warnings: list[str] = []
+        if position is None:
+            pipelines = ", ".join(item.name or item.project_name for item in running) or "none"
+            warnings.append(
+                f"dbt project '{upload.project_name}' is not one of the running pipelines "
+                f"({pipelines}): it is shown as a new pipeline."
+            )
+            head_items = [*running, upload]
+            compare_columns = catalog_data is not None
+        else:
+            replaced = running[position]
+            upload.name = replaced.name  # keep the pipeline name from pipelines.yaml
+            head_items = [*running[:position], upload, *running[position + 1 :]]
+            compare_columns = catalog_data is not None and replaced.catalog is not None
+            if not compare_columns:
+                missing = "the upload" if replaced.catalog is not None else "the running pipeline"
+                warnings.append(f"No catalog.json for {missing}: column changes are not compared.")
+
+        head = build_graph(head_items)
+        diff = diff_graphs(self.graph, head, compare_columns=compare_columns)
+        diff.warnings = [*warnings, *diff.warnings]
 
         state_id = uuid.uuid4().hex[:12]
         self.states[state_id] = head
         while len(self.states) > MAX_COMPARE_STATES:
             self.states.popitem(last=False)
-        return self._diff_response(state_id, head, diff_graphs(self.graph, head), label)
+        pipeline = upload.name or upload.project_name
+        return self._diff_response(state_id, head, diff, label, pipeline)
 
     def get_state(self, state_id: str) -> LineageGraph:
         try:
@@ -311,7 +344,9 @@ class GraphService:
         except KeyError:
             raise UnknownStateError(state_id) from None
 
-    def _diff_response(self, state_id: str, head: LineageGraph, diff: GraphDiff, label: str) -> DiffResponse:
+    def _diff_response(
+        self, state_id: str, head: LineageGraph, diff: GraphDiff, label: str, pipeline: str
+    ) -> DiffResponse:
         base = self.graph
         # removed nodes come from base, everything else from head (its current shape)
         merged: dict[str, LineageNode] = {
@@ -349,6 +384,7 @@ class GraphService:
 
         return DiffResponse(
             state_id=state_id,
+            pipeline=pipeline,
             base=_state_info("running state", base),
             head=_state_info(label, head),
             summary=DiffSummary(

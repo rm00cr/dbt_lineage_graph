@@ -17,7 +17,7 @@ column-level lineage, BigQuery cost). See [What is left](#what-is-left-for-the-h
 │  loader (manifest + catalog) · GraphService · fuzzy search · BigQuery deeplink builder  │
 └───────────────────────────────┬────────────────────────────────────────────────────────┘
                                 │
-                      fixtures/manifest.json + catalog.json
+         fixtures/pipelines.yaml → one manifest.json + catalog.json per pipeline
 ```
 
 Front end and back end are strictly separated: they share nothing but the HTTP contract in
@@ -72,7 +72,7 @@ cd front-end && npm test
 | Zoom to fit | `Z` |
 | Share a view | the URL carries `?model=…&tab=…&layout=…&focus=…&select=…` |
 | Switch theme | sun / monitor / moon in the top bar — light, follow the system, dark (remembered per browser) |
-| Compare with a dev state | **Compare** in the top bar: upload a `manifest.json` (+ optional `catalog.json`). Nodes and edges turn green (added), yellow (modified) or red (removed); a changed node opens on a **Changes** tab with the field, column and SQL diff. **Select changes** + focus mode shows what the changes affect. Try it with `fixtures/dev_state/` |
+| Compare with a dev state | **Compare** in the top bar: upload one pipeline's `manifest.json` (+ optional `catalog.json`) from a dev state; it replaces the running pipeline with the same dbt project name. Nodes and edges turn green (added), yellow (modified) or red (removed); a changed node opens on a **Changes** tab with the field, column and SQL diff. **Select changes** + focus mode shows what the changes affect. Try it with `fixtures/dev_state/` (a dev version of `bestand_mfp`) |
 
 ---
 
@@ -121,18 +121,20 @@ Start at **AP-4** — everything it needs is in place:
 
 1. **Server-side search as the primary path** — endpoints exist; decide when the client-side
    index stops scaling and switch `SearchBar` over.
-2. **Lineage across pipelines (2.4)** — set `DBT_ARTIFACTS` to several `manifest,catalog`
-   pairs; then group / colour by project in the UI.
+2. **Lineage across pipelines (2.4)**: list the real pipelines in a `pipelines.yaml`
+   (one dbt project each, see [contract.md §1.0](contract.md)). They are stitched together by
+   output table name.
 3. **Column-level lineage, next steps (2.3)** — *indirect* edges (columns used in `join` /
    `where` / `group by`), and checking the parser coverage on the real PnC artifacts
    (`GET /api/lineage/status`).
 4. **BigQuery cost & execution metadata (4.2 / 3.5)** — an `INFORMATION_SCHEMA` adapter
    feeding new fields into `stats`.
-5. **Real fixtures** — point the backend at a real PnC `manifest.json` / `catalog.json` and
-   check the stage convention in `back-end/app/config.py` still matches the naming.
+5. **Real fixtures**: point `PIPELINES_CONFIG` at the real PnC pipelines and check that
+   their `01_source / 02_intermediate / 03_output` folders resolve as expected.
 
 Open points from section 8 of the brief, as decided here (change freely):
-stage from prefix → folder → tag; pipeline from `config.meta.pipeline` → folder;
+a pipeline is one dbt project (`project_name`), with layers `models/01_source` →
+`02_intermediate` → `03_output`; stage from layer folder → name prefix → tag;
 BigQuery deeplink to the node's own `database` unless `BQ_CONSOLE_PROJECT` is set;
 `+model+` is both a visual selection *and* exportable as a `dbt run --select` string.
 
@@ -152,7 +154,6 @@ hackathon-lineage-explorer.md  the original brief
 Bigger graph for a performance check:
 
 ```bash
-python3 fixtures/generate_fixtures.py --scale 30 --out-dir /tmp/big   # ~570 models
-DBT_MANIFEST_PATH=/tmp/big/manifest.json DBT_CATALOG_PATH=/tmp/big/catalog.json \
-  uv run --directory back-end lineage-api
+python3 fixtures/generate_fixtures.py --scale 30 --out-dir /tmp/big   # 60 pipelines, ~690 models
+PIPELINES_CONFIG=/tmp/big/pipelines.yaml uv run --directory back-end lineage-api
 ```

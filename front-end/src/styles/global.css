@@ -2239,7 +2239,8 @@ mark {
   font-family: var(--mono);
   font-weight: 600;
 }
-.compare-bar__meta {
+.compare-bar__meta,
+.compare-bar__pipeline {
   color: var(--text-faint);
   white-space: nowrap;
 }

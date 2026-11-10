@@ -174,10 +174,12 @@ export function CompareDialog() {
         </div>
 
         <p className="modal__text">
-          Upload the dbt artifacts of a development state, e.g. after <code>dbt docs generate</code> on your
-          branch. The graph then shows what that state <span className="diff-word diff-word--added">adds</span>,{' '}
-          <span className="diff-word diff-word--modified">changes</span> and{' '}
-          <span className="diff-word diff-word--removed">removes</span> compared with the running state.
+          Upload the dbt artifacts of one pipeline in a development state, e.g. after{' '}
+          <code>dbt docs generate</code> on your branch. They replace the running pipeline with the same dbt
+          project name, the other pipelines stay as they are. The graph then shows what changes{' '}
+          <span className="diff-word diff-word--added">add</span>,{' '}
+          <span className="diff-word diff-word--modified">modify</span> and{' '}
+          <span className="diff-word diff-word--removed">remove</span>.
         </p>
 
         <FileDrop
@@ -240,14 +242,15 @@ export function CompareBar({ onToast }: { onToast: (message: string) => void }) 
   const selectChanges = useExplorerStore((s) => s.selectChanges)
   if (!compare) return null
 
-  const { summary, warnings, head } = compare.response
+  const { summary, warnings, head, pipeline } = compare.response
   const total = summary.added + summary.modified + summary.removed
 
   return (
     <div className="compare-bar" role="status">
       <GitCompare size={14} color="var(--accent)" />
-      <span className="compare-bar__states" title={`running state ↔ ${head.label}`}>
+      <span className="compare-bar__states" title={`running state ↔ ${head.label} (pipeline ${pipeline})`}>
         running ↔ <strong>{head.label}</strong>
+        <span className="compare-bar__pipeline"> · {pipeline}</span>
       </span>
       {SUMMARY_ORDER.map((status) => (
         <span key={status} className="diff-chip" data-change={status} title={`${summary[status]} ${CHANGE_LABELS[status]}`}>

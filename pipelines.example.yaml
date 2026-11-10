@@ -1,0 +1,34 @@
+# Pipelines for the Lineage Explorer backend.
+# Copy this file, adjust the paths and start the API with:
+#   PIPELINES_CONFIG=/path/to/pipelines.yaml uv run lineage-api
+#
+# One entry per pipeline = one dbt project, laid out as
+#   models/01_source  ->  models/02_intermediate  ->  models/03_output
+# with its own manifest.json + catalog.json (`dbt docs generate`).
+#
+# Keys per entry:
+#   name      optional; the pipeline name shown in the UI. Default: the manifest's
+#             metadata.project_name. Must be unique.
+#   dir       folder holding manifest.json and catalog.json
+#   manifest  explicit path to manifest.json (instead of, or overriding, dir)
+#   catalog   explicit path to catalog.json; optional (without it there are no column
+#             types or row counts)
+# Relative paths resolve against the folder of this file; ~ is expanded.
+#
+# Pipelines are connected by table name: when a pipeline declares another pipeline's output
+# table as a dbt source, the two are linked. Output table names must be unique across all
+# pipelines.
+
+pipelines:
+  # Short form: a folder with manifest.json + catalog.json inside.
+  - name: bestand_mfp
+    dir: artifacts/bestand_mfp
+
+  # Explicit paths, e.g. straight from a dbt project's target/ folder.
+  - name: schaden_claims
+    manifest: ~/projects/pnc/schaden_claims/target/manifest.json
+    catalog: ~/projects/pnc/schaden_claims/target/catalog.json
+
+  # No name: the pipeline is named after the manifest's project_name.
+  # No catalog: the graph and SQL still work, the Schema tab has no types.
+  - manifest: /data/dbt/finance_controlling/manifest.json

@@ -1,13 +1,17 @@
 #!/usr/bin/env python3
-"""Generate realistic dbt artifacts (manifest.json + catalog.json) for the Lineage Explorer.
+"""Generate realistic dbt artifacts for the Lineage Explorer.
 
 The fixture models a small PnC (property & casualty) analytics setup with two pipelines
-(`bestand_mfp` = portfolio, `schaden_claims` = claims) that depend on each other, so
-"lineage across pipelines" (feature 2.4) has something to show.
+(`bestand_mfp` = portfolio, `schaden_claims` = claims). As in production, every pipeline is
+its own dbt project with its own manifest.json + catalog.json, laid out as
+models/01_source, models/02_intermediate, models/03_output. `schaden_claims` reads outputs of
+`bestand_mfp` by declaring them as dbt sources; the backend stitches them by table name.
+
+Output: <out-dir>/<pipeline>/{manifest,catalog}.json and <out-dir>/pipelines.yaml
 
 Usage
 -----
-    python3 fixtures/generate_fixtures.py                 # write manifest.json + catalog.json
+    python3 fixtures/generate_fixtures.py                 # write the two pipelines
     python3 fixtures/generate_fixtures.py --scale 20      # 20x synthetic clones (perf tests)
     python3 fixtures/generate_fixtures.py --out-dir /tmp/big
 """
@@ -20,7 +24,6 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-PROJECT = "pnc_analytics"
 DATABASE = "pnc-analytics-prd"
 RAW_DATABASE = "pnc-raw-prd"
 DBT_VERSION = "1.8.7"
@@ -141,11 +144,11 @@ SOURCES: list[dict[str, Any]] = [
 # (name, pipeline, folder, materialization, execution_mode, tags, description, deps, sql, columns)
 
 MODELS: list[dict[str, Any]] = [
-    # ---------------------------- bestand_mfp / staging ----------------------------
+    # ---------------------------- bestand_mfp / 01_source ----------------------------
     {
         "name": "src_mfp_contracts",
         "pipeline": "bestand_mfp",
-        "folder": "staging",
+        "folder": "01_source",
         "materialized": "view",
         "execution_mode": "daily",
         "tags": ["mfp", "staging"],
@@ -183,7 +186,7 @@ where contract_id is not null""",
     {
         "name": "src_mfp_partners",
         "pipeline": "bestand_mfp",
-        "folder": "staging",
+        "folder": "01_source",
         "materialized": "view",
         "execution_mode": "daily",
         "tags": ["mfp", "staging"],
@@ -215,7 +218,7 @@ from {{ source('raw_mfp', 'partners') }}""",
     {
         "name": "src_mfp_coverages",
         "pipeline": "bestand_mfp",
-        "folder": "staging",
+        "folder": "01_source",
         "materialized": "view",
         "execution_mode": "daily",
         "tags": ["mfp", "staging"],
@@ -248,7 +251,7 @@ where sum_insured > 0""",
     {
         "name": "src_mfp_tariffs",
         "pipeline": "bestand_mfp",
-        "folder": "staging",
+        "folder": "01_source",
         "materialized": "view",
         "execution_mode": "weekly",
         "tags": ["mfp", "staging", "reference"],
@@ -271,11 +274,11 @@ from {{ source('raw_mfp', 'tariffs') }}""",
         "rows": 18_442,
         "bytes": 0,
     },
-    # -------------------------- bestand_mfp / intermediate --------------------------
+    # -------------------------- bestand_mfp / 02_intermediate --------------------------
     {
         "name": "int_mfp_contracts",
         "pipeline": "bestand_mfp",
-        "folder": "intermediate",
+        "folder": "02_intermediate",
         "materialized": "table",
         "execution_mode": "daily",
         "tags": ["mfp", "core"],
@@ -322,7 +325,7 @@ left join partners p using (partner_id)""",
     {
         "name": "int_mfp_coverages",
         "pipeline": "bestand_mfp",
-        "folder": "intermediate",
+        "folder": "02_intermediate",
         "materialized": "incremental",
         "execution_mode": "daily",
         "tags": ["mfp", "core"],
@@ -370,7 +373,7 @@ left join tariffs t
     {
         "name": "int_mfp_contract_coverage",
         "pipeline": "bestand_mfp",
-        "folder": "intermediate",
+        "folder": "02_intermediate",
         "materialized": "table",
         "execution_mode": "daily",
         "tags": ["mfp", "core"],
@@ -413,7 +416,7 @@ inner join {{ ref('int_mfp_coverages') }} cov using (contract_id)""",
     {
         "name": "int_mfp_premium_calc",
         "pipeline": "bestand_mfp",
-        "folder": "intermediate",
+        "folder": "02_intermediate",
         "materialized": "ephemeral",
         "execution_mode": "daily",
         "tags": ["mfp", "calculation"],
@@ -442,11 +445,11 @@ from {{ ref('int_mfp_contract_coverage') }}""",
         "rows": None,
         "bytes": None,
     },
-    # ----------------------------- bestand_mfp / marts -----------------------------
+    # ----------------------------- bestand_mfp / 03_output -----------------------------
     {
         "name": "out_mfp_portfolio_daily",
         "pipeline": "bestand_mfp",
-        "folder": "marts",
+        "folder": "03_output",
         "materialized": "incremental",
         "execution_mode": "daily",
         "tags": ["mfp", "mart", "reporting"],
@@ -483,7 +486,7 @@ group by 1, 2, 3, 4""",
     {
         "name": "out_mfp_premium_report",
         "pipeline": "bestand_mfp",
-        "folder": "marts",
+        "folder": "03_output",
         "materialized": "table",
         "execution_mode": "monthly",
         "tags": ["mfp", "mart", "finance"],
@@ -514,7 +517,7 @@ group by 1, 2""",
     {
         "name": "out_mfp_customer_360",
         "pipeline": "bestand_mfp",
-        "folder": "marts",
+        "folder": "03_output",
         "materialized": "view",
         "execution_mode": "daily",
         "tags": ["mfp", "mart", "crm"],
@@ -550,7 +553,7 @@ group by 1, 2, 3, 4, 5""",
     {
         "name": "out_mfp_contracts",
         "pipeline": "bestand_mfp",
-        "folder": "marts",
+        "folder": "03_output",
         "materialized": "table",
         "execution_mode": "daily",
         "tags": ["mfp", "mart", "public"],
@@ -579,11 +582,11 @@ from {{ ref('int_mfp_contracts') }}""",
         "rows": 4_812_004,
         "bytes": 734_003_200,
     },
-    # --------------------------- schaden_claims / staging ---------------------------
+    # --------------------------- schaden_claims / 01_source ---------------------------
     {
         "name": "src_claims_cases",
         "pipeline": "schaden_claims",
-        "folder": "staging",
+        "folder": "01_source",
         "materialized": "view",
         "execution_mode": "hourly",
         "tags": ["claims", "staging"],
@@ -618,7 +621,7 @@ where loss_date is not null""",
     {
         "name": "src_claims_payments",
         "pipeline": "schaden_claims",
-        "folder": "staging",
+        "folder": "01_source",
         "materialized": "view",
         "execution_mode": "hourly",
         "tags": ["claims", "staging"],
@@ -644,11 +647,12 @@ from {{ source('raw_claims', 'payments') }}""",
         "rows": 3_942_118,
         "bytes": 0,
     },
-    # convention: other pipelines are only read through their outputs, via a src model
+    # convention: other pipelines are only read through their outputs, via a src model.
+    # A `deps` entry naming another pipeline's model becomes a dbt source of this project.
     {
         "name": "src_claims_mfp_contracts",
         "pipeline": "schaden_claims",
-        "folder": "staging",
+        "folder": "01_source",
         "materialized": "view",
         "execution_mode": "hourly",
         "tags": ["claims", "staging", "cross-pipeline"],
@@ -675,7 +679,7 @@ where contract_status = 'active'""",
     {
         "name": "src_claims_mfp_portfolio",
         "pipeline": "schaden_claims",
-        "folder": "staging",
+        "folder": "01_source",
         "materialized": "view",
         "execution_mode": "daily",
         "tags": ["claims", "staging", "cross-pipeline"],
@@ -700,7 +704,7 @@ where snapshot_date = current_date()""",
     {
         "name": "src_claims_mfp_premium",
         "pipeline": "schaden_claims",
-        "folder": "staging",
+        "folder": "01_source",
         "materialized": "view",
         "execution_mode": "monthly",
         "tags": ["claims", "staging", "finance", "cross-pipeline"],
@@ -722,11 +726,11 @@ where reporting_month = date_trunc(current_date(), month)""",
         "rows": 24,
         "bytes": 0,
     },
-    # ------------------------ schaden_claims / intermediate ------------------------
+    # ------------------------ schaden_claims / 02_intermediate ------------------------
     {
         "name": "int_claims_cases",
         "pipeline": "schaden_claims",
-        "folder": "intermediate",
+        "folder": "02_intermediate",
         "materialized": "table",
         "execution_mode": "hourly",
         "tags": ["claims", "core", "cross-pipeline"],
@@ -767,7 +771,7 @@ left join {{ ref('src_claims_mfp_contracts') }} c using (contract_id)""",
     {
         "name": "int_claims_payments",
         "pipeline": "schaden_claims",
-        "folder": "intermediate",
+        "folder": "02_intermediate",
         "materialized": "incremental",
         "execution_mode": "hourly",
         "tags": ["claims", "core"],
@@ -797,7 +801,7 @@ group by 1, 2""",
     {
         "name": "int_claims_loss_ratio",
         "pipeline": "schaden_claims",
-        "folder": "intermediate",
+        "folder": "02_intermediate",
         "materialized": "table",
         "execution_mode": "daily",
         "tags": ["claims", "core", "cross-pipeline"],
@@ -846,11 +850,11 @@ left join portfolio p using (product_code, canton, risk_code)""",
         "rows": 92_441,
         "bytes": 31_457_280,
     },
-    # ---------------------------- schaden_claims / marts ----------------------------
+    # ---------------------------- schaden_claims / 03_output ----------------------------
     {
         "name": "out_claims_kpi_daily",
         "pipeline": "schaden_claims",
-        "folder": "marts",
+        "folder": "03_output",
         "materialized": "incremental",
         "execution_mode": "daily",
         "tags": ["claims", "mart", "reporting"],
@@ -882,7 +886,7 @@ group by 1, 2, 3""",
     {
         "name": "out_claims_reserve_report",
         "pipeline": "schaden_claims",
-        "folder": "marts",
+        "folder": "03_output",
         "materialized": "table",
         "execution_mode": "monthly",
         "tags": ["claims", "mart", "actuarial"],
@@ -914,7 +918,7 @@ group by 1, 2, 3""",
     {
         "name": "out_pnc_combined_ratio",
         "pipeline": "schaden_claims",
-        "folder": "marts",
+        "folder": "03_output",
         "materialized": "table",
         "execution_mode": "monthly",
         "tags": ["claims", "mfp", "mart", "finance", "cross-pipeline"],
@@ -959,7 +963,8 @@ left join premium p using (product_code)""",
     },
 ]
 
-SCHEMA_BY_FOLDER = {"staging": "staging", "intermediate": "intermediate", "marts": "marts"}
+PIPELINES = ["bestand_mfp", "schaden_claims"]  # upstream first
+SCHEMA_BY_FOLDER = {"01_source": "source", "02_intermediate": "intermediate", "03_output": "output"}
 BQ_TYPE_BY_MATERIALIZATION = {"view": "VIEW", "table": "BASE TABLE", "incremental": "BASE TABLE"}
 
 
@@ -999,16 +1004,16 @@ GROUP_OWNERS: dict[str, str] = {
 }
 
 
-def source_id(source_name: str, table: str) -> str:
-    return f"source.{PROJECT}.{source_name}.{table}"
+def source_id(project: str, source_name: str, table: str) -> str:
+    return f"source.{project}.{source_name}.{table}"
 
 
-def model_id(name: str) -> str:
-    return f"model.{PROJECT}.{name}"
+def model_id(project: str, name: str) -> str:
+    return f"model.{project}.{name}"
 
 
 def schema_for(pipeline: str, folder: str) -> str:
-    prefix = "mfp" if pipeline == "bestand_mfp" else "claims"
+    prefix = "mfp" if pipeline.startswith("bestand_mfp") else "claims"
     return f"{prefix}_{SCHEMA_BY_FOLDER[folder]}"
 
 
@@ -1026,7 +1031,58 @@ def compile_sql(sql: str, dep_lookup: dict[str, tuple[str, str]]) -> str:
     return "\n".join(line for line in out.splitlines() if line.strip() != "") + "\n"
 
 
-def build_manifest_and_catalog(scale: int = 1) -> tuple[dict[str, Any], dict[str, Any]]:
+def _catalog_entry(uid: str, kind: str, database: str, schema: str, name: str, description: str,
+                   columns: list[tuple[str, str, str]], rows: int, size: int) -> dict[str, Any]:
+    return {
+        "unique_id": uid,
+        "metadata": {"type": kind, "database": database, "schema": schema, "name": name,
+                     "comment": description, "owner": None},
+        "columns": {
+            col: {"type": _type, "index": i + 1, "name": col, "comment": desc}
+            for i, (col, _type, desc) in enumerate(columns)
+        },
+        "stats": {
+            "num_rows": {"id": "num_rows", "label": "# Rows", "value": float(rows or 0),
+                         "include": True, "description": "Approximate count of rows."},
+            "num_bytes": {"id": "num_bytes", "label": "Approximate Size", "value": float(size or 0),
+                          "include": True, "description": "Approximate size of table as reported by BigQuery."},
+        },
+    }
+
+
+def _source_node(project: str, uid: str, *, source_name: str, table: str, database: str,
+                 schema: str, description: str, columns: list[tuple[str, str, str]],
+                 tags: list[str]) -> dict[str, Any]:
+    return {
+        "unique_id": uid,
+        "resource_type": "source",
+        "package_name": project,
+        "name": table,
+        "source_name": source_name,
+        "identifier": table,
+        "database": database,
+        "schema": schema,
+        "description": description,
+        "original_file_path": "models/01_source/_sources.yml",
+        "path": "01_source/_sources.yml",
+        "tags": tags,
+        "meta": {"owner": "data-platform"},
+        "source_meta": {},
+        "loader": "airflow",
+        "columns": {col: {"name": col, "description": desc, "meta": {}, "tags": []}
+                    for col, _type, desc in columns},
+    }
+
+
+def build_project(pipeline: str, tag: str = "") -> tuple[dict[str, Any], dict[str, Any]]:
+    """Artifacts of ONE pipeline = one dbt project (`project_name` == pipeline name).
+
+    Layout: models/01_source, models/02_intermediate, models/03_output. Outputs of other
+    pipelines are imported as dbt sources (source_name = the upstream pipeline), so this
+    manifest never references a node of another project, exactly like separate real projects.
+    """
+    project = f"{pipeline}{tag}"
+    by_name = {m["name"]: m for m in MODELS}
     manifest_nodes: dict[str, Any] = {}
     manifest_sources: dict[str, Any] = {}
     catalog_nodes: dict[str, Any] = {}
@@ -1034,158 +1090,113 @@ def build_manifest_and_catalog(scale: int = 1) -> tuple[dict[str, Any], dict[str
     parent_map: dict[str, list[str]] = {}
     child_map: dict[str, list[str]] = {}
 
-    def add_child(parent: str, child: str) -> None:
-        child_map.setdefault(parent, []).append(child)
-
-    # ---------------------------------------------------------------- sources
-    for src in SOURCES:
-        uid = source_id(src["source_name"], src["name"])
-        manifest_sources[uid] = {
-            "unique_id": uid,
-            "resource_type": "source",
-            "package_name": PROJECT,
-            "name": src["name"],
-            "source_name": src["source_name"],
-            "identifier": src["name"],
-            "database": RAW_DATABASE,
-            "schema": src["source_name"],
-            "description": src["description"],
-            "original_file_path": f"models/{src['pipeline']}/staging/_sources.yml",
-            "path": f"{src['pipeline']}/staging/_sources.yml",
-            "tags": ["source", src["source_name"]],
-            "meta": {"pipeline": src["pipeline"], "owner": "data-platform"},
-            "source_meta": {},
-            "loader": "airflow",
-            "columns": {
-                col: {"name": col, "description": desc, "meta": {}, "tags": []}
-                for col, _type, desc in src["columns"]
-            },
-        }
-        catalog_sources[uid] = {
-            "unique_id": uid,
-            "metadata": {
-                "type": "BASE TABLE",
-                "database": RAW_DATABASE,
-                "schema": src["source_name"],
-                "name": src["name"],
-                "comment": src["description"],
-                "owner": None,
-            },
-            "columns": {
-                col: {"type": _type, "index": i + 1, "name": col, "comment": desc}
-                for i, (col, _type, desc) in enumerate(src["columns"])
-            },
-            "stats": {
-                "num_rows": {"id": "num_rows", "label": "# Rows", "value": float(src["rows"]),
-                             "include": True, "description": "Approximate count of rows."},
-                "num_bytes": {"id": "num_bytes", "label": "Approximate Size", "value": float(src["bytes"]),
-                              "include": True, "description": "Approximate size of table as reported by BigQuery."},
-            },
-        }
+    # ------------------------------------------------------------- raw sources
+    for src in (s for s in SOURCES if s["pipeline"] == pipeline):
+        uid = source_id(project, src["source_name"], src["name"])
+        manifest_sources[uid] = _source_node(
+            project, uid, source_name=src["source_name"], table=src["name"], database=RAW_DATABASE,
+            schema=src["source_name"], description=src["description"], columns=src["columns"],
+            tags=["source", src["source_name"]],
+        )
+        catalog_sources[uid] = _catalog_entry(uid, "BASE TABLE", RAW_DATABASE, src["source_name"],
+                                              src["name"], src["description"], src["columns"],
+                                              src["rows"], src["bytes"])
         parent_map[uid] = []
 
-    # ---------------------------------------------------------------- models
-    for suffix in range(scale):
-        tag = "" if suffix == 0 else f"_c{suffix}"
-        for model in MODELS:
-            name = f"{model['name']}{tag}"
-            uid = model_id(name)
-            pipeline = model["pipeline"] if suffix == 0 else f"{model['pipeline']}{tag}"
-            schema = schema_for(model["pipeline"], model["folder"])
-            folder_path = f"{pipeline}/{model['folder']}/{name}.sql"
+    # ------------------------------------------------------------------ models
+    for model in (m for m in MODELS if m["pipeline"] == pipeline):
+        name = f"{model['name']}{tag}"
+        uid = model_id(project, name)
+        schema = schema_for(pipeline, model["folder"])
+        folder_path = f"{model['folder']}/{name}.sql"
+        sql = model["sql"]
 
-            dep_ids: list[str] = []
-            dep_lookup: dict[str, tuple[str, str]] = {}
-            for dep in model["deps"]:
-                if dep.startswith("source:"):
-                    source_name, table = dep.split(":", 1)[1].split(".")
-                    dep_uid = source_id(source_name, table)
-                    dep_lookup[f"{{{{ source('{source_name}', '{table}') }}}}"] = (
-                        RAW_DATABASE,
-                        f"{source_name}.{table}",
+        dep_ids: list[str] = []
+        dep_lookup: dict[str, tuple[str, str]] = {}
+        refs: list[str] = []
+        sources: list[list[str]] = []
+        for dep in model["deps"]:
+            if dep.startswith("source:"):
+                source_name, table = dep.split(":", 1)[1].split(".")
+                dep_uid = source_id(project, source_name, table)
+                dep_lookup[f"{{{{ source('{source_name}', '{table}') }}}}"] = (
+                    RAW_DATABASE, f"{source_name}.{table}")
+                sources.append([source_name, table])
+            elif by_name[dep]["pipeline"] != pipeline:
+                # another pipeline's output: declared as a source of THIS project
+                upstream = by_name[dep]
+                source_name, table = f"{upstream['pipeline']}{tag}", f"{dep}{tag}"
+                up_schema = schema_for(upstream["pipeline"], upstream["folder"])
+                dep_uid = source_id(project, source_name, table)
+                token = f"{{{{ source('{source_name}', '{table}') }}}}"
+                sql = sql.replace(f"{{{{ ref('{dep}') }}}}", token)
+                dep_lookup[token] = (DATABASE, f"{up_schema}.{table}")
+                sources.append([source_name, table])
+                if dep_uid not in manifest_sources:
+                    description = f"Output of pipeline {source_name}: {upstream['description']}"
+                    manifest_sources[dep_uid] = _source_node(
+                        project, dep_uid, source_name=source_name, table=table, database=DATABASE,
+                        schema=up_schema, description=description, columns=upstream["columns"],
+                        tags=["source", "cross-pipeline"],
                     )
-                else:
-                    dep_name = f"{dep}{tag}"
-                    dep_uid = model_id(dep_name)
-                    dep_model = next(m for m in MODELS if m["name"] == dep)
-                    dep_lookup[f"{{{{ ref('{dep}') }}}}"] = (
-                        DATABASE,
-                        f"{schema_for(dep_model['pipeline'], dep_model['folder'])}.{dep_name}",
-                    )
-                dep_ids.append(dep_uid)
-                add_child(dep_uid, uid)
+                    catalog_sources[dep_uid] = _catalog_entry(
+                        dep_uid, BQ_TYPE_BY_MATERIALIZATION[upstream["materialized"]], DATABASE,
+                        up_schema, table, description, upstream["columns"], upstream["rows"],
+                        upstream["bytes"])
+                    parent_map[dep_uid] = []
+            else:
+                dep_name = f"{dep}{tag}"
+                dep_uid = model_id(project, dep_name)
+                dep_lookup[f"{{{{ ref('{dep}') }}}}"] = (
+                    DATABASE, f"{schema_for(pipeline, by_name[dep]['folder'])}.{dep_name}")
+                refs.append(dep)
+            dep_ids.append(dep_uid)
+            child_map.setdefault(dep_uid, []).append(uid)
 
-            raw_code = (
-                "{{ config(materialized='" + model["materialized"] + "'"
-                + (", unique_key='" + model["columns"][0][0] + "'" if model["materialized"] == "incremental" else "")
-                + ") }}\n\n" + model["sql"]
-            )
-
-            manifest_nodes[uid] = {
-                "unique_id": uid,
-                "resource_type": "model",
-                "package_name": PROJECT,
-                "name": name,
-                "alias": name,
-                "database": DATABASE,
-                "schema": schema,
-                "path": folder_path,
-                "original_file_path": f"models/{folder_path}",
-                "description": model["description"],
+        raw_code = (
+            "{{ config(materialized='" + model["materialized"] + "'"
+            + (", unique_key='" + model["columns"][0][0] + "'" if model["materialized"] == "incremental" else "")
+            + ") }}\n\n" + sql
+        )
+        group = GROUP_BY_MODEL.get(model["name"])
+        manifest_nodes[uid] = {
+            "unique_id": uid,
+            "resource_type": "model",
+            "package_name": project,
+            "name": name,
+            "alias": name,
+            "database": DATABASE,
+            "schema": schema,
+            "path": folder_path,
+            "original_file_path": f"models/{folder_path}",
+            "description": model["description"],
+            "tags": model["tags"],
+            "group": group,
+            "config": {
+                "enabled": True,
+                "group": group,
+                "materialized": model["materialized"],
+                "schema": SCHEMA_BY_FOLDER[model["folder"]],
                 "tags": model["tags"],
-                "group": GROUP_BY_MODEL.get(model["name"]),
-                "config": {
-                    "enabled": True,
-                    "group": GROUP_BY_MODEL.get(model["name"]),
-                    "materialized": model["materialized"],
-                    "schema": SCHEMA_BY_FOLDER[model["folder"]],
-                    "tags": model["tags"],
-                    "meta": {
-                        "pipeline": pipeline,
-                        "execution_mode": model["execution_mode"],
-                        "owner": "pnc-analytics",
-                    },
-                },
-                "meta": {"pipeline": pipeline, "execution_mode": model["execution_mode"]},
-                "depends_on": {"macros": [], "nodes": dep_ids},
-                "refs": [{"name": d, "package": None, "version": None}
-                         for d in model["deps"] if not d.startswith("source:")],
-                "sources": [d.split(":", 1)[1].split(".") for d in model["deps"] if d.startswith("source:")],
-                "compiled": True,
-                "raw_code": raw_code,
-                "compiled_code": compile_sql(model["sql"], dep_lookup),
-                "columns": {
-                    col: {"name": col, "description": desc, "meta": {}, "tags": []}
-                    for col, _type, desc in model["columns"]
-                },
-                "checksum": {"name": "sha256", "checksum": f"{abs(hash(uid)):064x}"[:64]},
-            }
-            parent_map[uid] = dep_ids
+                "meta": {"execution_mode": model["execution_mode"], "owner": "pnc-analytics"},
+            },
+            "meta": {"execution_mode": model["execution_mode"]},
+            "depends_on": {"macros": [], "nodes": dep_ids},
+            "refs": [{"name": d, "package": None, "version": None} for d in refs],
+            "sources": sources,
+            "compiled": True,
+            "raw_code": raw_code,
+            "compiled_code": compile_sql(sql, dep_lookup),
+            "columns": {col: {"name": col, "description": desc, "meta": {}, "tags": []}
+                        for col, _type, desc in model["columns"]},
+            "checksum": {"name": "sha256", "checksum": f"{abs(hash(uid)):064x}"[:64]},
+        }
+        parent_map[uid] = dep_ids
 
-            if model["materialized"] != "ephemeral":
-                catalog_nodes[uid] = {
-                    "unique_id": uid,
-                    "metadata": {
-                        "type": BQ_TYPE_BY_MATERIALIZATION[model["materialized"]],
-                        "database": DATABASE,
-                        "schema": schema,
-                        "name": name,
-                        "comment": model["description"],
-                        "owner": None,
-                    },
-                    "columns": {
-                        col: {"type": _type, "index": i + 1, "name": col, "comment": desc}
-                        for i, (col, _type, desc) in enumerate(model["columns"])
-                    },
-                    "stats": {
-                        "num_rows": {"id": "num_rows", "label": "# Rows",
-                                     "value": float(model["rows"] or 0), "include": True,
-                                     "description": "Approximate count of rows."},
-                        "num_bytes": {"id": "num_bytes", "label": "Approximate Size",
-                                      "value": float(model["bytes"] or 0), "include": True,
-                                      "description": "Approximate size of table as reported by BigQuery."},
-                    },
-                }
+        if model["materialized"] != "ephemeral":
+            catalog_nodes[uid] = _catalog_entry(
+                uid, BQ_TYPE_BY_MATERIALIZATION[model["materialized"]], DATABASE, schema, name,
+                model["description"], model["columns"], model["rows"], model["bytes"])
 
     for uid in list(manifest_nodes) + list(manifest_sources):
         child_map.setdefault(uid, [])
@@ -1195,12 +1206,12 @@ def build_manifest_and_catalog(scale: int = 1) -> tuple[dict[str, Any], dict[str
         "dbt_version": DBT_VERSION,
         "generated_at": GENERATED_AT,
         "invocation_id": "9f1b2c3d-4e5f-4a6b-8c7d-0e1f2a3b4c5d",
-        "project_name": PROJECT,
-        "project_id": "a1b2c3d4e5f60718293a4b5c6d7e8f90",
+        "project_name": project,
+        "project_id": project.replace("_", "")[:32].ljust(32, "0"),
         "adapter_type": "bigquery",
         "env": {},
     }
-
+    used_groups = {n["group"] for n in manifest_nodes.values() if n["group"]}
     manifest = {
         "metadata": metadata,
         "nodes": manifest_nodes,
@@ -1209,16 +1220,17 @@ def build_manifest_and_catalog(scale: int = 1) -> tuple[dict[str, Any], dict[str
         "exposures": {},
         "metrics": {},
         "groups": {
-            f"group.{PROJECT}.{g}": {
+            f"group.{project}.{g}": {
                 "name": g,
                 "resource_type": "group",
-                "package_name": PROJECT,
+                "package_name": project,
                 "path": "groups.yml",
                 "original_file_path": "models/groups.yml",
-                "unique_id": f"group.{PROJECT}.{g}",
+                "unique_id": f"group.{project}.{g}",
                 "owner": {"name": owner, "email": None},
             }
             for g, owner in GROUP_OWNERS.items()
+            if g in used_groups
         },
         "selectors": {},
         "docs": {},
@@ -1226,12 +1238,8 @@ def build_manifest_and_catalog(scale: int = 1) -> tuple[dict[str, Any], dict[str
         "child_map": child_map,
         "disabled": {},
     }
-
     catalog = {
-        "metadata": {
-            **metadata,
-            "dbt_schema_version": "https://schemas.getdbt.com/dbt/catalog/v1.json",
-        },
+        "metadata": {**metadata, "dbt_schema_version": "https://schemas.getdbt.com/dbt/catalog/v1.json"},
         "nodes": catalog_nodes,
         "sources": catalog_sources,
         "errors": None,
@@ -1243,21 +1251,31 @@ def build_manifest_and_catalog(scale: int = 1) -> tuple[dict[str, Any], dict[str
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--scale", type=int, default=1,
-                        help="clone the model set N times for performance testing (default 1)")
+                        help="clone the pipelines N times for performance testing (default 1)")
     parser.add_argument("--out-dir", type=Path, default=Path(__file__).parent)
     args = parser.parse_args()
 
-    manifest, catalog = build_manifest_and_catalog(scale=max(1, args.scale))
-    args.out_dir.mkdir(parents=True, exist_ok=True)
+    out_dir: Path = args.out_dir
+    out_dir.mkdir(parents=True, exist_ok=True)
+    projects: list[str] = []
+    for suffix in range(max(1, args.scale)):
+        tag = "" if suffix == 0 else f"_c{suffix}"
+        for pipeline in PIPELINES:
+            manifest, catalog = build_project(pipeline, tag)
+            project = manifest["metadata"]["project_name"]
+            target = out_dir / project
+            target.mkdir(exist_ok=True)
+            (target / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
+            (target / "catalog.json").write_text(json.dumps(catalog, indent=2) + "\n")
+            projects.append(project)
+            n_edges = sum(len(v) for v in manifest["parent_map"].values())
+            print(f"wrote {target}/  ({len(manifest['nodes'])} models, "
+                  f"{len(manifest['sources'])} sources, {n_edges} edges)")
 
-    (args.out_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n")
-    (args.out_dir / "catalog.json").write_text(json.dumps(catalog, indent=2) + "\n")
-
-    n_models = len(manifest["nodes"])
-    n_sources = len(manifest["sources"])
-    n_edges = sum(len(v) for v in manifest["parent_map"].values())
-    print(f"wrote {args.out_dir}/manifest.json  ({n_models} models, {n_sources} sources, {n_edges} edges)")
-    print(f"wrote {args.out_dir}/catalog.json   ({len(catalog['nodes'])} catalog nodes)")
+    config = "# Generated by generate_fixtures.py. One entry per pipeline (= dbt project).\npipelines:\n"
+    config += "".join(f"  - name: {p}\n    dir: {p}\n" for p in projects)
+    (out_dir / "pipelines.yaml").write_text(config)
+    print(f"wrote {out_dir}/pipelines.yaml  ({len(projects)} pipelines)")
     print(f"generated_at (fixture): {GENERATED_AT} · generator run: {datetime.now(timezone.utc).isoformat()}")
 
 

@@ -1,16 +1,17 @@
-"""Derive a "development branch" state from the fixtures, for the state comparison feature.
+"""Derive a "development branch" state of the bestand_mfp pipeline, for the state comparison.
 
     python fixtures/generate_dev_state.py      -> fixtures/dev_state/{manifest,catalog}.json
 
-Upload the two files with *Compare* in the UI to see the diff. The changes are chosen to hit
-every case the diff distinguishes (see back-end/app/diff.py):
+Upload the two files with *Compare* in the UI to see the diff. An upload is one pipeline
+(= one dbt project); it replaces the running bestand_mfp, schaden_claims stays as it is.
+The changes are chosen to hit every case the diff distinguishes (see back-end/app/diff.py):
 
     added     out_mfp_churn_risk                (new model on top of int_mfp_contracts)
     removed   out_mfp_customer_360              (dropped mart, its two edges go with it)
     modified  int_mfp_contracts                 (SQL changed: new column `is_active`)
               int_mfp_coverages                 (materialization incremental -> table)
               out_mfp_contracts                 (catalog: column type changed)
-              source raw_claims.payments        (source moved to another schema)
+              source raw_mfp.tariffs            (source moved to another schema)
 
 and it re-targets *every* model to a dev database / schema with dev compiled SQL, the way
 `dbt compile --target dev` would. That noise must NOT show up as a change.
@@ -23,9 +24,10 @@ import json
 from pathlib import Path
 
 HERE = Path(__file__).resolve().parent
+BASE = HERE / "bestand_mfp"
 OUT = HERE / "dev_state"
 
-P = "model.pnc_analytics."
+P = "model.bestand_mfp."
 
 
 def build(manifest: dict, catalog: dict) -> tuple[dict, dict]:
@@ -75,8 +77,8 @@ def build(manifest: dict, catalog: dict) -> tuple[dict, dict]:
     first["type"] = "INT64" if first.get("type") != "INT64" else "STRING"
 
     # modified: a source moved
-    payments = manifest["sources"]["source.pnc_analytics.raw_claims.payments"]
-    payments["schema"] = "raw_claims_v2"
+    tariffs = manifest["sources"]["source.bestand_mfp.raw_mfp.tariffs"]
+    tariffs["schema"] = "raw_mfp_v2"
 
     # added
     template = nodes[P + "out_mfp_contracts"]
@@ -107,8 +109,8 @@ def build(manifest: dict, catalog: dict) -> tuple[dict, dict]:
 
 
 def main() -> None:
-    manifest = json.loads((HERE / "manifest.json").read_text(encoding="utf-8"))
-    catalog = json.loads((HERE / "catalog.json").read_text(encoding="utf-8"))
+    manifest = json.loads((BASE / "manifest.json").read_text(encoding="utf-8"))
+    catalog = json.loads((BASE / "catalog.json").read_text(encoding="utf-8"))
     dev_manifest, dev_catalog = build(manifest, catalog)
     OUT.mkdir(exist_ok=True)
     (OUT / "manifest.json").write_text(json.dumps(dev_manifest, indent=2) + "\n", encoding="utf-8")

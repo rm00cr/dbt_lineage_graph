@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from app.config import DEFAULT_CATALOG, DEFAULT_MANIFEST, ArtifactPair, Settings
+from app.config import DEFAULT_PIPELINES_CONFIG, Settings, load_pipelines_config
 from app.loader import LineageGraph, load_graph
 from app.main import app, get_service
 from app.service import GraphService
@@ -12,7 +12,7 @@ from app.service import GraphService
 @pytest.fixture(scope="session")
 def settings() -> Settings:
     return Settings(
-        artifacts=[ArtifactPair(manifest=DEFAULT_MANIFEST, catalog=DEFAULT_CATALOG)],
+        artifacts=load_pipelines_config(DEFAULT_PIPELINES_CONFIG),
         bq_console_project=None,
         cors_origins=["http://localhost:5173"],
     )
