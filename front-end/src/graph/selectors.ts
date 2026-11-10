@@ -11,7 +11,7 @@
  *   model_name+3        3 downstream levels
  *   tag:mfp             every node carrying the tag
  *   stage:out           every node of a stage
- *   folder:contract_with_claim  every node in a model sub-folder (sources: their source_name)
+ *   folder:contract_with_claim  every node in a model sub-folder (sources: their consumers' folder)
  *   pipeline:bestand_mfp
  *   materialization:incremental  (alias: config.materialized:incremental)
  *   a b                 union of both selectors            (dbt: space = union)

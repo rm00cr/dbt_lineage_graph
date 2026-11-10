@@ -47,6 +47,8 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const zoneMode = useExplorerStore((s) => s.zoneMode)
   const setZoneMode = useExplorerStore((s) => s.setZoneMode)
   const hasFolders = useExplorerStore((s) => s.graph?.nodes.some((n) => n.folder) ?? false)
+  // without model sub-folders the 'folders' (Groups) default is drawn as plain stages
+  const shownZoneMode = zoneMode === 'folders' && !hasFolders ? 'stages' : zoneMode
   const splitPipelines = useExplorerStore((s) => s.splitPipelines)
   const setSplitPipelines = useExplorerStore((s) => s.setSplitPipelines)
   const pipelineCount = useExplorerStore((s) => s.graph?.stats.pipelines.length ?? 0)
@@ -138,7 +140,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
               return (
                 <button
                   key={mode}
-                  data-active={zoneMode === mode}
+                  data-active={shownZoneMode === mode}
                   disabled={disabled}
                   onClick={() => setZoneMode(mode)}
                   title={disabled ? reason : title}

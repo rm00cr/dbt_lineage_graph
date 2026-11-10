@@ -29,7 +29,7 @@ class GraphNode(NodeRef):
     """Node as rendered on the canvas — intentionally slim."""
 
     group: str | None = None  # dbt group = domain row in the stage-lanes layout
-    folder: str | None = None  # sub-folder of the stage (or source_name for sources)
+    folder: str | None = None  # model sub-folder of the stage; sources: their consumers' folder
     schema_name: str | None = None
     database: str | None = None
     description: str | None = None

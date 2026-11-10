@@ -115,6 +115,15 @@ const FOLDER_HEADER = 30
 const FOLDER_PADDING = 16
 const FOLDER_GAP = 16
 
+/**
+ * The zone mode that is actually drawn: 'folders' needs at least one node with a model
+ * sub-folder, else (a project that keeps models directly in the layer folders) it would
+ * only show "(root)" boxes, so it falls back to plain stage columns.
+ */
+export function effectiveZoneMode(zones: ZoneMode, nodes: GraphNode[]): ZoneMode {
+  return zones === 'folders' && !nodes.some((n) => n.folder) ? 'stages' : zones
+}
+
 export function layoutGraph(
   nodes: GraphNode[],
   edges: GraphEdge[],
@@ -127,13 +136,16 @@ export function layoutGraph(
   if (nodes.length === 0) return { positions: new Map(), lanes: [], rows: [], folders: [], pipelines: [] }
   const heightOf = (id: string) => heights?.get(id) ?? NODE_HEIGHT
   const options: ZoneOptions = { zones: 'both', splitPipelines: false, ...zoneOptions }
+  options.zones = effectiveZoneMode(options.zones, nodes)
   return mode === 'lanes' ? layoutZones(nodes, edges, heightOf, options) : layoutDag(nodes, edges, heightOf)
 }
 
 /** Classic left-to-right dagre layout. */
 function layoutDag(nodes: GraphNode[], edges: GraphEdge[], heightOf: (id: string) => number): LayoutResult {
   const g = new dagre.graphlib.Graph()
-  g.setGraph({ rankdir: 'LR', nodesep: 20, ranksep: 70, marginx: 40, marginy: 40, ranker: 'network-simplex' })
+  // tight, but with room for the compare rings (changed cards are drawn larger) and the
+  // back cards of stacked execution modes (offset to the right)
+  g.setGraph({ rankdir: 'LR', nodesep: 32, ranksep: 90, marginx: 40, marginy: 40, ranker: 'network-simplex' })
   g.setDefaultEdgeLabel(() => ({}))
 
   for (const node of nodes) g.setNode(node.id, { width: NODE_WIDTH, height: heightOf(node.id) })

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import type { GraphEdge, GraphNode, Stage } from '../api/types'
-import { NODE_HEIGHT, NODE_WIDTH, layoutGraph, orderPipelines } from './layout'
+import { NODE_HEIGHT, NODE_WIDTH, effectiveZoneMode, layoutGraph, orderPipelines } from './layout'
 
 const node = (
   id: string,
@@ -282,3 +282,19 @@ describe("folders layout (stage boxes with one box per model sub-folder)", () =>
   })
 })
 
+describe('folders zone mode without any model sub-folder', () => {
+  const flat = [node('a', 'src'), node('b', 'int'), node('c', 'out')]
+  const edges = [edge('a', 'b'), edge('b', 'c')]
+
+  it('falls back to plain stage columns instead of "(root)" boxes only', () => {
+    expect(effectiveZoneMode('folders', flat)).toBe('stages')
+    const result = layoutGraph(flat, edges, 'lanes', undefined, { zones: 'folders' })
+    expect(result.folders).toEqual([])
+    expect(result.lanes.map((l) => l.stage)).toEqual(['src', 'int', 'out'])
+  })
+
+  it('keeps folders as soon as one node has a sub-folder, and leaves other modes alone', () => {
+    expect(effectiveZoneMode('folders', [...flat, node('d', 'int', null, 'p', 'claim')])).toBe('folders')
+    expect(effectiveZoneMode('both', flat)).toBe('both')
+  })
+})

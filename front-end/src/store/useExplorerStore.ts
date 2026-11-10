@@ -24,7 +24,6 @@ import { type TraceView, buildTraceView } from '../graph/columnTrace'
 import { DEFAULT_ZONE_MODE, type LayoutMode, type ZoneMode } from '../graph/layout'
 import { changedIds } from '../graph/diff'
 import { type GraphFilters, filterGraph } from '../graph/filter'
-/*import type { LayoutMode, ZoneMode } from '../graph/layout'*/
 import {
   type AdjacencyIndex,
   buildIndex,

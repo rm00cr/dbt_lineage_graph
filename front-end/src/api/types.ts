@@ -21,7 +21,8 @@ export interface NodeRef {
 export interface GraphNode extends NodeRef {
   /** dbt group (domain) = row in the stage-lanes layout; sources inherit their consumers' group */
   group?: string | null
-  /** sub-folder of the stage (sources: source_name); null = directly in the stage folder */
+  /** model sub-folder below the stage folder (sources: the folder most of their consumers are in);
+   *  null = directly in the stage folder / a source without folder-bearing consumers */
   folder?: string | null
   schema_name: string | null
   database: string | null

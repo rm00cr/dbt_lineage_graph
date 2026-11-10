@@ -324,7 +324,7 @@ def test_source_takes_the_folder_of_its_consumers(tmp_path: Path) -> None:
         },
     }
     (tmp_path / "manifest.json").write_text(json.dumps(manifest))
-    graph = load_graph([ArtifactPair(manifest=tmp_path / "manifest.json")])
+    graph = load_graph([ArtifactPair(manifest=tmp_path / "manifest.json", name="p")])
     # tbl_b: claim (2 consumers) beats adam (1); tbl_a: tie claim/adam -> alphabetical
     assert graph.nodes["source.p.ds.tbl_b"].folder == "claim"
     assert graph.nodes["source.p.ds.tbl_a"].folder == "adam"
