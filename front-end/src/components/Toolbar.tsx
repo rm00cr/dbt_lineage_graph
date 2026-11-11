@@ -36,9 +36,7 @@ const FOCUS_ICON = { off: EyeOff, dim: Eye, isolate: Crosshair } as const
 
 const ZONE_OPTIONS: { mode: ZoneMode; label: string; title: string }[] = [
   { mode: 'stages', label: 'Stages', title: 'Stage columns only (one per layer)' },
-  { mode: 'folders', label: 'Folders', title: 'Stage columns, one box per model sub-folder inside each' },
-  { mode: 'both', label: 'Stages × Groups', title: 'Stage columns, one row per dbt group' },
-  { mode: 'groups', label: 'Groups', title: 'One row per dbt group, columns by DAG depth' },
+  { mode: 'folders', label: 'Groups', title: 'Stage columns, one box per model folder (group) inside each' },
 ]
 
 /** Collapses every group box into one node, or opens them all again. */
@@ -77,7 +75,6 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const zoneMode = useExplorerStore((s) => s.zoneMode)
   const setZoneMode = useExplorerStore((s) => s.setZoneMode)
   const hasFolders = useExplorerStore((s) => s.graph?.nodes.some((n) => n.folder) ?? false)
-  const hasGroups = useExplorerStore((s) => s.graph?.nodes.some((n) => n.group) ?? false)
   // without model sub-folders the 'folders' (Groups) default is drawn as plain stages
   const shownZoneMode = zoneMode === 'folders' && !hasFolders ? 'stages' : zoneMode
   const collapsedFolders = useExplorerStore((s) => s.collapsedFolders)
@@ -160,18 +157,15 @@ export function Toolbar({ onToast }: ToolbarProps) {
         <button
           className={`btn ${layoutMode === 'lanes' ? 'btn--active' : ''}`}
           onClick={() => setLayoutMode('lanes')}
-          title="Zones: stages (layers) as columns, with model folders as boxes or dbt groups as rows"
+          title="Zones: stages (src / int / out) as columns and/or dbt groups as rows"
         >
           <Columns3 size={14} /> Zones
         </button>
         {layoutMode === 'lanes' && (
           <div className="segmented toolbar__zones" role="group" aria-label="Zones">
             {ZONE_OPTIONS.map(({ mode, label, title }) => {
-              const needsGroups = mode === 'both' || mode === 'groups'
-              const disabled = (mode === 'folders' && !hasFolders) || (needsGroups && !hasGroups)
-              const reason = needsGroups
-                ? 'No dbt groups in this project (set `group:` on your models)'
-                : 'No model sub-folders in this project (put models in e.g. 02_intermediate/<folder>/)'
+              const disabled = mode === 'folders' && !hasFolders
+              const reason = 'No model sub-folders in this project (put models in e.g. 02_intermediate/<folder>/)'
               return (
                 <button
                   key={mode}
