@@ -76,7 +76,7 @@ folder (`models/02_intermediate/contract_with_claim/x.sql` -> `contract_with_cla
 prefixes ignored, deeper levels flattened). Models directly in the layer folder: `null`
 (drawn as a `(root)` box). Sources: the folder most of their direct consumers are in (ties
 alphabetical), so a raw table is drawn in the box of the src models reading it; a source with
-no folder-bearing consumer stays `null` and is drawn unboxed at the top of the SRC stage.
+no folder-bearing consumer stays `null` and is drawn in the `(root)` box, like top-level models.
 
 The zones mode `folders` (`?zones=folders`, the default, labelled **Groups** in the toolbar)
 draws one box per stage (src / int / out) and one box per model folder inside it; when no node

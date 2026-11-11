@@ -424,10 +424,11 @@ function layoutBlock(
 
 /**
  * One zone grid for the 'folders' mode, relative to (0, 0): a box per stage (src / int / out)
- * holding one box per sub-folder. A source sits in the folder of the models that read it (the
- * backend infers it); sources without one stack directly under the stage label, unboxed.
- * Sub-columns (intra-stage depth) are shared by everything in a stage, so columns line up.
- * Folders are ordered by their mean dagre y; models without a folder sit in a "(root)" box last.
+ * holding one box per sub-folder. Each folder is laid out on its own (dagre, left to right), so
+ * a folder is only as wide as its own dependency chain. The boxes of a stage share one width,
+ * so the stage lane stays a tidy column. A source sits in the folder of the models that read it
+ * (the backend infers it). Folders are ordered by their mean dagre y; models and sources without
+ * a folder sit in the "(root)" box, last.
  */
 function layoutFolderBlock(
   nodes: GraphNode[],
@@ -439,24 +440,20 @@ function layoutFolderBlock(
   const positions = new Map<string, { x: number; y: number }>()
   const lanes: LaneBox[] = []
   const folders: FolderBand[] = []
-  const depths = intraStageDepths(nodes, edges)
   const meanY = (list: GraphNode[]) => list.reduce((sum, n) => sum + dagY(n.id), 0) / list.length
 
-  /** stack nodes per sub-column starting at `top`; returns the bottom edge of the stack */
-  const stack = (members: GraphNode[], top: number, columnOffset: Map<number, number>, laneX: number) => {
-    let bottom = top
-    for (const [depth, offset] of columnOffset) {
-      const column = members
-        .filter((n) => (depths.get(n.id) ?? 0) === depth)
-        .sort((a, b) => dagY(a.id) - dagY(b.id) || a.name.localeCompare(b.name))
-      let stackY = top
-      for (const n of column) {
-        positions.set(n.id, { x: laneX + offset, y: stackY })
-        stackY += heightOf(n.id) + ROW_GAP
-      }
-      if (column.length > 0) bottom = Math.max(bottom, stackY - ROW_GAP)
-    }
-    return bottom
+  /** lay one folder's nodes out left to right, normalised to start at (0, 0) */
+  const place = (members: GraphNode[]) => {
+    const ids = new Set(members.map((n) => n.id))
+    const inner = edges.filter((e) => ids.has(e.source) && ids.has(e.target))
+    const laid = layoutDag(members, inner, heightOf).positions
+    const at = (n: GraphNode) => laid.get(n.id)!
+    const minX = Math.min(...members.map((n) => at(n).x))
+    const minY = Math.min(...members.map((n) => at(n).y))
+    const maxX = Math.max(...members.map((n) => at(n).x + NODE_WIDTH))
+    const maxY = Math.max(...members.map((n) => at(n).y + heightOf(n.id)))
+    const local = new Map(members.map((n) => [n.id, { x: at(n).x - minX, y: at(n).y - minY }] as const))
+    return { local, width: maxX - minX, height: maxY - minY }
   }
 
   let laneX = LANE_PADDING
@@ -464,38 +461,31 @@ function layoutFolderBlock(
   for (const stage of STAGE_SEQUENCE) {
     const list = nodes.filter((n) => n.stage === stage)
     if (list.length === 0) continue
-    const distinct = [...new Set(list.map((n) => depths.get(n.id) ?? 0))].sort((a, b) => a - b)
-    const columnOffset = new Map(distinct.map((d, i) => [d, i * (NODE_WIDTH + SUB_COLUMN_GAP)]))
-    const innerWidth = distinct.length * NODE_WIDTH + (distinct.length - 1) * SUB_COLUMN_GAP
 
-    let y = LANE_HEADER
-    // sources without a folder: no box, stacked directly under the stage label
-    const sources = list.filter((n) => n.resource_type === 'source' && !n.folder)
-    if (sources.length > 0) {
-      y = stack(sources, y, columnOffset, laneX) + FOLDER_GAP
-    }
-
-    // model folders, ordered like the group rows; "(root)" last
-    const byFolder = bucket(list.filter((n) => n.resource_type !== 'source' || n.folder), (n) => n.folder ?? UNGROUPED)
+    // folders, ordered like the group rows; "(root)" last
+    const byFolder = bucket(list, (n) => n.folder ?? UNGROUPED)
     const folderOrder = [...byFolder.keys()].sort((a, b) => {
       if (a === UNGROUPED) return 1
       if (b === UNGROUPED) return -1
       return meanY(byFolder.get(a)!) - meanY(byFolder.get(b)!) || a.localeCompare(b)
     })
-    for (const key of folderOrder) {
-      const members = byFolder.get(key)!
-      const bottom = stack(members, y + FOLDER_HEADER, columnOffset, laneX)
-      const height = bottom - y + FOLDER_PADDING
+    const placed = folderOrder.map((key) => ({ key, members: byFolder.get(key)!, ...place(byFolder.get(key)!) }))
+    const innerWidth = Math.max(0, ...placed.map((p) => p.width))
+
+    let y = LANE_HEADER
+    for (const folder of placed) {
+      const height = FOLDER_HEADER + folder.height + FOLDER_PADDING
+      for (const [id, p] of folder.local) positions.set(id, { x: laneX + p.x, y: y + FOLDER_HEADER + p.y })
       folders.push({
-        key: `${pipeline ?? ''}|${stage}|${key === UNGROUPED ? '' : key}`,
+        key: `${pipeline ?? ''}|${stage}|${folder.key === UNGROUPED ? '' : folder.key}`,
         stage,
-        folder: key === UNGROUPED ? null : key,
+        folder: folder.key === UNGROUPED ? null : folder.key,
         pipeline,
         x: laneX - FOLDER_PADDING,
         y,
         width: innerWidth + FOLDER_PADDING * 2,
         height,
-        count: members.length,
+        count: folder.members.length,
       })
       y += height + FOLDER_GAP
     }

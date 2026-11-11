@@ -205,33 +205,37 @@ describe("folders layout (stage boxes with one box per model sub-folder)", () =>
     }
   })
 
-  it('aligns sub-columns across folders of the same stage, and orders stages left to right', () => {
+  it('lays each folder out left to right and orders stages left to right', () => {
     const result = run()
-    // int: depth-0 nodes of different folders ('claim', root) share a sub-column x
-    expect(result.positions.get('c_int')!.x).toBe(result.positions.get('r_int')!.x)
-    // a node one hop deeper inside the stage moves right, in every folder alike
-    expect(result.positions.get('j_int')!.x).toBeGreaterThan(result.positions.get('c_int')!.x)
+    // inside a folder, dependencies flow left to right
     expect(result.positions.get('j2_int')!.x).toBeGreaterThan(result.positions.get('j_int')!.x)
+    // a folder is only as wide as its own chain: one-node folders start at the lane's left edge
+    expect(result.positions.get('c_int')!.x).toBe(result.positions.get('r_int')!.x)
+    // all folder boxes of a stage share one width (tidy column)
+    const ints = result.folders.filter((f) => f.stage === 'int')
+    expect(new Set(ints.map((f) => f.width)).size).toBe(1)
     const lane = (stage: Stage) => result.lanes.find((l) => l.stage === stage)!
     expect(lane('int').x).toBeGreaterThan(lane('src').x + lane('src').width - 1)
     expect(lane('out').x).toBeGreaterThan(lane('int').x)
   })
 
-  it('draws no box for sources without a folder: they sit in the stage above the folder boxes', () => {
-    const withSources = [
-      node('raw1', 'src', null, 'p', null),
-      node('raw2', 'src', null, 'p', null),
-      { ...node('s1', 'src', null, 'p', 'claim') },
+  it('puts sources without a folder in the (root) box, next to top-level models', () => {
+    const mixed = [
+      { ...node('raw', 'src', null, 'p', null), resource_type: 'source' as const },
+      node('top', 'src', null, 'p', null),
+      node('m_src', 'src', null, 'p', 'claim'),
     ]
-    withSources[0].resource_type = 'source'
-    withSources[1].resource_type = 'source'
-    const result = layoutGraph(withSources, [edge('raw1', 's1'), edge('raw2', 's1')], 'lanes', undefined, { zones: 'folders' })
-    expect(result.folders.map((f) => f.folder)).toEqual(['claim']) // no source box
-    const folderTop = result.folders[0].y
-    expect(result.positions.get('raw1')!.y).toBeLessThan(folderTop)
-    expect(result.positions.get('raw2')!.y).toBeLessThan(folderTop)
-    const lane = result.lanes[0]
-    expect(result.positions.get('raw1')!.x).toBeGreaterThanOrEqual(lane.x)
+    const result = layoutGraph(mixed, [edge('raw', 'top')], 'lanes', undefined, { zones: 'folders' })
+    const root = result.folders.find((f) => f.stage === 'src' && f.folder === null)!
+    expect(root.count).toBe(2) // raw + top
+    for (const id of ['raw', 'top']) {
+      const p = result.positions.get(id)!
+      expect(p.x).toBeGreaterThanOrEqual(root.x)
+      expect(p.y).toBeGreaterThanOrEqual(root.y)
+      const n = mixed.find((m) => m.id === id)!
+      expect(p.y + cardHeight(n)).toBeLessThanOrEqual(root.y + root.height)
+    }
+    expect(result.folders.filter((f) => f.stage === 'src').map((f) => f.folder).sort()).toEqual(['claim', null].sort())
   })
 
   it('puts a source with a folder inside that folder box, next to its consumers', () => {

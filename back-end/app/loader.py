@@ -45,7 +45,7 @@ class LineageNode:
     # dbt `group` (models: `config.group`); sources inherit it from their consumers in _link
     group: str | None = None
     # box inside the stage: the sub-folder of a model (see config.folder_of). Sources take the
-    # folder most of their consumers live in (_infer_source_folders); None = no box
+    # folder most of their consumers live in (_infer_source_folders); None = the (root) box
     folder: str | None = None
     schema_name: str | None = None
     database: str | None = None

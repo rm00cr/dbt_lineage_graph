@@ -17,11 +17,6 @@ export function folderKey(n: Pick<GraphNode, 'pipeline' | 'stage' | 'folder'>, s
   return `${split ? n.pipeline : ''}|${n.stage}|${n.folder ?? ''}`
 }
 
-/** Sources without a folder are drawn unboxed, so they cannot be collapsed. */
-export function isCollapsible(n: GraphNode): boolean {
-  return n.resource_type !== 'source' || Boolean(n.folder)
-}
-
 export const collapsedNodeId = (key: string) => `${COLLAPSED_PREFIX}${key}`
 export const isCollapsedNodeId = (id: string) => id.startsWith(COLLAPSED_PREFIX)
 
@@ -61,7 +56,7 @@ export function collapseFolders(
   const grouped = new Map<string, GraphNode[]>()
   for (const n of nodes) {
     const key = folderKey(n, split)
-    if (collapsed.has(key) && !pinned.has(key) && isCollapsible(n)) {
+    if (collapsed.has(key) && !pinned.has(key)) {
       grouped.set(key, [...(grouped.get(key) ?? []), n])
     } else {
       viewNodes.push(n)
@@ -128,7 +123,7 @@ function mergeChange(a: ChangeStatus | null | undefined, b: ChangeStatus | null 
   return a === b ? a : 'modified'
 }
 
-/** Keys of every collapsible folder box in the graph. */
+/** Keys of every folder box in the graph (sources without a folder sit in "(root)"). */
 export function allFolderKeys(nodes: GraphNode[], split: boolean): string[] {
-  return [...new Set(nodes.filter(isCollapsible).map((n) => folderKey(n, split)))]
+  return [...new Set(nodes.map((n) => folderKey(n, split)))]
 }

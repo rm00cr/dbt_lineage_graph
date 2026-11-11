@@ -289,7 +289,7 @@ def test_folder_of_is_first_subfolder_below_layer() -> None:
     # numeric prefix on the layer folder is ignored, and deeper levels are flattened
     assert folder_of("models/02_intermediate/contract/sub/deep/int_x.sql") == "contract"
     assert folder_of("models\\03_output\\datamart\\out_x.sql") == "datamart"
-    # directly in the layer folder -> no box
+    # directly in the layer folder -> the (root) box
     assert folder_of("models/03_output/crpc_statistik_int.sql") is None
     # no layer folder at all
     assert folder_of("models/misc/x.sql") is None

@@ -60,15 +60,18 @@ describe('collapseFolders', () => {
     expect(view.nodes).toHaveLength(4)
   })
 
-  it('does not collapse unboxed sources', () => {
+  it('collapses sources without a folder together with the (root) box', () => {
     const src = { ...node('s', 'src', null), resource_type: 'source' as const }
+    const top = node('t', 'src', null)
     const k = folderKey(src, false)
-    expect(allFolderKeys([src], false)).toEqual([])
-    expect(collapseFolders([src], [], new Set([k]), false).nodes).toEqual([src])
+    expect(allFolderKeys([src, top], false)).toEqual([k])
+    const view = collapseFolders([src, top], [edge('s', 't')], new Set([k]), false)
+    expect(view.nodes.map((n) => n.id)).toEqual([collapsedNodeId(k)])
+    expect(view.members.get(collapsedNodeId(k))).toEqual(['s', 't'])
   })
 
   it('lays the summary node out inside the folder box and shrinks the stack', () => {
-    const flat = edges.filter((e) => e.id !== 'a1->a2') // same sub-column, so the folder stacks
+    const flat = edges.filter((e) => e.id !== 'a1->a2') // no edge inside the folder, so its nodes stack
     const open = layoutGraph(nodes, flat, 'lanes', undefined, { zones: 'folders' })
     const view = collapseFolders(nodes, flat, new Set([key]), false)
     const closed = layoutGraph(view.nodes, view.edges, 'lanes', undefined, { zones: 'folders' })
