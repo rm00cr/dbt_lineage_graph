@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from .column_lineage import ColumnLineageIndex, Direction, build_column_lineage
+from .column_lineage import ColumnLineageCache, ColumnLineageIndex, Direction, build_column_lineage
 from .config import STAGE_ORDER, ArtifactPair, ExecutionMode, Settings
 from .dbt_runner import DbtRunner, GenerationJob, JobTrigger
 from .diff import GraphDiff, diff_graphs
@@ -90,6 +90,9 @@ class GraphService:
         self._graph_cache: dict[tuple[tuple[str, str], ...], LineageGraph] = {}
         # built graphs per combination of active modes, so switching back is instant
         self._cache: dict[tuple[tuple[str, str], ...], tuple[LineageGraph, ColumnLineageIndex]] = {}
+        # per-model column lineage, kept across reloads and mode switches: its keys cover
+        # the inputs, so only models whose SQL or upstream columns changed are re-parsed
+        self.column_cache = ColumnLineageCache(settings.column_lineage_cache)
         self._lock = threading.RLock()
         self.graph: LineageGraph
         self.column_lineage: ColumnLineageIndex
@@ -119,8 +122,9 @@ class GraphService:
         built = self._cache.get(key)
         if built is None:
             graph = load_graph(self._effective_pairs())
-            built = (graph, build_column_lineage(graph))
+            built = (graph, build_column_lineage(graph, cache=self.column_cache))
             self._cache[key] = built
+            self.column_cache.save()
         self.graph, self.column_lineage = built
         self.stack = self._build_stack()
 

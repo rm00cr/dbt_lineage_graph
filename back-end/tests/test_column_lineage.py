@@ -3,9 +3,16 @@
 from __future__ import annotations
 
 import copy
+import json
+from dataclasses import replace
+from pathlib import Path
 
-from app.column_lineage import ColumnLineageIndex, build_column_lineage, dialect_for
+import pytest
+
+from app.column_lineage import ColumnLineageCache, ColumnLineageIndex, build_column_lineage, dialect_for
+from app.config import DEFAULT_PIPELINES_CONFIG, Settings
 from app.loader import Column, LineageGraph, LineageNode, _link
+from app.service import GraphService
 
 DB = "proj"
 
@@ -50,12 +57,20 @@ def _model(
     )
 
 
-def _build(*nodes: LineageNode) -> ColumnLineageIndex:
+def _build(*nodes: LineageNode, cache: ColumnLineageCache | None = None) -> ColumnLineageIndex:
     graph = LineageGraph(adapter_type="bigquery")
     for node in copy.deepcopy(nodes):
         graph.nodes[node.id] = node
     _link(graph)
-    return build_column_lineage(graph)
+    return build_column_lineage(graph, cache=cache)
+
+
+def _snapshot(index: ColumnLineageIndex) -> tuple[list, list]:
+    """Everything a build produces, comparable between builds."""
+    return (
+        sorted((e.id, e.kind, e.expression) for e in index.edges),
+        sorted((m.model_id, m.status, m.error, m.warnings) for m in index.models.values()),
+    )
 
 
 def _edges(index: ColumnLineageIndex, target: str) -> dict[tuple[str, str], str]:
@@ -255,3 +270,131 @@ def test_fixtures_trace_crosses_pipelines(graph: LineageGraph) -> None:
     assert ("model.bestand_mfp.out_mfp_contracts", "canton") in trace.nodes
     hop = next(e for e in trace.edges if e.target_model.startswith("source.schaden_claims"))
     assert hop.kind == "passthrough"
+
+
+# --------------------------------------------------------------------------------------
+# per-model cache
+# --------------------------------------------------------------------------------------
+
+# every path through the builder: catalog columns, registered select lists, ephemeral
+# inlining, partial and failed models
+CACHE_CASE = (
+    ORDERS,
+    CUSTOMERS,
+    _model("first", f"select order_id, amount from `{DB}`.raw.orders", [ORDERS.id], columns=[]),
+    _model("second", f"select * from `{DB}`.analytics.first", ["model.p.first"]),
+    _model(
+        "eph",
+        f"select order_id, customer_id, amount from `{DB}`.raw.orders",
+        [ORDERS.id],
+        columns=["amount"],
+        materialization="ephemeral",
+    ),
+    _model(
+        "agg",
+        f"""with __dbt__cte__eph as (select order_id, customer_id, amount from `{DB}`.raw.orders)
+            select e.customer_id, c.name, sum(e.amount) as revenue
+            from __dbt__cte__eph as e join `{DB}`.raw.customers c using (customer_id)
+            group by 1, 2""",
+        ["model.p.eph", CUSTOMERS.id],
+    ),
+    _model(
+        "partial",
+        f"select o.order_id, x.flag from `{DB}`.raw.orders o join `{DB}`.raw.nope x using (order_id)",
+        [ORDERS.id],
+    ),
+    _model("broken", "select from where (", [ORDERS.id]),
+)
+CACHE_CASE_MODELS = sum(1 for n in CACHE_CASE if n.resource_type == "model")
+
+
+def test_cached_build_equals_a_fresh_build() -> None:
+    cache = ColumnLineageCache()
+    cold = _build(*CACHE_CASE, cache=cache)
+    assert _snapshot(cold) == _snapshot(_build(*CACHE_CASE))
+    statuses = {m.status for m in cold.models.values()}
+    assert statuses == {"ok", "partial", "failed"}, statuses
+    # the broken model fails while parsing, before it has a cache key
+    assert (cache.hits, cache.misses) == (0, CACHE_CASE_MODELS - 1)
+
+    warm = _build(*CACHE_CASE, cache=cache)
+    assert cache.hits == CACHE_CASE_MODELS - 1
+    assert _snapshot(warm) == _snapshot(cold)
+    # registered select lists are replayed too: `second` still resolves `first`'s columns
+    assert set(_edges(warm, "second")) == {("first", "order_id->order_id"), ("first", "amount->amount")}
+
+
+def test_cache_reparses_downstream_of_changed_columns() -> None:
+    model = _model("m", f"select * from `{DB}`.raw.customers", [CUSTOMERS.id])
+    cache = ColumnLineageCache()
+    _build(CUSTOMERS, model, cache=cache)
+
+    wider = _source("customers", ["customer_id", "name", "country", "segment"])
+    index = _build(wider, model, cache=cache)
+    assert cache.misses == 2  # the same SQL, but `select *` now means another column
+    assert ("customers", "segment->segment") in _edges(index, "m")
+
+    changed_sql = replace(model, compiled_code=f"select name from `{DB}`.raw.customers")
+    assert set(_edges(_build(wider, changed_sql, cache=cache), "m")) == {("customers", "name->name")}
+    assert cache.misses == 3
+
+
+def test_cache_survives_a_restart_through_its_file(tmp_path: Path) -> None:
+    path = tmp_path / "sub" / "cache.json"
+    first = ColumnLineageCache(path)
+    cold = _build(*CACHE_CASE, cache=first)
+    first.save()
+    assert path.is_file()
+
+    second = ColumnLineageCache(path)
+    assert len(second) == len(first) > 0
+    assert _snapshot(_build(*CACHE_CASE, cache=second)) == _snapshot(cold)
+    assert second.misses == 0
+
+
+def test_cache_file_from_another_version_or_broken_is_ignored(tmp_path: Path) -> None:
+    path = tmp_path / "cache.json"
+    cache = ColumnLineageCache(path)
+    _build(*CACHE_CASE, cache=cache)
+    cache.save()
+
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    payload["version"] = "0/old"
+    path.write_text(json.dumps(payload), encoding="utf-8")
+    assert len(ColumnLineageCache(path)) == 0
+
+    path.write_text("{ not json", encoding="utf-8")
+    assert len(ColumnLineageCache(path)) == 0
+
+
+def test_service_reload_reuses_the_cache_and_writes_its_file(settings: Settings, tmp_path: Path) -> None:
+    path = tmp_path / "column_lineage.json"
+    service = GraphService(replace(settings, column_lineage_cache=path))
+    before = _snapshot(service.column_lineage)
+    misses = service.column_cache.misses
+    assert misses > 0 and path.is_file()
+
+    service.reload()  # e.g. after a dbt run: the artifacts are read again, nothing changed
+    assert service.column_cache.misses == misses
+    assert _snapshot(service.column_lineage) == before
+
+    restarted = GraphService(replace(settings, column_lineage_cache=path))
+    assert restarted.column_cache.misses == 0
+    assert _snapshot(restarted.column_lineage) == before
+
+
+def test_settings_read_the_cache_path(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+    monkeypatch.setenv("PIPELINES_CONFIG", str(DEFAULT_PIPELINES_CONFIG))
+    monkeypatch.setenv("COLUMN_LINEAGE_CACHE", str(tmp_path / "c.json"))
+    assert Settings.from_env().column_lineage_cache == tmp_path / "c.json"
+    monkeypatch.delenv("COLUMN_LINEAGE_CACHE")
+    assert Settings.from_env().column_lineage_cache is None
+
+
+def test_cache_drops_least_recently_used_entries() -> None:
+    cache = ColumnLineageCache(max_entries=2)
+    for key in ("a", "b", "c"):
+        cache.put(key, {"n": key})
+    assert len(cache) == 2
+    assert cache.get("a") is None
+    assert cache.get("c") == {"n": "c"}

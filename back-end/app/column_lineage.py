@@ -16,6 +16,19 @@ How it works
 * Parse problems never break loading: each model gets a status (``ok`` / ``partial`` /
   ``failed`` / ``skipped``) with the reason, so the UI can be honest about coverage.
 
+Performance
+-----------
+* One sqlglot ``MappingSchema`` is filled incrementally and shared by every ``qualify`` /
+  ``lineage`` call. Passing a plain dict would make sqlglot re-normalise the whole schema
+  twice per model, which grows with models x all columns.
+* No defensive copies of the parsed SQL, and ``trim_selects=False``: trimming copies the
+  whole SELECT for every lineage node, and only leaf sources (tables) are read here.
+* An optional ``ColumnLineageCache`` keeps each model's result, keyed by everything that
+  can change it (SQL, dialect, the columns of every relation it reads, ...). Rebuilds after
+  a reload, a regenerated pipeline or a mode switch only re-parse models that changed; with
+  a file path the cache also survives restarts.
+* ``sqlglot[c]`` (compiled build, see pyproject.toml) speeds up parsing and lineage.
+
 Like ``loader.py`` this module is plain Python (no FastAPI / Pydantic). The resulting
 ``ColumnLineageIndex`` does not care where edges come from, so another provider (dbt
 Fusion's ``column_lineage`` output, OpenLineage events) could fill it later.
@@ -23,11 +36,16 @@ Fusion's ``column_lineage`` output, OpenLineage events) could fill it later.
 
 from __future__ import annotations
 
+import hashlib
+import json
 import logging
-from collections import deque
+import os
+import threading
+from collections import OrderedDict, deque
 from collections.abc import Iterator
 from dataclasses import dataclass, field
-from typing import Literal
+from pathlib import Path
+from typing import Any, Literal
 
 import sqlglot
 from sqlglot import exp
@@ -35,6 +53,7 @@ from sqlglot.errors import SqlglotError
 from sqlglot.lineage import Node, lineage
 from sqlglot.optimizer.qualify import qualify
 from sqlglot.optimizer.scope import build_scope
+from sqlglot.schema import MappingSchema
 
 from .loader import LineageGraph, LineageNode, table_name
 
@@ -46,6 +65,9 @@ Direction = Literal["up", "down", "both"]
 
 EPHEMERAL_CTE_PREFIX = "__dbt__cte__"
 MAX_EXPRESSION_CHARS = 240
+# bump whenever the builder's output for the same input changes: invalidates cached results
+CACHE_VERSION = 1
+CACHE_MAX_ENTRIES = 100_000
 _KIND_RANK: dict[str, int] = {"passthrough": 0, "rename": 1, "transform": 2, "aggregate": 3}
 
 # dbt adapter_type -> sqlglot dialect (only where the names differ)
@@ -171,6 +193,95 @@ class ColumnLineageIndex:
 
 
 # --------------------------------------------------------------------------------------
+# cache
+# --------------------------------------------------------------------------------------
+
+
+class ColumnLineageCache:
+    """Per-model build results, keyed by a hash of every input that can change them.
+
+    Entries are plain JSON-able dicts (see ``_Builder._model``). Least recently used entries
+    are dropped beyond ``max_entries``. With ``path`` the cache is read on creation and
+    written by ``save()``; a missing, unreadable or outdated file just means a cold cache.
+    """
+
+    def __init__(self, path: Path | None = None, max_entries: int = CACHE_MAX_ENTRIES) -> None:
+        self.path = path
+        self.max_entries = max_entries
+        self.hits = 0
+        self.misses = 0
+        self._entries: OrderedDict[str, dict[str, Any]] = OrderedDict()
+        self._dirty = False
+        self._lock = threading.Lock()
+        if path is not None:
+            self._load(path)
+
+    def __len__(self) -> int:
+        return len(self._entries)
+
+    def get(self, key: str) -> dict[str, Any] | None:
+        with self._lock:
+            entry = self._entries.get(key)
+            if entry is None:
+                self.misses += 1
+                return None
+            self.hits += 1
+            self._entries.move_to_end(key)
+            return entry
+
+    def put(self, key: str, entry: dict[str, Any]) -> None:
+        with self._lock:
+            self._entries[key] = entry
+            self._entries.move_to_end(key)
+            while len(self._entries) > self.max_entries:
+                self._entries.popitem(last=False)
+            self._dirty = True
+
+    def clear(self) -> None:
+        with self._lock:
+            self._entries.clear()
+            self._dirty = True
+
+    def save(self) -> None:
+        """Write the cache to ``path`` (atomically) if it changed since the last save."""
+        if self.path is None:
+            return
+        with self._lock:
+            if not self._dirty:
+                return
+            payload = {"version": _cache_version(), "entries": self._entries}
+            text = json.dumps(payload, separators=(",", ":"))
+            self._dirty = False
+        try:
+            self.path.parent.mkdir(parents=True, exist_ok=True)
+            tmp = self.path.with_name(f"{self.path.name}.{os.getpid()}.tmp")
+            tmp.write_text(text, encoding="utf-8")
+            os.replace(tmp, self.path)
+        except OSError as error:
+            log.warning("could not write the column lineage cache %s: %s", self.path, error)
+
+    def _load(self, path: Path) -> None:
+        try:
+            payload = json.loads(path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return
+        except (OSError, ValueError) as error:
+            log.warning("ignoring unreadable column lineage cache %s: %s", path, error)
+            return
+        if not isinstance(payload, dict) or payload.get("version") != _cache_version():
+            log.info("column lineage cache %s is from another version; starting cold", path)
+            return
+        entries = payload.get("entries")
+        if isinstance(entries, dict):
+            self._entries.update(entries)
+
+
+def _cache_version() -> str:
+    """Our format version + sqlglot's: another sqlglot may produce other lineage."""
+    return f"{CACHE_VERSION}/{sqlglot.__version__}"
+
+
+# --------------------------------------------------------------------------------------
 # build
 # --------------------------------------------------------------------------------------
 
@@ -197,10 +308,18 @@ def _topological(graph: LineageGraph) -> list[LineageNode]:
 
 
 class _Builder:
-    def __init__(self, graph: LineageGraph, dialect: str | None) -> None:
+    def __init__(
+        self, graph: LineageGraph, dialect: str | None, cache: ColumnLineageCache | None = None
+    ) -> None:
         self.graph = graph
         self.dialect = dialect
+        self.cache = cache
         self.index = ColumnLineageIndex(dialect=dialect)
+        # the same tables as `schema`, normalised once for sqlglot (see "Performance")
+        self.mapping = MappingSchema(dialect=dialect)
+        # lowercase table name -> (database, schema, table) keys in `schema`: what an
+        # unqualified table reference may resolve to (part of the cache key)
+        self.tables_by_name: dict[str, set[tuple[str, str, str]]] = {}
         # (database, schema, table) -> node id, all lowercased
         self.relations: dict[tuple[str, str, str], str] = {}
         self.relations_no_db: dict[tuple[str, str], str] = {}
@@ -235,8 +354,28 @@ class _Builder:
         if not columns or not node.schema_name:
             return
         self.columns[node.id] = {name.lower(): name for name in columns}
-        tables = self.schema.setdefault(node.database or "", {}).setdefault(node.schema_name, {})
-        tables[table_name(node)] = {name: self._safe_type(t) for name, t in columns.items()}
+        database, table = node.database or "", table_name(node)
+        tables = self.schema.setdefault(database, {}).setdefault(node.schema_name, {})
+        replacing = table in tables
+        tables[table] = {name: self._safe_type(t) for name, t in columns.items()}
+        self.tables_by_name.setdefault(table.lower(), set()).add((database, node.schema_name, table))
+
+        # an empty database stays a (blank) level, exactly like the nested dict
+        self.mapping.add_table(
+            exp.Table(
+                this=exp.to_identifier(table, quoted=True),
+                db=exp.to_identifier(node.schema_name, quoted=True),
+                catalog=exp.Identifier(this=database, quoted=True),
+            ),
+            tables[table],
+            dialect=self.dialect,
+        )
+        if replacing:
+            # sqlglot caches table lookups by the referencing expression (alias and all);
+            # add_table only evicts the canonical key, so drop them all on an update
+            find_cache = getattr(self.mapping, "_find_cache", None)
+            if isinstance(find_cache, dict):
+                find_cache.clear()
 
     def _column_name(self, node_id: str, column: str) -> str:
         """Return the catalog spelling of a column, falling back to sqlglot's."""
@@ -271,22 +410,110 @@ class _Builder:
                 )
         return self.index
 
-    def _model(self, node: LineageNode) -> None:
-        result = ModelLineage(node.id, "ok")
-        self.index.models[node.id] = result
-
+    def _parse(self, node: LineageNode, result: ModelLineage) -> exp.Query:
         parsed = sqlglot.parse_one(node.compiled_code or "", dialect=self.dialect)
         if not isinstance(parsed, exp.Query):
             raise TypeError(f"expected a SELECT statement, got {type(parsed).__name__}")
-        parsed = self._inline_ephemerals(parsed, result)
+        return self._inline_ephemerals(parsed, result)
 
+    def _model(self, node: LineageNode) -> None:
+        result = ModelLineage(node.id, "ok")
+        self.index.models[node.id] = result
+        parsed = self._parse(node, result)
+
+        key = self._cache_key(node, parsed, result.warnings) if self.cache is not None else None
+        if key is not None and self.cache is not None:
+            entry = self.cache.get(key)
+            if entry is not None:
+                self._replay(node, entry)
+                return
+
+        # what this model contributes (also after a failure), recorded for the cache
+        self._registered: dict[str, str | None] | None = None
+        edges: list[ColumnEdge] = []
         try:
-            qualified = qualify(parsed.copy(), schema=self.schema, dialect=self.dialect)
+            self._trace(node, parsed, result, edges)
+        except Exception as error:  # noqa: BLE001 - one bad model must not break loading
+            log.warning("column lineage failed for %s: %s", node.id, error)
+            result = ModelLineage(node.id, "failed", f"{type(error).__name__}: {error}"[:500])
+            self.index.models[node.id] = result
+        if key is not None and self.cache is not None:
+            self.cache.put(
+                key,
+                {
+                    "status": result.status,
+                    "error": result.error,
+                    "warnings": result.warnings,
+                    "columns": self._registered,
+                    "edges": [
+                        [e.source_model, e.source_column, e.target_column, e.kind, e.expression]
+                        for e in edges
+                    ],
+                },
+            )
+
+    def _replay(self, node: LineageNode, entry: dict[str, Any]) -> None:
+        """Apply a cached result: same index entries and schema registration as ``_trace``."""
+        self.index.models[node.id] = ModelLineage(
+            node.id, entry["status"], entry["error"], list(entry["warnings"])
+        )
+        if entry["columns"] is not None:
+            self._register_columns(node, entry["columns"])
+        for source_model, source_column, target_column, kind, expression in entry["edges"]:
+            self.index.add(ColumnEdge(source_model, source_column, node.id, target_column, kind, expression))
+
+    def _cache_key(self, node: LineageNode, parsed: exp.Query, warnings: list[str]) -> str:
+        """Hash of every input ``_trace`` reads: the model's SQL and identity, and for each
+        relation it references the node it resolves to and that node's columns."""
+        relations: dict[str, Any] = {}
+        for table in parsed.find_all(exp.Table):
+            db, sch, tbl = _norm(table.catalog), _norm(table.db), _norm(table.name)
+            ref = f"{db}.{sch}.{tbl}"
+            if ref in relations:
+                continue
+            resolved = self._resolve(table)
+            # every schema table sqlglot may match the (possibly partial) reference to
+            candidates = sorted(
+                k
+                for k in self.tables_by_name.get(tbl, ())
+                if (not sch or _norm(k[1]) == sch) and (not db or _norm(k[0]) == db)
+            )
+            relations[ref] = [
+                resolved,
+                self.columns.get(resolved) if resolved else None,
+                [[*k, self.schema[k[0]][k[1]][k[2]]] for k in candidates],
+            ]
+        own = self.schema.get(node.database or "", {}).get(node.schema_name or "", {}).get(table_name(node))
+        payload = [
+            _cache_version(),
+            self.dialect,
+            node.id,
+            node.database,
+            node.schema_name,
+            table_name(node),
+            node.compiled_code,
+            own,
+            self.columns.get(node.id),
+            warnings,
+            sorted(relations.items()),
+        ]
+        text = json.dumps(payload, separators=(",", ":"), default=str)
+        return hashlib.sha256(text.encode("utf-8")).hexdigest()
+
+    def _trace(
+        self, node: LineageNode, parsed: exp.Query, result: ModelLineage, edges: list[ColumnEdge]
+    ) -> None:
+        """Qualify and trace ``parsed`` into the index; the edges are also appended to
+        ``edges`` and a schema registration for ``node`` is noted in ``self._registered``."""
+        try:
+            # qualify works in place: the rare fallback re-parses instead of copying up front
+            qualified = qualify(parsed, schema=self.mapping, dialect=self.dialect)
         except SqlglotError as error:
             result.status = "partial"
             result.warnings.append(f"could not resolve every column ({error}); lineage may be incomplete")
+            reparsed = self._parse(node, ModelLineage(node.id, "ok"))
             qualified = qualify(
-                parsed.copy(), schema=self.schema, dialect=self.dialect, validate_qualify_columns=False
+                reparsed, schema=self.mapping, dialect=self.dialect, validate_qualify_columns=False
             )
 
         # models without catalog columns still feed their downstreams; columns documented in
@@ -297,10 +524,20 @@ class _Builder:
             documented = (
                 self.schema.get(node.database or "", {}).get(node.schema_name or "", {}).get(table_name(node), {})
             )
-            self._register_columns(node, {**{name: None for name in qualified.named_selects}, **documented})
+            registered = {**{name: None for name in qualified.named_selects}, **documented}
+            self._register_columns(node, registered)
+            self._registered = registered
 
         scope = build_scope(qualified)
-        roots = lineage(None, qualified, schema=self.schema, dialect=self.dialect, scope=scope)
+        roots = lineage(
+            None,
+            qualified,
+            schema=self.mapping,
+            dialect=self.dialect,
+            scope=scope,
+            trim_selects=False,  # only leaf sources are read; trimming copies every SELECT
+            copy=False,
+        )
         if isinstance(roots, Node):  # single-column queries
             roots = {roots.name: roots}
 
@@ -323,6 +560,7 @@ class _Builder:
                     best[key] = edge
             for edge in best.values():
                 self.index.add(edge)
+                edges.append(edge)
 
         if unknown:
             result.status = "partial"
@@ -416,6 +654,10 @@ def _leaf_column(leaf: Node) -> str:
     return column.name
 
 
-def build_column_lineage(graph: LineageGraph, dialect: str | None = None) -> ColumnLineageIndex:
-    """Parse every model of ``graph`` and return the column-level lineage index."""
-    return _Builder(graph, dialect or dialect_for(graph.adapter_type)).build()
+def build_column_lineage(
+    graph: LineageGraph, dialect: str | None = None, cache: ColumnLineageCache | None = None
+) -> ColumnLineageIndex:
+    """Parse every model of ``graph`` and return the column-level lineage index.
+
+    With ``cache``, models whose inputs are unchanged reuse their earlier result."""
+    return _Builder(graph, dialect or dialect_for(graph.adapter_type), cache).build()

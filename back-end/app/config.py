@@ -52,6 +52,8 @@ Environment variables
     PIPELINES_CONFIG    path to the pipelines YAML      (default: ../fixtures/pipelines.yaml)
     DBT_EXECUTABLE      dbt executable used to generate artifacts (default: dbt on PATH)
     BQ_CONSOLE_PROJECT  override the GCP project used for BigQuery deeplinks (3.1)
+    COLUMN_LINEAGE_CACHE  JSON file keeping parsed column lineage across restarts
+                        (default: unset, the cache lives in memory only)
     CORS_ORIGINS        ','-separated allowed origins (default: Vite dev server)
 """
 
@@ -337,6 +339,8 @@ class Settings:
     artifacts: list[ArtifactPair] = field(default_factory=list)
     bq_console_project: str | None = None
     cors_origins: list[str] = field(default_factory=list)
+    # file keeping per-model column lineage across restarts; None -> in memory only
+    column_lineage_cache: Path | None = None
 
     @staticmethod
     def from_env() -> Settings:
@@ -345,10 +349,12 @@ class Settings:
             "CORS_ORIGINS",
             "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173",
         )
+        cache_env = os.getenv("COLUMN_LINEAGE_CACHE")
         return Settings(
             artifacts=load_pipelines_config(config_path),
             bq_console_project=os.getenv("BQ_CONSOLE_PROJECT") or None,
             cors_origins=[o.strip() for o in origins_env.split(",") if o.strip()],
+            column_lineage_cache=Path(cache_env).expanduser() if cache_env else None,
         )
 
 
