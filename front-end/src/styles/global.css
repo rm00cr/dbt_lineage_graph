@@ -3181,10 +3181,22 @@ mark {
 .mode-chip[data-front='true'] .mode-chip__front {
   color: var(--accent);
 }
+.mode-chip__regen {
+  padding: 3px 3px;
+}
+.mode-chip__regen:disabled {
+  color: var(--accent);
+}
+.mode-chip__failed {
+  display: inline-flex;
+  align-items: center;
+  padding: 0 1px;
+  color: var(--danger);
+}
 .mode-chip button:disabled {
   cursor: default;
 }
-.mode-chip button:disabled:not(.mode-chip__front) {
+.mode-chip button:disabled:not(.mode-chip__front):not(.mode-chip__regen) {
   opacity: 0.5;
 }
 .mode-chip button:hover:not(:disabled) {

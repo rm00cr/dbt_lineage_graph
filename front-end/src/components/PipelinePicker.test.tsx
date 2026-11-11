@@ -95,7 +95,7 @@ describe('PipelinePicker execution modes', () => {
     expect(setPipelineModes).not.toHaveBeenCalled()
   })
 
-  it('offers generation for missing modes and regenerates the shown one', async () => {
+  it('offers generation for missing modes and regenerates any mode from its chip', async () => {
     prime()
     const regenerate = vi.fn().mockResolvedValue(undefined)
     const running: GenerationJob = {
@@ -124,10 +124,56 @@ describe('PipelinePicker execution modes', () => {
     expect(screen.getByLabelText('generating incremental')).toBeDefined()
     expect(screen.getByLabelText('full is in front')).toBeDefined() // still, until it is done
 
+    // every mode has its own button; no pipeline-level one for a pipeline with modes
+    expect(screen.queryByLabelText('Regenerate bestand_mfp')).toBeNull()
     await user.click(screen.getByLabelText('Regenerate bestand_mfp (full)'))
-    expect(regenerate).toHaveBeenCalledWith('bestand_mfp', 'full')
+    expect(regenerate).toHaveBeenLastCalledWith('bestand_mfp', 'full')
+    // a mode that is not shown
+    await user.click(screen.getByLabelText('Generate bestand_mfp (monthly)'))
+    expect(regenerate).toHaveBeenLastCalledWith('bestand_mfp', 'monthly')
+    // the running one cannot be started twice
+    expect((screen.getByLabelText('Regenerate bestand_mfp (incremental)') as HTMLButtonElement).disabled).toBe(true)
     // schaden_claims has no project_dir
     expect(screen.queryByLabelText(/Regenerate schaden_claims/)).toBeNull()
+  })
+
+  it('marks the mode whose last run failed in its chip', async () => {
+    prime()
+    const failed: GenerationJob = {
+      id: 'j2',
+      pipeline: 'bestand_mfp',
+      mode: 'incremental',
+      trigger: 'user',
+      status: 'failed',
+      started_at: new Date().toISOString(),
+      finished_at: new Date().toISOString(),
+      error: 'dbt docs generate exited with code 2',
+      command: 'dbt docs generate',
+      log_tail: [],
+    }
+    useExplorerStore.setState({
+      jobs: [failed],
+      pipelineInfo: [{ ...PIPELINES[0], can_generate: true }, PIPELINES[1]],
+    })
+    await openPicker()
+
+    const marker = screen.getByLabelText('last dbt run of incremental failed')
+    expect(marker.getAttribute('title')).toContain('exited with code 2')
+    expect(screen.queryByLabelText('last dbt run of full failed')).toBeNull()
+    expect((screen.getByLabelText('Regenerate bestand_mfp (incremental)') as HTMLButtonElement).disabled).toBe(false)
+  })
+
+  it('keeps the pipeline-level button for a pipeline without modes', async () => {
+    prime()
+    const regenerate = vi.fn().mockResolvedValue(undefined)
+    useExplorerStore.setState({
+      regenerate,
+      pipelineInfo: [PIPELINES[0], { ...PIPELINES[1], can_generate: true }],
+    })
+    const user = await openPicker()
+
+    await user.click(screen.getByLabelText('Regenerate schaden_claims'))
+    expect(regenerate).toHaveBeenCalledWith('schaden_claims', null)
   })
 
   it('shows a failed switch', async () => {
