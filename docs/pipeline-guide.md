@@ -125,7 +125,7 @@ sources:
 ```
 
 ```sql
--- schaden_claims/models/01_source/src_claims_mfp_contracts.sql
+-- schaden_claims/models/01_source/from_bestand/src_claims_mfp_contracts.sql
 select contract_id, partner_id, product_code, canton, annual_premium_chf
 from {{ source('mfp_output', 'out_mfp_contracts') }}
 ```

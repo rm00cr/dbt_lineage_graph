@@ -26,7 +26,9 @@ bestand_mfp ──▶ schaden_claims ──▶ finance_controlling
 The layers (stage columns) are declared in `pipelines.yaml`: `bestand_mfp` and
 `schaden_claims` use `models/01_source` → `02_intermediate` → `03_output` (the top-level
 `layers:`), `finance_controlling` overrides them with `staging` → `intermediate` → `marts`
-(`stg_` / `int_` / `mart_` models). All use dbt groups with owners, tags, `meta.execution_mode` (daily / hourly / ...),
+(`stg_` / `int_` / `mart_` models). Inside a layer, models sit in topic sub-folders
+(e.g. `02_intermediate/contracts/`); these become the boxes of **Zones → Groups**, and a few
+models stay directly in the layer folder to show its `(root)` box. All use dbt groups with owners, tags, `meta.execution_mode` (daily / hourly / ...),
 descriptions and a few tests. All three are called `dbt_pnc`, as in production;
 `pipelines.yaml` gives them their names. A pipeline reads another one's output by declaring
 the table as a dbt source, and the Explorer links them by table name.
