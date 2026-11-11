@@ -1,12 +1,15 @@
 /**
  * Content of the guided tours (started from the Help menu, see useTourStore).
  *
- * A step spotlights `target` (a CSS selector, or a function returning one) and explains it.
- * `enter` runs whenever the step is shown, forward or back, and puts the app in the state the
- * step talks about, so it must be idempotent. `when` drops a step that does not apply to the
- * loaded project (no sub-folders, no boundary violations, ...); it is evaluated at start.
+ * Tours run on the demo project (api/mock), so every step has something to show.
  *
- * Targets that are not on screen get a centred card, so a sparse project never breaks a tour.
+ * A step spotlights `target` (CSS selectors, or a function returning them) and explains it.
+ * `enter` runs whenever the step is shown, forward or back, and puts the app in exactly the
+ * state the step talks about (menus open or closed, comparison loaded or not, ...), so it
+ * must be idempotent. `when` drops a step that does not apply to the project; it is
+ * evaluated at start, on the demo project.
+ *
+ * Targets that are not on screen get a centred card, so a missing element never breaks a tour.
  */
 
 import {
@@ -20,12 +23,14 @@ import {
 } from 'lucide-react'
 import type { ReactNode } from 'react'
 
+import { MOCK_COMPARE_MODIFIED_ID, mockCompare } from '../api/mock'
 import type { GraphNode } from '../api/types'
 import { boundaryViolations } from '../graph/boundary'
 import { useExplorerStore } from '../store/useExplorerStore'
 
 export interface TourStep {
-  target?: string | (() => string | null)
+  /** several selectors are spotlighted together (one ring around all of them) */
+  target?: string | string[] | (() => string | string[] | null)
   title: string
   body: ReactNode
   enter?: () => void | Promise<void>
@@ -89,17 +94,90 @@ async function openDemo(tab: 'overview' | 'code' | 'schema' | 'lineage') {
   }
 }
 
+/**
+ * Resolves once the detail of `id` is loaded (or failed, or another model was opened).
+ * openDemo returns at once when the model is already open, possibly with its detail still
+ * loading from the previous step.
+ */
+export function waitForDetail(id: string, timeout = 5000): Promise<void> {
+  const settled = () => {
+    const s = store()
+    return s.activeId !== id || s.detail?.id === id || s.detailError !== null || !s.detailLoading
+  }
+  if (settled()) return Promise.resolve()
+  return new Promise((resolve) => {
+    const done = () => {
+      unsubscribe()
+      window.clearTimeout(timer)
+      resolve()
+    }
+    const unsubscribe = useExplorerStore.subscribe(() => {
+      if (settled()) done()
+    })
+    const timer = window.setTimeout(done, timeout)
+  })
+}
+
 /** the demo model's column with the most column-lineage edges */
 async function traceDemoColumn() {
   await openDemo('schema')
+  const node = demoModel()
+  if (node) await waitForDetail(node.id)
   const { detail, columnTrace, traceColumn } = store()
-  if (!detail) return
+  if (!detail || detail.id !== node?.id) return
   const best = [...detail.columns]
     .map((c) => ({ name: c.name, edges: (c.upstream_count ?? 0) + (c.downstream_count ?? 0) }))
     .sort((a, b) => b.edges - a.edges)[0]
   if (!best || best.edges === 0) return
   if (columnTrace?.modelId === detail.id && columnTrace.column === best.name) return
   await traceColumn(detail.id, best.name, 'both')
+}
+
+interface Panels {
+  pipelines?: boolean
+  tasks?: boolean
+  export?: boolean
+  filters?: boolean
+  dialog?: boolean
+}
+
+/** opens exactly the given menus / panels and closes the others */
+function showPanels(open: Panels = {}) {
+  const s = store()
+  if (s.pipelinesOpen !== Boolean(open.pipelines)) s.setPipelinesOpen(Boolean(open.pipelines))
+  if (s.tasksOpen !== Boolean(open.tasks)) s.setTasksOpen(Boolean(open.tasks))
+  if (s.exportOpen !== Boolean(open.export)) s.setExportOpen(Boolean(open.export))
+  if (s.filtersOpen !== Boolean(open.filters)) s.setFiltersOpen(Boolean(open.filters))
+  if (s.compareDialogOpen !== Boolean(open.dialog)) s.setCompareDialogOpen(Boolean(open.dialog))
+}
+
+/** loads or ends the demo comparison (only ever on the demo project, never on real data) */
+async function showComparison(on: boolean) {
+  const s = store()
+  if (!s.demo) return
+  if (!on) {
+    if (s.compare) await s.exitCompare()
+    return
+  }
+  if (s.compare) return
+  const response = mockCompare()
+  useExplorerStore.setState({
+    compare: {
+      stateId: response.state_id,
+      label: response.head.label,
+      response,
+      changes: new Map(response.changes.map((c) => [c.id, c])),
+    },
+    // the same clean start as startCompare
+    selectedIds: new Set(),
+    selectorInput: '',
+    columnTrace: null,
+    activeId: null,
+    detail: null,
+    detailError: null,
+    detailCache: new Map(),
+  })
+  await store().init()
 }
 
 const selectDemo = () => {
@@ -199,7 +277,10 @@ const canvas: TourDef = {
   steps: [
     {
       target: '[data-tour="layout"]',
-      enter: () => store().setLayoutMode('dag'),
+      enter: () => {
+        store().setLayoutMode('dag')
+        store().setFocusMode('off')
+      },
       title: 'DAG layout',
       body: (
         <>
@@ -209,7 +290,10 @@ const canvas: TourDef = {
     },
     {
       target: '[data-tour="layout"]',
-      enter: () => store().setLayoutMode('lanes'),
+      enter: () => {
+        store().setLayoutMode('lanes')
+        store().setFocusMode('off')
+      },
       title: 'Zones layout',
       body: 'Stages as columns: sources, intermediate and output models line up, so you see at a glance which layer a model belongs to. With several pipelines shown, each gets its own band.',
     },
@@ -219,6 +303,7 @@ const canvas: TourDef = {
       enter: () => {
         store().setLayoutMode('lanes')
         store().setZoneMode('folders')
+        store().setFocusMode('off')
       },
       title: 'Groups',
       body: 'Inside each stage column, one box per model sub-folder. Click a group header to fold it into a single node; the button next to this switch folds or opens all of them.',
@@ -249,7 +334,10 @@ const canvas: TourDef = {
     },
     {
       target: '.react-flow__minimap',
-      enter: () => store().setFocusMode('dim'),
+      enter: () => {
+        store().setFocusMode('off')
+        if (!store().showMiniMap) store().toggleMiniMap()
+      },
       title: 'Mini-map',
       body: (
         <>
@@ -259,6 +347,7 @@ const canvas: TourDef = {
     },
     {
       target: '[data-tour="area-select"]',
+      enter: () => showPanels(),
       title: 'Selecting several models',
       body: (
         <>
@@ -269,17 +358,20 @@ const canvas: TourDef = {
       ),
     },
     {
-      target: '[data-tour="filters"]',
+      target: ['[data-tour="filters"]', '[data-tour="filter-row"]'],
+      enter: () => showPanels({ filters: true }),
       title: 'Filters',
-      body: 'Opens a row to load only some pipelines or stages, or to hide dbt sources. The graph reloads with the filtered set. The arrows next to it reload the graph from the API.',
+      body: 'Opens this row to load only some pipelines or stages, or to hide dbt sources. The graph reloads with the filtered set. The arrows next to the filter button reload the graph from the API.',
     },
     {
       target: '.shortcut-hint',
+      enter: () => showPanels(),
       title: 'Keyboard shortcuts',
       body: (
         <>
-          <K>/</K> search · <K>F</K> focus · <K>L</K> layout · <K>Z</K> fit · <K>M</K> mini-map ·{' '}
-          <K>Esc</K> close / clear · <K>Alt</K>+<K>Z</K> wrap code · <K>?</K> help.
+          This strip lists the main ones: <K>/</K> search · <K>F</K> focus · <K>L</K> layout · <K>Z</K> fit ·{' '}
+          <K>⇧</K> + drag box select · <K>?</K> help. Also: <K>M</K> mini-map · <K>Esc</K> close / clear ·{' '}
+          <K>Alt</K>+<K>Z</K> wrap code.
         </>
       ),
     },
@@ -300,19 +392,21 @@ const model: TourDef = {
       body: 'Clicking a model opens this panel. The header shows its stage, materialization, execution mode and tags.',
     },
     {
-      target: '.overlay__actions',
+      // empty when the model has neither a run command nor a BigQuery location
+      target: () =>
+        (document.querySelector('.overlay__actions')?.childElementCount ?? 0) > 0 ? '.overlay__actions' : '.overlay__head',
       enter: () => openDemo('overview'),
       title: 'Run it, find it',
       body: 'dbt run copies the command that builds just this model. BigQuery opens the table in the cloud console, when the project knows where it is deployed.',
     },
     {
-      target: '.overlay__body',
+      target: ['.overlay .tabs', '.overlay__body'],
       enter: () => openDemo('overview'),
       title: 'Overview',
       body: 'Properties, where the table lives (database, schema, dbt file, unique_id) and its lineage at a glance.',
     },
     {
-      target: '.overlay__body',
+      target: ['.overlay .tabs', '.overlay__body'],
       enter: () => openDemo('code'),
       title: 'Code',
       body: (
@@ -323,13 +417,13 @@ const model: TourDef = {
       ),
     },
     {
-      target: '.overlay__body',
+      target: ['.overlay .tabs', '.overlay__body'],
       enter: () => openDemo('schema'),
       title: 'Schema',
       body: 'All columns with type and description, filterable. The ↑ ↓ button on each column counts its direct upstream and downstream columns, and clicking it traces the column (see "Column-level lineage").',
     },
     {
-      target: '.overlay__body',
+      target: ['.overlay .tabs', '.overlay__body'],
       enter: () => openDemo('lineage'),
       title: 'Lineage',
       body: 'The direct parents and children of the model. Click one to move the panel and the canvas to it.',
@@ -362,7 +456,10 @@ const columns: TourDef = {
     },
     {
       target: '.trace-btn:not(:disabled)',
-      enter: () => openDemo('schema'),
+      enter: async () => {
+        await openDemo('schema')
+        if (store().columnTrace) store().clearColumnTrace()
+      },
       title: 'Trace from the schema',
       body: 'Or start from a model: each column in the Schema tab has a trace button with its direct upstream ↑ and downstream ↓ column counts. A dash means the SQL could not be parsed.',
     },
@@ -409,6 +506,8 @@ const select: TourDef = {
       target: '.selector-field',
       enter: () => {
         const node = demoModel()
+        // coming back from Apply: drop its selection (clearSelection also empties the field)
+        if (store().selectedIds.size > 0) store().clearSelection()
         if (node) store().setSelectorInput(`+${node.name}+`)
       },
       title: 'dbt selectors',
@@ -465,37 +564,78 @@ const compare: TourDef = {
   icon: GitCompare,
   steps: [
     {
-      target: '.pipeline-picker',
-      enter: () => store().setCompareDialogOpen(false),
+      target: ['.pipeline-picker', '.pipeline-picker > .pipeline-picker__menu'],
+      enter: async () => {
+        await showComparison(false)
+        showPanels({ pipelines: true })
+      },
       title: 'Pipelines',
-      body: 'Choose which pipelines are loaded (none ticked means all). Pipelines with execution modes get mode chips: tick several to stack them on the canvas, the starred one is in front. Pipelines with a project directory can rerun dbt docs generate.',
+      body: 'Choose which pipelines are loaded (none ticked means all). Pipelines with execution modes get mode chips: tick several to stack them on the canvas, the starred one is in front. Pipelines with a project directory can rerun dbt docs generate (the ↻ button).',
     },
     {
-      target: '.task-indicator',
-      enter: () => store().setCompareDialogOpen(false),
+      target: ['.task-indicator', '.task-panel'],
+      enter: async () => {
+        await showComparison(false)
+        showPanels({ tasks: true })
+      },
       title: 'Background runs',
-      body: 'dbt docs generate runs show up here: it spins while one runs, opens to the live dbt output and errors, and the graph redraws when fresh artifacts land.',
+      body: 'dbt docs generate runs show up here. The chip spins while one runs; the panel shows the live dbt output of a running job and the error of a failed one, with a retry. The graph redraws when fresh artifacts land.',
     },
     {
       target: '[data-tour="compare"]',
-      enter: () => store().setCompareDialogOpen(false),
+      enter: async () => {
+        await showComparison(false)
+        showPanels()
+      },
       title: 'Compare two states',
       body: 'See what a branch changes before it is merged: compare the running state with the artifacts of another one.',
     },
     {
       target: '.modal',
-      enter: () => store().setCompareDialogOpen(true),
+      enter: async () => {
+        await showComparison(false)
+        showPanels({ dialog: true })
+      },
       title: 'Upload artifacts',
       body: 'Drop the manifest.json (and optionally catalog.json, for column changes) from dbt docs generate on your branch, and choose the pipeline they replace.',
     },
     {
-      target: '.legend',
-      enter: () => store().setCompareDialogOpen(false),
+      target: ['.react-flow', '.legend'],
+      enter: async () => {
+        await showComparison(true)
+        showPanels()
+        if (store().activeId) store().closeOverlay()
+      },
       title: 'Reading a comparison',
-      body: 'Models turn green (added), yellow (modified) or red (removed). A summary bar under the toolbar can select all changes, and a changed model opens on a Changes tab with the SQL diff.',
+      body: 'Here a branch is compared: models turn green (added), yellow (modified) or red (removed), and so do the edges. The legend adds the change colours while comparing.',
     },
     {
-      target: '.export',
+      target: '.compare-bar',
+      enter: async () => {
+        await showComparison(true)
+        showPanels()
+        if (store().activeId) store().closeOverlay()
+      },
+      title: 'The summary bar',
+      body: 'Counts the changes per kind. Select changes selects every changed model, so focus mode shows what they affect; × ends the comparison.',
+    },
+    {
+      target: '.overlay',
+      enter: async () => {
+        await showComparison(true)
+        showPanels()
+        await store().openModel(MOCK_COMPARE_MODIFIED_ID, { tab: 'changes' })
+      },
+      title: 'What changed',
+      body: 'A changed model opens on its Changes tab: changed properties and columns, and the SQL diff between the running state and the branch.',
+    },
+    {
+      target: ['.export', '.export__menu'],
+      enter: async () => {
+        await showComparison(true)
+        if (store().activeId) store().closeOverlay()
+        showPanels({ export: true })
+      },
       title: 'Export',
       body: 'Take the view to a wiki or ticket: PNG or SVG image, or a Mermaid flowchart as a file or ready for Markdown. Exports follow what is shown: filters, focus isolate and comparison colours apply.',
     },

@@ -55,7 +55,8 @@ function currentMermaid(): string {
 }
 
 export function ExportMenu({ onToast }: { onToast: (message: string) => void }) {
-  const [open, setOpen] = useState(false)
+  const open = useExplorerStore((s) => s.exportOpen)
+  const setOpen = useExplorerStore((s) => s.setExportOpen)
   const [busy, setBusy] = useState<ImageFormat | null>(null)
   const ref = useRef<HTMLDivElement>(null)
   const { getViewport } = useReactFlow()
@@ -76,7 +77,7 @@ export function ExportMenu({ onToast }: { onToast: (message: string) => void }) 
       document.removeEventListener('mousedown', close)
       document.removeEventListener('keydown', escape)
     }
-  }, [open])
+  }, [open, setOpen])
 
   const exportImage = async (format: ImageFormat) => {
     const viewportEl = document.querySelector<HTMLElement>('.react-flow__viewport')
@@ -115,7 +116,7 @@ export function ExportMenu({ onToast }: { onToast: (message: string) => void }) 
       <button
         type="button"
         className={`btn btn--sm${open ? ' btn--active' : ''}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(!open)}
         aria-expanded={open}
         aria-haspopup="menu"
         title="Export the lineage for documentation"

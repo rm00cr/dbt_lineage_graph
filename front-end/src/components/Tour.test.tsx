@@ -8,13 +8,24 @@
 import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
-import { mockGraph } from '../api/mock'
+import { api } from '../api/client'
+import { MOCK_COMPARE_MODIFIED_ID, mockGraph } from '../api/mock'
 import { buildIndex } from '../graph/selectors'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { TOURS, demoModel, tourById } from '../tour/tours'
 import { useTourStore } from '../tour/useTourStore'
+import { ReactFlowProvider } from '@xyflow/react'
+
+import { TraceBar } from './ColumnTrace'
+import { CompareDialog } from './Compare'
+import { ExportMenu } from './ExportMenu'
 import { HelpMenu } from './HelpMenu'
-import { Tour, placeCard } from './Tour'
+import { Legend } from './Legend'
+import { ModelOverlay } from './ModelOverlay'
+import { PipelinePicker } from './PipelinePicker'
+import { TaskIndicator } from './TaskIndicator'
+import { Toolbar } from './Toolbar'
+import { Tour, placeCard, runEnter, unionRect } from './Tour'
 
 function primeStore() {
   useExplorerStore.setState({
@@ -29,6 +40,10 @@ function primeStore() {
     layoutMode: 'dag',
     focusMode: 'off',
     compareDialogOpen: false,
+    showMiniMap: true,
+    detail: null,
+    detailLoading: false,
+    detailError: null,
   })
 }
 
@@ -52,6 +67,17 @@ describe('tour content', () => {
     for (const tour of TOURS) {
       expect(tour.steps.length).toBeGreaterThan(0)
       if (tour.next) expect(tourById(tour.next)).toBeDefined()
+    }
+  })
+
+  it('only uses valid CSS selectors', () => {
+    for (const tour of TOURS) {
+      for (const step of tour.steps) {
+        if (!step.target || typeof step.target === 'function') continue
+        for (const selector of [step.target].flat()) {
+          expect(() => document.querySelector(selector), `${tour.id}: ${step.title}`).not.toThrow()
+        }
+      }
     }
   })
 
@@ -151,12 +177,126 @@ describe('useTourStore', () => {
     expect(useExplorerStore.getState().activeId).toBeNull()
   })
 
-  it('drops steps that do not apply to the project', () => {
-    useExplorerStore.setState({
-      graph: { ...mockGraph, nodes: mockGraph.nodes.map((n) => ({ ...n, folder: null })) },
-    })
+  it('shows the mini-map for its step and hides it again afterwards', async () => {
+    useExplorerStore.setState({ showMiniMap: false })
     useTourStore.getState().start('canvas')
-    expect(useTourStore.getState().steps.some((s) => s.title === 'Groups')).toBe(false)
+    await useTourStore.getState().steps.find((s) => s.title === 'Mini-map')!.enter?.()
+    expect(useExplorerStore.getState().showMiniMap).toBe(true)
+    expect(useExplorerStore.getState().focusMode).toBe('off')
+
+    useTourStore.getState().close()
+    expect(useExplorerStore.getState().showMiniMap).toBe(false)
+  })
+
+  it('traces a column even when the model detail is still loading', async () => {
+    useTourStore.getState().start('columns')
+    const steps = useTourStore.getState().steps
+    const demo = demoModel()!
+    // the previous step opened the model; its detail has not arrived yet
+    useExplorerStore.setState({ activeId: demo.id, overlayTab: 'schema', detail: null, detailLoading: true })
+    const entering = steps.find((s) => s.title === 'The trace')!.enter?.()
+
+    await useExplorerStore.getState().openModel(demo.id, { tab: 'schema' }) // mock: detail lands now
+    await entering
+    expect(useExplorerStore.getState().columnTrace?.modelId).toBe(demo.id)
+
+    // stepping back to the schema step drops the trace again
+    await steps.find((s) => s.title === 'Trace from the schema')!.enter?.()
+    expect(useExplorerStore.getState().columnTrace).toBeNull()
+  })
+
+  it('undoes the applied selection when stepping back to the selector step', () => {
+    useTourStore.getState().start('select')
+    const [type, apply] = useTourStore.getState().steps
+    apply.enter?.()
+    expect(useExplorerStore.getState().selectedIds.size).toBeGreaterThan(0)
+
+    type.enter?.()
+    expect(useExplorerStore.getState().selectedIds.size).toBe(0)
+    expect(useExplorerStore.getState().selectorInput).toBe(`+${demoModel()!.name}+`)
+  })
+
+  it('runs on the demo project and gives the loaded project back untouched', () => {
+    const real = { ...mockGraph, nodes: mockGraph.nodes.map((n) => ({ ...n, folder: null })) }
+    useExplorerStore.setState({ graph: real, usingMock: false, meta: null, jobs: [], selectorInput: 'tag:x' })
+
+    useTourStore.getState().start('compare')
+    const demo = useExplorerStore.getState()
+    expect(demo.demo).toBe(true)
+    expect(demo.graph).not.toBe(real)
+    expect(demo.jobs.length).toBeGreaterThan(0)
+    expect(demo.pipelineInfo.some((p) => p.modes.length > 1)).toBe(true)
+
+    useTourStore.getState().close()
+    const after = useExplorerStore.getState()
+    expect(after.demo).toBe(false)
+    expect(after.graph).toBe(real)
+    expect(after.usingMock).toBe(false)
+    expect(after.jobs).toEqual([])
+    expect(after.selectorInput).toBe('tag:x')
+  })
+
+  it('keeps every step on the demo project, whatever is loaded', () => {
+    // a real project without folders or boundary violations
+    useExplorerStore.setState({
+      graph: { ...mockGraph, nodes: mockGraph.nodes.map((n) => ({ ...n, folder: null })), edges: [] },
+    })
+    for (const tour of TOURS) {
+      useTourStore.getState().start(tour.id)
+      expect(useTourStore.getState().steps.map((s) => s.title), tour.id).toEqual(tour.steps.map((s) => s.title))
+      useTourStore.getState().close()
+    }
+  })
+
+  it('opens the panels a step talks about and closes the others', async () => {
+    useTourStore.getState().start('compare')
+    const step = (title: string) => useTourStore.getState().steps.find((s) => s.title === title)!
+
+    await step('Pipelines').enter?.()
+    expect(useExplorerStore.getState().pipelinesOpen).toBe(true)
+
+    await step('Background runs').enter?.()
+    expect(useExplorerStore.getState().pipelinesOpen).toBe(false)
+    expect(useExplorerStore.getState().tasksOpen).toBe(true)
+
+    await step('Export').enter?.()
+    expect(useExplorerStore.getState().tasksOpen).toBe(false)
+    expect(useExplorerStore.getState().exportOpen).toBe(true)
+
+    useTourStore.getState().close()
+    expect(useExplorerStore.getState().exportOpen).toBe(false)
+  })
+
+  it('shows a comparison on the demo project and ends it when stepping back', async () => {
+    const graphCall = vi.spyOn(api, 'graph')
+    useTourStore.getState().start('compare')
+    const step = (title: string) => useTourStore.getState().steps.find((s) => s.title === title)!
+
+    await step('What changed').enter?.()
+    let s = useExplorerStore.getState()
+    expect(s.compare?.response.summary).toMatchObject({ added: 1, modified: 1, removed: 1 })
+    expect(s.graph?.nodes.some((n) => n.change === 'added')).toBe(true)
+    expect(s.activeId).toBe(MOCK_COMPARE_MODIFIED_ID)
+    expect(s.overlayTab).toBe('changes')
+
+    await step('Compare two states').enter?.()
+    s = useExplorerStore.getState()
+    expect(s.compare).toBeNull()
+    expect(s.graph?.nodes.some((n) => n.change)).toBe(false)
+    expect(graphCall).not.toHaveBeenCalled() // the demo never asks the API
+
+    await step('Reading a comparison').enter?.()
+    useTourStore.getState().close()
+    expect(useExplorerStore.getState().compare).toBeNull()
+  })
+
+  it('opens the filter row for its step only', () => {
+    useTourStore.getState().start('canvas')
+    const step = (title: string) => useTourStore.getState().steps.find((s) => s.title === title)!
+    step('Filters').enter?.()
+    expect(useExplorerStore.getState().filtersOpen).toBe(true)
+    step('Keyboard shortcuts').enter?.()
+    expect(useExplorerStore.getState().filtersOpen).toBe(false)
   })
 })
 
@@ -169,6 +309,66 @@ describe('HelpMenu', () => {
     fireEvent.click(screen.getByRole('menuitem', { name: /inspecting a model/i }))
     expect(useTourStore.getState().tourId).toBe('model')
     expect(useTourStore.getState().menuOpen).toBe(false)
+  })
+})
+
+describe('every tour step', () => {
+  it('renders the panels it drives without crashing', async () => {
+    globalThis.ResizeObserver ??= class {
+      observe() {}
+      unobserve() {}
+      disconnect() {}
+    } as unknown as typeof ResizeObserver
+    render(
+      <ReactFlowProvider>
+        <Toolbar onToast={() => undefined} />
+        <Legend />
+        <ModelOverlay onToast={() => undefined} />
+        <TraceBar />
+        <PipelinePicker />
+        <TaskIndicator />
+        <ExportMenu onToast={() => undefined} />
+        <CompareDialog />
+      </ReactFlowProvider>,
+    )
+    for (const tour of TOURS) {
+      act(() => useTourStore.getState().start(tour.id))
+      for (const step of useTourStore.getState().steps) {
+        // a render loop or a throw in any panel fails here (it blanked the app in the model tour)
+        await act(async () => {
+          await step.enter?.()
+        })
+      }
+      act(() => useTourStore.getState().close())
+    }
+  })
+})
+
+describe('runEnter', () => {
+  it('runs the enters in order and skips a step the user already left', async () => {
+    const log: string[] = []
+    let release!: () => void
+    const slow = new Promise<void>((resolve) => (release = resolve))
+    const first = runEnter({ title: 'a', body: '', enter: async () => { await slow; log.push('a') } }, () => true)
+    let bCurrent = true
+    const second = runEnter({ title: 'b', body: '', enter: () => void log.push('b') }, () => bCurrent)
+    const third = runEnter({ title: 'c', body: '', enter: () => void log.push('c') }, () => true)
+    bCurrent = false
+    release()
+    await Promise.all([first, second, third])
+    expect(log).toEqual(['a', 'c'])
+  })
+})
+
+describe('unionRect', () => {
+  it('spans all boxes', () => {
+    expect(
+      unionRect([
+        { top: 10, left: 50, right: 100, bottom: 40 },
+        { top: 30, left: 20, right: 90, bottom: 200 },
+      ]),
+    ).toEqual({ top: 10, left: 20, right: 100, bottom: 200 })
+    expect(unionRect([])).toBeNull()
   })
 })
 
