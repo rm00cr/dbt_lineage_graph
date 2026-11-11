@@ -86,3 +86,27 @@ describe('collapsed folders with stacked modes and comparison', () => {
     expect(summary(['unchanged', 'unchanged'])).toBeUndefined()
   })
 })
+
+describe('shownView with tests (dq checks)', () => {
+  const check = node('dq', 'int', 'claim', { resource_type: 'test', materialization: 'test' })
+  const orphan = node('dq_orphan', 'int', null, { resource_type: 'test', materialization: 'test' })
+  const graph = graphOf([...folderNodes, check, orphan], [...folderEdges, edge('a1', 'dq')])
+  const ids = (view: ReturnType<typeof shownView>) => view.nodes.map((n) => n.id).sort()
+
+  it('leaves test nodes and their edges out while the Tests toggle is off', () => {
+    const view = shown(graph, { collapsedFolders: new Set() })
+    expect(ids(view)).toEqual(['a1', 'a2', 'o'])
+    expect(view.edges.some((e) => e.target === 'dq')).toBe(false)
+  })
+
+  it('shows a test with what it reads, but not one whose models are all filtered out', () => {
+    const view = shown(graph, { collapsedFolders: new Set(), showTests: true })
+    expect(ids(view)).toEqual(['a1', 'a2', 'dq', 'o'])
+    expect(view.edges.map((e) => e.id)).toContain('a1->dq')
+  })
+
+  it('folds a test into its collapsed folder like any other node', () => {
+    const view = shown(graph, { showTests: true })
+    expect(view.members.get(collapsedNodeId(claim))).toEqual(['a1', 'a2', 'dq'])
+  })
+})

@@ -27,6 +27,7 @@ import { boundaryViolations } from '../graph/boundary'
 import { COLLAPSED_NODE_HEIGHT, COLLAPSED_PREFIX, isCollapsedNodeId } from '../graph/collapse'
 import { edgeHandles, traceNodeHeight } from '../graph/columnTrace'
 import { NODE_HEIGHT, NODE_WIDTH, cardHeight, layoutGraph } from '../graph/layout'
+import { placeTestNodes, testListExtraHeight } from '../graph/tests'
 import { shownView, touches as touchesIn, visibleSubgraph } from '../graph/visible'
 import { STACK_HEAD, isStacked } from '../graph/stack'
 import { useExplorerStore } from '../store/useExplorerStore'
@@ -47,6 +48,7 @@ export function GraphCanvas() {
   const toggleFolder = useExplorerStore((s) => s.toggleFolder)
   const focusMode = useExplorerStore((s) => s.focusMode)
   const showMiniMap = useExplorerStore((s) => s.showMiniMap)
+  const showTests = useExplorerStore((s) => s.showTests)
   const selectionDrag = useExplorerStore((s) => s.selectionDrag)
   const selectedIds = useExplorerStore((s) => s.selectedIds)
   const highlightedIds = useExplorerStore((s) => s.highlightedIds)
@@ -85,14 +87,16 @@ export function GraphCanvas() {
         splitPipelines,
         // a column trace needs its models: their folders stay open while it is shown
         keep: traceView?.nodeIds,
+        showTests,
       }),
-    [graph, layoutMode, zoneMode, collapsedFolders, splitPipelines, traceView],
+    [graph, layoutMode, zoneMode, collapsedFolders, splitPipelines, traceView, showTests],
   )
 
   // traced nodes (2.3) grow by their column rows; the layout makes room for them
   // nodes of stacked execution modes get head room above the card for mode tabs + back cards
   const heights = useMemo(() => {
-    // every card is as tall as its name needs; traced columns and the stack head add to it
+    // every card is as tall as its name needs; its test list (Tests toggle), traced columns
+    // and the stack head add to it
     const map = new Map<string, number>()
     for (const node of view.nodes) {
       // a collapsed folder's summary node has a fixed height
@@ -100,17 +104,27 @@ export function GraphCanvas() {
         map.set(node.id, COLLAPSED_NODE_HEIGHT)
         continue
       }
-      let height = traceNodeHeight(cardHeight(node), traceView?.columnsByNode.get(node.id))
+      const card = cardHeight(node) + testListExtraHeight(node.tests, showTests)
+      let height = traceNodeHeight(card, traceView?.columnsByNode.get(node.id))
       if (isStacked(node)) height += STACK_HEAD
       map.set(node.id, height)
     }
     return map
-  }, [traceView, view])
+  }, [traceView, view, showTests])
 
-  const layout = useMemo(
-    () => layoutGraph(view.nodes, view.edges, layoutMode, heights, { zones: zoneMode, splitPipelines }),
-    [view, layoutMode, heights, zoneMode, splitPipelines],
-  )
+  // dq check (singular test) nodes are left out of the layout and placed under the models
+  // they read afterwards, so toggling Tests never moves the other nodes
+  const testIds = useMemo(() => new Set(view.nodes.filter((n) => n.resource_type === 'test').map((n) => n.id)), [view])
+  const layout = useMemo(() => {
+    const nodes = view.nodes.filter((n) => !testIds.has(n.id))
+    const edges = view.edges.filter((e) => !testIds.has(e.source) && !testIds.has(e.target))
+    return layoutGraph(nodes, edges, layoutMode, heights, { zones: zoneMode, splitPipelines })
+  }, [view, testIds, layoutMode, heights, zoneMode, splitPipelines])
+  const testPositions = useMemo(() => {
+    if (testIds.size === 0) return new Map<string, XYPosition>()
+    const heightOf = (id: string) => heights.get(id) ?? NODE_HEIGHT
+    return placeTestNodes([...testIds], view.edges, layout.positions, heightOf, NODE_WIDTH, heightOf)
+  }, [testIds, view, layout, heights])
 
   // moved nodes would sit at stale spots once boxes collapse / expand
   const collapseSignature = [...view.members.keys()].sort().join('|')
@@ -177,7 +191,7 @@ export function GraphCanvas() {
       toggleFolder(shownAs.slice(COLLAPSED_PREFIX.length))
       return
     }
-    const position = dragged.get(shownAs) ?? layout.positions.get(shownAs)
+    const position = dragged.get(shownAs) ?? layout.positions.get(shownAs) ?? testPositions.get(shownAs)
     if (!position || centeredFor.current === centerRequest) return
     centeredFor.current = centerRequest
     setCenter(position.x + NODE_WIDTH / 2, position.y + (heights.get(shownAs) ?? NODE_HEIGHT) / 2, {
@@ -186,7 +200,7 @@ export function GraphCanvas() {
     })
     // `dragged` intentionally not a dependency: we only centre on an explicit request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [centerRequest, layout, view, setCenter, toggleFolder])
+  }, [centerRequest, layout, testPositions, view, setCenter, toggleFolder])
 
   // ------------------------------------------------------------------ derived nodes/edges
   /** a summary node counts as in `ids` when any model it stands for is */
@@ -204,7 +218,7 @@ export function GraphCanvas() {
       .map((node) => {
         const common = {
           id: node.id,
-          position: dragged.get(node.id) ?? layout.positions.get(node.id) ?? { x: 0, y: 0 },
+          position: dragged.get(node.id) ?? layout.positions.get(node.id) ?? testPositions.get(node.id) ?? { x: 0, y: 0 },
           // Explicit dimensions: the nodes are fully controlled, so React Flow never writes
           // measurements back into them — without this the mini-map stays empty.
           width: NODE_WIDTH,
@@ -242,11 +256,12 @@ export function GraphCanvas() {
             active: activeId === node.id,
             searchHit: pulseId === node.id,
             traceColumns: traceView?.columnsByNode.get(node.id),
+            showTests,
             height: heights.get(node.id),
           },
         }
       })
-  }, [graph, view, visibleIds, dragged, layout, heights, traceView, selectedIds, highlightedIds, focusMode, activeId, pulseId, touches])
+  }, [graph, view, visibleIds, dragged, layout, testPositions, heights, traceView, showTests, selectedIds, highlightedIds, focusMode, activeId, pulseId, touches])
 
   const accentColor = theme === 'light' ? '#4f46e5' : '#6366f1'
   const edgeColor = theme === 'light' ? 'rgba(71,85,105,0.5)' : 'rgba(148,163,184,0.4)'

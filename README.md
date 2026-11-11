@@ -75,6 +75,7 @@ cd front-end && npm test
 | Copy a dbt command | **dbt run** button (toolbar = whole selection, overlay = one model) |
 | Stage zones | **Stage zones** toggle or `L` — src / int / out as columns |
 | Area select | Shift + drag, or toggle the box-select button for plain left drag |
+| dbt tests & dq checks | **Tests** in the toolbar: each card lists its yaml tests (`not_null(pol_nr)`, …) and the singular tests (`tests/*.sql`, e.g. `dq_check_*`) appear as dashed nodes under the models they read; the overlay lists a model's tests. Try `./dev.sh examples/pipelines.yaml` |
 | Mini-map | `M` |
 | Zoom to fit | `Z` |
 | Share a view | the URL carries `?model=…&tab=…&layout=…&focus=…&select=…` |

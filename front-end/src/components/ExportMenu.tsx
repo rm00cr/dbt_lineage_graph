@@ -41,6 +41,7 @@ function shownNow(s: StoreState) {
     collapsedFolders: s.collapsedFolders,
     splitPipelines: s.splitPipelines,
     keep: s.columnTrace?.view?.nodeIds,
+    showTests: s.showTests,
   })
   return { view, ...visibleSubgraph(view, s.focusMode, s.highlightedIds) }
 }

@@ -13,6 +13,7 @@ import {
   Eye,
   EyeOff,
   Filter,
+  FlaskConical,
   GitBranch,
   Map as MapIcon,
   Maximize2,
@@ -99,6 +100,17 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const cycleFocusMode = useExplorerStore((s) => s.cycleFocusMode)
   const showMiniMap = useExplorerStore((s) => s.showMiniMap)
   const toggleMiniMap = useExplorerStore((s) => s.toggleMiniMap)
+  const showTests = useExplorerStore((s) => s.showTests)
+  const toggleTests = useExplorerStore((s) => s.toggleTests)
+  // yaml tests counted per node they check, plus each singular test (a node of its own)
+  const testCount = useMemo(
+    () =>
+      graph?.nodes.reduce(
+        (sum, n) => sum + (n.resource_type === 'test' ? 1 : (n.tests?.length ?? 0)),
+        0,
+      ) ?? 0,
+    [graph],
+  )
   const selectionDrag = useExplorerStore((s) => s.selectionDrag)
   const toggleSelectionDrag = useExplorerStore((s) => s.toggleSelectionDrag)
 
@@ -213,6 +225,20 @@ export function Toolbar({ onToast }: ToolbarProps) {
           title="Focus mode: dim or isolate everything outside the selected lineage (F)"
         >
           <FocusIcon size={14} /> {FOCUS_LABEL[focusMode]}
+        </button>
+
+        <button
+          className={`btn ${showTests ? 'btn--active' : ''}`}
+          onClick={toggleTests}
+          disabled={testCount === 0}
+          aria-pressed={showTests}
+          title={
+            testCount === 0
+              ? 'No dbt tests in the loaded pipelines'
+              : `Show the ${testCount} dbt tests (incl. dq checks) inside the nodes they check`
+          }
+        >
+          <FlaskConical size={14} /> Tests{testCount > 0 ? ` ${testCount}` : ''}
         </button>
 
         <button

@@ -15,6 +15,7 @@ import type { GraphNode } from '../../api/types'
 import { MAX_TRACE_ROWS, type TracedColumn, rowHandleId, visibleRows } from '../../graph/columnTrace'
 import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../../graph/diff'
 import { NODE_HEIGHT, NODE_WIDTH, cardHeight as cardHeightOf } from '../../graph/layout'
+import { MAX_TEST_ROWS, testLabel, visibleTests } from '../../graph/tests'
 import { STACK_HEAD, STACK_OFFSET, backLayers, isGhost, isStacked, stackTabs, tabDepth } from '../../graph/stack'
 import { useExplorerStore } from '../../store/useExplorerStore'
 import { MATERIALIZATION_ICONS, useStageColor } from '../visual'
@@ -28,6 +29,8 @@ export type ModelNodeData = {
   searchHit: boolean
   /** column-lineage trace (2.3): the traced columns of this node, rendered as rows */
   traceColumns?: TracedColumn[]
+  /** Tests toggle: list the node's dbt tests below the name */
+  showTests?: boolean
   /** explicit height: column rows (2.3) and / or the stacked-modes head */
   height?: number
 }
@@ -52,9 +55,13 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
   const exporting = useExplorerStore((s) => s.exporting)
   const compact = zoomedOut && !exporting
   const stageColor = useStageColor()
-  const { node, dimmed, inFocus, active, searchHit, traceColumns, height } = data
+  const { node, dimmed, inFocus, active, searchHit, traceColumns, showTests, height } = data
   const rows = traceColumns ? visibleRows(traceColumns) : []
   const hidden = (traceColumns?.length ?? 0) - rows.length
+  const tests = showTests ? (node.tests ?? []) : []
+  const testRows = visibleTests(tests)
+  const testsHidden = tests.length - testRows.length
+  const isTest = node.resource_type === 'test'
   const Icon = MATERIALIZATION_ICONS[node.materialization] ?? MATERIALIZATION_ICONS.other
   // state comparison: added / removed / modified (unchanged nodes get no tag)
   const change = node.change ?? undefined
@@ -64,14 +71,14 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
   const ghost = isGhost(node)
   const bringModeToFront = useExplorerStore((s) => s.bringModeToFront)
   const cardHeight = stacked ? (height ?? NODE_HEIGHT + STACK_HEAD) - STACK_HEAD : height
-  // the name part of the card; traced column rows (2.3) are added below it
+  // the name part of the card; test rows and traced column rows (2.3) are added below it
   const mainHeight = cardHeightOf(node) - 2
 
   const card = (
     <div
-      className={`node${compact ? ' node--compact' : ''}${rows.length > 0 ? ' node--traced' : ''}`}
+      className={`node${compact ? ' node--compact' : ''}${rows.length > 0 ? ' node--traced' : ''}${testRows.length > 0 ? ' node--tests' : ''}`}
       style={{
-        ['--stage-color' as string]: stageColor(node.stage),
+        ['--stage-color' as string]: isTest ? 'var(--test-color)' : stageColor(node.stage),
         ['--main-height' as string]: `${mainHeight}px`,
         ...(cardHeight ? { height: cardHeight } : {}),
         ...(stacked ? { position: 'absolute', top: STACK_HEAD, left: 0 } : {}),
@@ -83,6 +90,7 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
       data-in-focus={inFocus}
       data-search-hit={searchHit}
       data-change={change}
+      data-resource={node.resource_type}
       title={changed ? `${node.name} (${CHANGE_LABELS[change]} in the uploaded state)` : (node.description ?? node.name)}
     >
       {/* default handles first: edges without a handle id attach to the first one */}
@@ -113,9 +121,34 @@ function ModelNodeComponent({ data, selected }: NodeProps<ModelNodeType>) {
             {node.column_count > 0 && (
               <span className="node__badge node__badge--cols">{node.column_count} cols</span>
             )}
+            {showTests && tests.length > 0 && (
+              <span className="node__badge node__badge--tests">{tests.length} tests</span>
+            )}
           </div>
         </div>
       </div>
+
+      {testRows.length > 0 && (
+        <div className="node__tests">
+          {testRows.map((test) => (
+            <div
+              key={test.name}
+              className="node__test"
+              data-kind={test.kind}
+              data-severity={test.severity}
+              title={test.description ? `${test.name}\n${test.description}` : test.name}
+            >
+              <span className="node__test-label">{testLabel(test)}</span>
+              {test.severity === 'warn' && <span className="node__test-sev">warn</span>}
+            </div>
+          ))}
+          {testsHidden > 0 && (
+            <div className="node__test node__test--more" title={`only the first ${MAX_TEST_ROWS} tests are drawn`}>
+              +{testsHidden} more
+            </div>
+          )}
+        </div>
+      )}
 
       {rows.length > 0 && (
         <div className="node__cols">

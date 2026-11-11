@@ -8,6 +8,8 @@ import { useExplorerStore } from '../store/useExplorerStore'
 import { MATERIALIZATION_ICONS, STAGE_LABELS, useChangeColor, useStageColor } from './visual'
 
 const MATERIALIZATIONS = ['table', 'view', 'incremental', 'ephemeral', 'source'] as const
+/** with the Tests toggle on, dq check nodes (singular tests) are drawn too */
+const WITH_TESTS = [...MATERIALIZATIONS, 'test'] as const
 const CHANGES = ['added', 'modified', 'removed'] as const
 
 export function Legend() {
@@ -15,6 +17,7 @@ export function Legend() {
   const stageColor = useStageColor()
   const changeColor = useChangeColor()
   const comparing = useExplorerStore((s) => s.compare !== null)
+  const showTests = useExplorerStore((s) => s.showTests)
   const stages = (graph?.stats.stages ?? ['src', 'int', 'out']) as ('src' | 'int' | 'out')[]
   const hasViolations = useMemo(
     () => (graph ? boundaryViolations(graph.nodes, graph.edges).size > 0 : false),
@@ -67,7 +70,7 @@ export function Legend() {
         Materialization
       </div>
       <div className="legend__row" style={{ flexWrap: 'wrap', maxWidth: 280, rowGap: 6 }}>
-        {MATERIALIZATIONS.map((materialization) => {
+        {(showTests ? WITH_TESTS : MATERIALIZATIONS).map((materialization) => {
           const Icon = MATERIALIZATION_ICONS[materialization]
           return (
             <span className="legend__mat" key={materialization}>

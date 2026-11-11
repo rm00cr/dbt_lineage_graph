@@ -29,6 +29,8 @@ const SHAPES: Record<Materialization, [string, string]> = {
   ephemeral: ['([', '])'],
   table: ['[', ']'],
   incremental: ['[', ']'],
+  // singular tests (dq checks): a hexagon, so checks read apart from the models
+  test: ['{{', '}}'],
   other: ['[', ']'],
 }
 

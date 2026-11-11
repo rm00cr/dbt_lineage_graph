@@ -4,8 +4,8 @@
  */
 
 export type Stage = 'src' | 'int' | 'out' | 'other'
-export type Materialization = 'table' | 'view' | 'incremental' | 'ephemeral' | 'source' | 'other'
-export type ResourceType = 'model' | 'source'
+export type Materialization = 'table' | 'view' | 'incremental' | 'ephemeral' | 'source' | 'test' | 'other'
+export type ResourceType = 'model' | 'source' | 'test'
 /** state comparison: how a node / edge differs between the running and the uploaded state */
 export type ChangeStatus = 'added' | 'removed' | 'modified' | 'unchanged'
 
@@ -16,6 +16,17 @@ export interface NodeRef {
   materialization: Materialization
   pipeline: string
   resource_type: ResourceType
+}
+
+/** a dbt test (incl. dq checks) attached to the node it reads */
+export interface TestInfo {
+  name: string
+  kind: 'generic' | 'singular'
+  /** generic tests: not_null, unique, ... */
+  test_name?: string | null
+  column?: string | null
+  severity: string
+  description?: string | null
 }
 
 export interface GraphNode extends NodeRef {
@@ -30,6 +41,8 @@ export interface GraphNode extends NodeRef {
   tags: string[]
   column_count: number
   execution_mode: string | null
+  /** dbt tests attached to this node (empty when none) */
+  tests?: TestInfo[]
   /** only set in a state comparison (POST /api/diff) */
   change?: ChangeStatus | null
   /** stacked execution modes: selected modes of its pipeline that contain it, front mode
@@ -104,6 +117,7 @@ export interface ModelDetail extends NodeRef {
   dependencies: NodeRef[]
   dependents: NodeRef[]
   columns: ColumnInfo[]
+  tests?: TestInfo[]
   stats: NodeStats | null
   bigquery: BigQueryRef | null
   dbt_run_command: string | null

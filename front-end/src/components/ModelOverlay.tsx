@@ -12,6 +12,7 @@ import {
   Database,
   ExternalLink,
   FileCode2,
+  FlaskConical,
   GitCompare,
   Info,
   Layers,
@@ -24,6 +25,7 @@ import { useState } from 'react'
 import type { ModelDetail, NodeRef } from '../api/types'
 import { type OverlayTab, useExplorerStore } from '../store/useExplorerStore'
 import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../graph/diff'
+import { testLabel } from '../graph/tests'
 import { ModeCode } from './ModeCode'
 import { ChangesPanel } from './Compare'
 import { SchemaTable } from './SchemaTable'
@@ -70,11 +72,14 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
 
   const color = stageColor(detail?.stage ?? 'other')
 
+  // singular tests (dq checks) run with `dbt test`, models with `dbt run`
+  const runLabel = detail?.resource_type === 'test' ? 'dbt test' : 'dbt run'
+
   const copyRunCommand = async () => {
     if (!detail?.dbt_run_command) return
     const ok = await copyToClipboard(detail.dbt_run_command)
     setCopied(ok)
-    onToast(ok ? 'dbt run command copied' : 'Copy failed')
+    onToast(ok ? `${runLabel} command copied` : 'Copy failed')
     window.setTimeout(() => setCopied(false), 1400)
   }
 
@@ -133,7 +138,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
         <div className="overlay__actions">
           {detail?.dbt_run_command && (
             <button className="btn btn--sm" onClick={() => void copyRunCommand()} title={detail.dbt_run_command}>
-              {copied ? <Check size={13} color="var(--ok)" /> : <Play size={13} />} dbt run
+              {copied ? <Check size={13} color="var(--ok)" /> : <Play size={13} />} {runLabel}
             </button>
           )}
 
@@ -271,6 +276,25 @@ function OverviewTab({ detail }: { detail: ModelDetail }) {
           <div className="kv__value kv__value--mono">{detail.id}</div>
         </div>
       </div>
+
+      {detail.tests && detail.tests.length > 0 && (
+        <div className="section">
+          <div className="section__title">
+            <FlaskConical size={12} /> Tests <span className="tab__count">{detail.tests.length}</span>
+          </div>
+          <ul className="test-list">
+            {detail.tests.map((test) => (
+              <li key={test.name} className="test-list__item" data-kind={test.kind} title={test.name}>
+                <span className="test-list__label">{testLabel(test)}</span>
+                <span className="test-list__meta">
+                  {test.kind === 'singular' ? 'dq check' : 'schema test'}
+                  {test.severity === 'warn' ? ' · warn' : ''}
+                </span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
 
       <div className="section">
         <div className="section__title">

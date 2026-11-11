@@ -99,6 +99,8 @@ interface ExplorerState {
   collapsedFolders: Set<string>
   focusMode: FocusMode
   showMiniMap: boolean
+  /** list the dbt tests (incl. dq checks) inside each node that has some */
+  showTests: boolean
   selectionDrag: boolean
 
   selectedIds: Set<string>
@@ -147,6 +149,7 @@ interface ExplorerState {
   setFocusMode: (mode: FocusMode) => void
   cycleFocusMode: () => void
   toggleMiniMap: () => void
+  toggleTests: () => void
   toggleSelectionDrag: () => void
 
   select: (ids: string[], options?: { additive?: boolean }) => void
@@ -281,6 +284,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   collapsedFolders: new Set(),
   focusMode: 'dim',
   showMiniMap: true,
+  showTests: false,
   selectionDrag: false,
 
   selectedIds: new Set(),
@@ -499,6 +503,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
       focusMode: state.focusMode === 'off' ? 'dim' : state.focusMode === 'dim' ? 'isolate' : 'off',
     })),
   toggleMiniMap: () => set((state) => ({ showMiniMap: !state.showMiniMap })),
+  toggleTests: () => set((state) => ({ showTests: !state.showTests })),
   toggleSelectionDrag: () => set((state) => ({ selectionDrag: !state.selectionDrag })),
 
   // ------------------------------------------------------------------ selection
@@ -585,7 +590,13 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   },
 
   requestCenter: (id) =>
-    set((state) => ({ centerRequest: { id, nonce: (state.centerRequest?.nonce ?? 0) + 1 } })),
+    set((state) => ({
+      centerRequest: { id, nonce: (state.centerRequest?.nonce ?? 0) + 1 },
+      // a dq check is only drawn with the Tests toggle on: jumping to one turns it on
+      ...(!state.showTests && state.graph?.nodes.some((n) => n.id === id && n.resource_type === 'test')
+        ? { showTests: true }
+        : {}),
+    })),
 
   // ------------------------------------------------------------------ column lineage (2.3)
   traceColumn: async (modelId, column, direction = 'both') => {

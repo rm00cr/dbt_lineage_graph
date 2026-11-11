@@ -4,6 +4,7 @@ import {
   Box,
   Boxes,
   Database,
+  FlaskConical,
   Eye,
   Ghost,
   Layers,
@@ -48,6 +49,7 @@ export const MATERIALIZATION_ICONS: Record<Materialization, LucideIcon> = {
   incremental: Layers,
   ephemeral: Ghost,
   source: Database,
+  test: FlaskConical,
   other: Boxes,
 }
 
@@ -57,6 +59,7 @@ export const MATERIALIZATION_LABELS: Record<Materialization, string> = {
   incremental: 'incremental',
   ephemeral: 'ephemeral',
   source: 'source',
+  test: 'test',
   other: 'other',
 }
 
