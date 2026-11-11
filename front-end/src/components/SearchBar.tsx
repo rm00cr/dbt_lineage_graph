@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import type { GraphNode, SearchHit } from '../api/types'
 import { useExplorerStore } from '../store/useExplorerStore'
-import { STAGE_LABELS, useStageColor } from './visual'
+import { MATERIALIZATION_ICONS, STAGE_LABELS, useStageColor } from './visual'
 
 type Mode = 'models' | 'columns'
 
@@ -22,7 +22,9 @@ interface Row {
   id: string
   name: string
   stage: GraphNode['stage']
-  meta: string
+  materialization: GraphNode['materialization']
+  /** shown after the stage label: materialization / column type, pipeline */
+  details: string[]
   column?: string
   /** direct column-lineage edges; null/undefined when unknown */
   upstream?: number | null
@@ -37,6 +39,22 @@ const traceable = (row: Row) =>
   row.upstream + row.downstream > 0
 
 const MAX_ROWS = 12
+
+/** `raw_mfp.coverages` -> muted `raw_mfp.` + bold `coverages`, so the model name stands out */
+function NameParts({ name }: { name: string }) {
+  const cut = name.lastIndexOf('.') + 1
+  if (cut === 0) return <span className="result__base">{name}</span>
+  return (
+    <>
+      <span className="result__prefix">{name.slice(0, cut)}</span>
+      <span className="result__base">{name.slice(cut)}</span>
+    </>
+  )
+}
+
+/** the materialization only when it adds something (a source in the Source stage does not) */
+const materializationDetail = (node: Pick<GraphNode, 'stage' | 'materialization'>) =>
+  node.materialization === STAGE_LABELS[node.stage].toLowerCase() ? [] : [node.materialization]
 
 export function SearchBar() {
   const graph = useExplorerStore((s) => s.graph)
@@ -124,7 +142,8 @@ export function SearchBar() {
           id: hit.item.id,
           name: hit.item.name,
           stage: hit.item.stage,
-          meta: `${STAGE_LABELS[hit.item.stage]} · ${hit.item.materialization} · ${hit.item.pipeline}`,
+          materialization: hit.item.materialization,
+          details: [...materializationDetail(hit.item), hit.item.pipeline],
           score: 1 - (hit.score ?? 0),
         }))
     }
@@ -133,7 +152,8 @@ export function SearchBar() {
       id: hit.id,
       name: hit.name,
       stage: hit.stage,
-      meta: hit.column?.type ? `${hit.column.type} · ${hit.pipeline}` : hit.pipeline,
+      materialization: hit.materialization,
+      details: hit.column?.type ? [hit.column.type, hit.pipeline] : [hit.pipeline],
       column: hit.column?.name,
       upstream: hit.column?.upstream_count,
       downstream: hit.column?.downstream_count,
@@ -254,7 +274,9 @@ export function SearchBar() {
             </div>
           )}
 
-          {rows.map((row, index) => (
+          {rows.map((row, index) => {
+            const Icon = MATERIALIZATION_ICONS[row.materialization] ?? MATERIALIZATION_ICONS.other
+            return (
             <button
               key={`${row.id}:${row.column ?? ''}`}
               className="result"
@@ -262,20 +284,33 @@ export function SearchBar() {
               onMouseEnter={() => setCursor(index)}
               onClick={() => pick(row)}
             >
-              <span className="result__dot" style={{ background: stageColor(row.stage), color: stageColor(row.stage) }} />
+              <span
+                className="result__icon"
+                style={{ ['--stage-color' as string]: stageColor(row.stage) }}
+                title={`${STAGE_LABELS[row.stage]} · ${row.materialization}`}
+              >
+                <Icon size={13} strokeWidth={2.2} />
+              </span>
               <span className="result__main">
-                <span className="result__name">
-                  {row.column ? (
+                <span className="result__name" title={row.column ? `${row.column} in ${row.name}` : row.name}>
+                  {row.column && (
                     <>
                       <span className="result__col">{row.column}</span>
-                      <span style={{ color: 'var(--text-faint)' }}> in </span>
-                      {row.name}
+                      <span className="result__in">in</span>
                     </>
-                  ) : (
-                    row.name
                   )}
+                  <NameParts name={row.name} />
                 </span>
-                <span className="result__meta">{row.meta}</span>
+                <span className="result__meta">
+                  <span className="result__stage" style={{ color: stageColor(row.stage) }}>
+                    {STAGE_LABELS[row.stage]}
+                  </span>
+                  {row.details.map((detail, i) => (
+                    <span key={i} className="result__detail">
+                      {detail}
+                    </span>
+                  ))}
+                </span>
               </span>
               {row.column !== undefined && typeof row.upstream === 'number' && (
                 <span
@@ -291,7 +326,8 @@ export function SearchBar() {
               )}
               <span className="result__score">{Math.round(row.score * 100)}%</span>
             </button>
-          ))}
+            )
+          })}
         </div>
       )}
     </div>
