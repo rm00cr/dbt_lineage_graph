@@ -11,8 +11,8 @@ select
     plan.planned_expense_ratio,
     pnl.expenses_chf / nullif(pnl.earned_premium_chf, 0)              as actual_expense_ratio,
     portfolio.contract_count
-from {{ ref('src_fin_premium_plan') }} as plan
-left join {{ ref('src_fin_mfp_portfolio_monthly') }} as portfolio
+from {{ ref('stg_fin_premium_plan') }} as plan
+left join {{ ref('stg_fin_mfp_portfolio_monthly') }} as portfolio
     on plan.plan_month = portfolio.reporting_month
     and plan.product_code = portfolio.product_code
 left join {{ ref('int_fin_pnl') }} as pnl

@@ -20,6 +20,9 @@ def test_meta(client: TestClient) -> None:
     body = client.get("/api/meta").json()
     assert body["pipelines"] == ["bestand_mfp", "schaden_claims"]
     assert body["stages"] == ["src", "int", "out"]
+    assert [(layer["name"], layer["label"], layer["role"]) for layer in body["layers"]] == [
+        ("src", "Source", "src"), ("int", "Intermediate", "int"), ("out", "Output", "out"),
+    ]
     assert "incremental" in body["materializations"]
     assert body["model_count"] == 23 and body["source_count"] == 9
     assert "mfp" in body["tags"]
@@ -35,10 +38,12 @@ def test_graph_shape(client: TestClient) -> None:
         "id": CONTRACTS,
         "name": "int_mfp_contracts",
         "stage": "int",
+        "role": "int",
         "materialization": "table",
         "pipeline": "bestand_mfp",
         "resource_type": "model",
         "group": "contract",
+        "folder": None,  # fixtures keep int models directly in 02_intermediate
         "schema_name": "mfp_intermediate",
         "database": "pnc-analytics-prd",
         "description": node["description"],

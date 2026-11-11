@@ -19,27 +19,32 @@ import {
   type XYPosition,
   useReactFlow,
 } from '@xyflow/react'
+import { ChevronDown, ChevronRight } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 
 import type { GraphEdge, GraphNode } from '../api/types'
 import { boundaryViolations } from '../graph/boundary'
+import { COLLAPSED_NODE_HEIGHT, COLLAPSED_PREFIX, isCollapsedNodeId } from '../graph/collapse'
 import { edgeHandles, traceNodeHeight } from '../graph/columnTrace'
-import { NODE_HEIGHT, NODE_WIDTH, layoutGraph } from '../graph/layout'
+import { NODE_HEIGHT, NODE_WIDTH, cardHeight, layoutGraph } from '../graph/layout'
+import { shownView, touches as touchesIn, visibleSubgraph } from '../graph/visible'
 import { STACK_HEAD, isStacked } from '../graph/stack'
-import { visibleSubgraph } from '../graph/visible'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { useTheme } from '../theme/useTheme'
+import { FolderNode, type FolderNodeType } from './nodes/FolderNode'
 import { ModelNode, type ModelNodeType } from './nodes/ModelNode'
-import { STAGE_LABELS, useChangeColor, useStageColor } from './visual'
+import { useChangeColor, useStages } from './visual'
 
-const NODE_TYPES = { model: ModelNode }
+const NODE_TYPES = { model: ModelNode, folder: FolderNode }
 const PULSE_MS = 1900
 
 export function GraphCanvas() {
   const graph = useExplorerStore((s) => s.graph)
   const layoutMode = useExplorerStore((s) => s.layoutMode)
   const zoneMode = useExplorerStore((s) => s.zoneMode)
-  const splitPipelines = useExplorerStore((s) => s.splitPipelines)
+  const layers = useExplorerStore((s) => s.meta?.layers)
+  const collapsedFolders = useExplorerStore((s) => s.collapsedFolders)
+  const toggleFolder = useExplorerStore((s) => s.toggleFolder)
   const focusMode = useExplorerStore((s) => s.focusMode)
   const showMiniMap = useExplorerStore((s) => s.showMiniMap)
   const selectionDrag = useExplorerStore((s) => s.selectionDrag)
@@ -59,7 +64,7 @@ export function GraphCanvas() {
   const { setCenter, fitView, fitBounds, getNodesBounds } = useReactFlow()
   const canvasRef = useRef<HTMLDivElement>(null)
   const theme = useTheme((s) => s.resolved)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
   const changeColor = useChangeColor()
 
   const [dragged, setDragged] = useState<Map<string, XYPosition>>(new Map())
@@ -68,24 +73,53 @@ export function GraphCanvas() {
   selectionRef.current = selectedIds
 
   // ------------------------------------------------------------------ layout
+  // collapsed folder boxes (zones > groups) are replaced by one summary node each; the same
+  // rule (graph/visible.ts) decides what an export contains
+  const view = useMemo(
+    () =>
+      shownView({
+        graph,
+        layoutMode,
+        zoneMode,
+        collapsedFolders,
+        // a column trace needs its models: their folders stay open while it is shown
+        keep: traceView?.nodeIds,
+      }),
+    [graph, layoutMode, zoneMode, collapsedFolders, traceView],
+  )
+
   // traced nodes (2.3) grow by their column rows; the layout makes room for them
   // nodes of stacked execution modes get head room above the card for mode tabs + back cards
   const heights = useMemo(() => {
+    // every card is as tall as its name needs; traced columns and the stack head add to it
     const map = new Map<string, number>()
-    if (traceView) {
-      for (const [id, columns] of traceView.columnsByNode) map.set(id, traceNodeHeight(NODE_HEIGHT, columns))
-    }
-    for (const node of graph?.nodes ?? []) {
-      if (isStacked(node)) map.set(node.id, (map.get(node.id) ?? NODE_HEIGHT) + STACK_HEAD)
+    for (const node of view.nodes) {
+      // a collapsed folder's summary node has a fixed height
+      if (view.members.has(node.id)) {
+        map.set(node.id, COLLAPSED_NODE_HEIGHT)
+        continue
+      }
+      let height = traceNodeHeight(cardHeight(node), traceView?.columnsByNode.get(node.id))
+      if (isStacked(node)) height += STACK_HEAD
+      map.set(node.id, height)
     }
     return map
-  }, [traceView, graph])
+  }, [traceView, view])
 
   const layout = useMemo(
     () =>
-      layoutGraph(graph?.nodes ?? [], graph?.edges ?? [], layoutMode, heights, { zones: zoneMode, splitPipelines }),
-    [graph, layoutMode, heights, zoneMode, splitPipelines],
+      layoutGraph(view.nodes, view.edges, layoutMode, heights, {
+        zones: zoneMode,
+        stageOrder: layers?.map((l) => l.name),
+      }),
+    [view, layoutMode, heights, zoneMode, layers],
   )
+
+  // moved nodes would sit at stale spots once boxes collapse / expand
+  const collapseSignature = [...view.members.keys()].sort().join('|')
+  useEffect(() => {
+    setDragged(new Map())
+  }, [collapseSignature])
 
   /**
    * Fit the viewport: to the traced column path (2.3) while one is shown, otherwise to the
@@ -111,7 +145,7 @@ export function GraphCanvas() {
     void fitBounds({ ...bounds, width: (bounds.width * width) / (width - covered) }, { duration: 650, padding: 0.12 })
   }, [fitView, fitBounds, getNodesBounds])
 
-  const layoutSignature = `${layoutMode}:${layoutMode === 'lanes' ? `${zoneMode}:${splitPipelines}` : ''}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
+  const layoutSignature = `${layoutMode}:${layoutMode === 'lanes' ? zoneMode : ''}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
   useEffect(() => {
     setDragged(new Map())
     const timer = window.setTimeout(frameView, 60)
@@ -137,64 +171,101 @@ export function GraphCanvas() {
   }, [centerRequest])
 
   // ------------------------------------------------------------------ centering
+  const centeredFor = useRef<typeof centerRequest>(null)
   useEffect(() => {
     if (!centerRequest) return
-    const position = dragged.get(centerRequest.id) ?? layout.positions.get(centerRequest.id)
-    if (!position) return
-    setCenter(position.x + NODE_WIDTH / 2, position.y + NODE_HEIGHT / 2, {
+    const shownAs = view.representative.get(centerRequest.id) ?? centerRequest.id
+    if (isCollapsedNodeId(shownAs)) {
+      // the target sits in a collapsed folder: open it, the next layout run centres on it
+      toggleFolder(shownAs.slice(COLLAPSED_PREFIX.length))
+      return
+    }
+    const position = dragged.get(shownAs) ?? layout.positions.get(shownAs)
+    if (!position || centeredFor.current === centerRequest) return
+    centeredFor.current = centerRequest
+    setCenter(position.x + NODE_WIDTH / 2, position.y + (heights.get(shownAs) ?? NODE_HEIGHT) / 2, {
       zoom: 1.05,
       duration: 700,
     })
     // `dragged` intentionally not a dependency: we only centre on an explicit request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [centerRequest, layout, setCenter])
+  }, [centerRequest, layout, view, setCenter, toggleFolder])
 
   // ------------------------------------------------------------------ derived nodes/edges
-  // shared with the export, so an export always contains what the canvas shows
-  const visibleIds = useMemo(
-    () => visibleSubgraph(graph, focusMode, highlightedIds).ids,
-    [graph, focusMode, highlightedIds],
-  )
+  /** a summary node counts as in `ids` when any model it stands for is */
+  const touches = useCallback((id: string, ids: ReadonlySet<string>) => touchesIn(view, id, ids), [view])
 
-  const nodes = useMemo<ModelNodeType[]>(() => {
+  // shared with the export, so an export always contains what the canvas shows
+  const visibleIds = useMemo(() => visibleSubgraph(view, focusMode, highlightedIds).ids, [view, focusMode, highlightedIds])
+
+  const nodes = useMemo<(ModelNodeType | FolderNodeType)[]>(() => {
     if (!graph) return []
     const dimming = focusMode !== 'off' && highlightedIds.size > 0
 
-    return graph.nodes
+    return view.nodes
       .filter((node) => visibleIds.has(node.id))
-      .map((node) => ({
-        id: node.id,
-        type: 'model' as const,
-        position: dragged.get(node.id) ?? layout.positions.get(node.id) ?? { x: 0, y: 0 },
-        // Explicit dimensions: the nodes are fully controlled, so React Flow never writes
-        // measurements back into them — without this the mini-map stays empty.
-        width: NODE_WIDTH,
-        height: heights.get(node.id) ?? NODE_HEIGHT,
-        selected: selectedIds.has(node.id),
-        data: {
-          node,
-          dimmed: dimming && !highlightedIds.has(node.id),
-          inFocus: dimming && highlightedIds.has(node.id),
-          active: activeId === node.id,
-          searchHit: pulseId === node.id,
-          traceColumns: traceView?.columnsByNode.get(node.id),
-          height: heights.get(node.id),
-        },
-      }))
-  }, [graph, visibleIds, dragged, layout, heights, traceView, selectedIds, highlightedIds, focusMode, activeId, pulseId])
+      .map((node) => {
+        const common = {
+          id: node.id,
+          position: dragged.get(node.id) ?? layout.positions.get(node.id) ?? { x: 0, y: 0 },
+          // Explicit dimensions: the nodes are fully controlled, so React Flow never writes
+          // measurements back into them — without this the mini-map stays empty.
+          width: NODE_WIDTH,
+          height: heights.get(node.id) ?? NODE_HEIGHT,
+        }
+        const inFocus = dimming && touches(node.id, highlightedIds)
+        const dimmed = dimming && !inFocus
+        const members = view.members.get(node.id)
+        if (members) {
+          return {
+            ...common,
+            type: 'folder' as const,
+            selectable: false,
+            data: {
+              label: node.name,
+              count: members.length,
+              stage: node.stage,
+              dimmed,
+              inFocus,
+              active: activeId !== null && members.includes(activeId),
+              searchHit: pulseId !== null && members.includes(pulseId),
+              // state comparison: what the folder's models changed (mixed -> modified)
+              change: node.change ?? undefined,
+            },
+          }
+        }
+        return {
+          ...common,
+          type: 'model' as const,
+          selected: selectedIds.has(node.id),
+          data: {
+            node,
+            dimmed,
+            inFocus,
+            active: activeId === node.id,
+            searchHit: pulseId === node.id,
+            traceColumns: traceView?.columnsByNode.get(node.id),
+            height: heights.get(node.id),
+          },
+        }
+      })
+  }, [graph, view, visibleIds, dragged, layout, heights, traceView, selectedIds, highlightedIds, focusMode, activeId, pulseId, touches])
 
   const accentColor = theme === 'light' ? '#4f46e5' : '#6366f1'
   const edgeColor = theme === 'light' ? 'rgba(71,85,105,0.5)' : 'rgba(148,163,184,0.4)'
 
   // cross-pipeline edges that break the boundary convention (only OUT -> SRC may cross)
   const violations = useMemo(() => boundaryViolations(graph?.nodes ?? [], graph?.edges ?? []), [graph])
+  /** merged edges (into / out of a summary node) stand for several real edges */
+  const standsFor = useCallback((id: string) => view.edgeMembers.get(id) ?? [id], [view])
+  const isViolation = useCallback((id: string) => standsFor(id).some((e) => violations.has(e)), [standsFor, violations])
 
   const edges = useMemo(() => {
     if (!graph) return []
     const dimming = focusMode !== 'off' && highlightedEdgeIds.size > 0
     const crossClass = (edge: GraphEdge) =>
       [
-        edge.cross_pipeline ? `edge--cross${violations.has(edge.id) ? ' edge--violation' : ''}` : '',
+        edge.cross_pipeline ? `edge--cross${isViolation(edge.id) ? ' edge--violation' : ''}` : '',
         edge.change === 'added' || edge.change === 'removed' ? `edge--${edge.change}` : '',
         edge.front === false ? 'edge--back' : '',
       ]
@@ -206,7 +277,7 @@ export function GraphCanvas() {
 
     // while a column is traced, the model edges on its path are replaced by column edges
     if (traceView) {
-      const modelEdges = graph.edges
+      const modelEdges = view.edges
         .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
         .filter((edge) => !traceView.modelEdgeIds.has(edge.id))
         .map((edge) => ({
@@ -230,10 +301,10 @@ export function GraphCanvas() {
       return [...modelEdges, ...columnEdges]
     }
 
-    return graph.edges
+    return view.edges
       .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
       .map((edge) => {
-        const highlighted = highlightedEdgeIds.has(edge.id)
+        const highlighted = standsFor(edge.id).some((e) => highlightedEdgeIds.has(e))
         const classes = [
           highlighted ? 'edge--highlight' : dimming ? 'edge--dim' : '',
           crossClass(edge),
@@ -254,11 +325,11 @@ export function GraphCanvas() {
           },
         }
       })
-  }, [graph, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor, traceView, violations, changeColor])
+  }, [graph, view, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor, traceView, isViolation, standsFor, changeColor])
 
   // ------------------------------------------------------------------ interaction
   const onNodesChange = useCallback(
-    (changes: NodeChange<ModelNodeType>[]) => {
+    (changes: NodeChange<ModelNodeType | FolderNodeType>[]) => {
       const moved: [string, XYPosition][] = []
       const selectionAdds: string[] = []
       const selectionRemoves: string[] = []
@@ -266,7 +337,7 @@ export function GraphCanvas() {
       for (const change of changes) {
         if (change.type === 'position' && change.position) {
           moved.push([change.id, change.position])
-        } else if (change.type === 'select') {
+        } else if (change.type === 'select' && !isCollapsedNodeId(change.id)) {
           ;(change.selected ? selectionAdds : selectionRemoves).push(change.id)
         }
       }
@@ -293,9 +364,13 @@ export function GraphCanvas() {
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: RFNode) => {
+      if (isCollapsedNodeId(node.id)) {
+        toggleFolder(node.id.slice(COLLAPSED_PREFIX.length))
+        return
+      }
       void openModel(node.id, { center: false })
     },
-    [openModel],
+    [openModel, toggleFolder],
   )
 
   const onPaneClick = useCallback(() => {
@@ -339,8 +414,9 @@ export function GraphCanvas() {
             zoomable
             maskColor={theme === 'light' ? 'rgba(226, 232, 240, 0.62)' : 'rgba(8, 11, 18, 0.72)'}
             nodeColor={(node) => {
-              const data = (node.data as { node: GraphNode }).node
-              return comparing ? changeColor(data.change) : stageColor(data.stage)
+              const data = node.data as { node?: GraphNode; stage?: GraphNode['stage'] }
+              if (!data.node) return stageColor(data.stage ?? 'other') // collapsed folder
+              return comparing ? changeColor(data.node.change) : stageColor(data.node)
             }}
             nodeStrokeWidth={0}
             style={{ width: 190, height: 130 }}
@@ -393,11 +469,44 @@ export function GraphCanvas() {
                 }}
               >
                 <div className="lane__label" style={{ ['--stage-color' as string]: stageColor(lane.stage) }}>
-                  {STAGE_LABELS[lane.stage]}
+                  {stageLabel(lane.stage)}
                   <span className="lane__count">{lane.count}</span>
                 </div>
               </div>
             ))}
+            {layout.folders.map((box) => {
+              const open = !view.members.has(`${COLLAPSED_PREFIX}${box.key}`)
+              const Chevron = open ? ChevronDown : ChevronRight
+              // a collapsed box holds one summary node: the real model count is on that node
+              const count = view.members.get(`${COLLAPSED_PREFIX}${box.key}`)?.length ?? box.count
+              return (
+                <div
+                  key={box.key}
+                  className={`folder-band ${box.folder ? '' : 'folder-band--root'}`}
+                  style={{
+                    ['--stage-color' as string]: stageColor(box.stage),
+                    transform: `translate(${box.x}px, ${box.y}px)`,
+                    width: box.width,
+                    height: box.height,
+                  }}
+                >
+                  <button
+                    type="button"
+                    className="folder-band__label nopan"
+                    aria-expanded={open}
+                    title={open ? 'Collapse this group' : 'Expand this group'}
+                    onClick={(event) => {
+                      event.stopPropagation()
+                      toggleFolder(box.key)
+                    }}
+                  >
+                    <Chevron size={14} className="folder-band__chevron" />
+                    {box.folder ?? '(root)'}
+                    <span className="row-band__count">{count}</span>
+                  </button>
+                </div>
+              )
+            })}
           </ViewportPortal>
         )}
       </ReactFlow>

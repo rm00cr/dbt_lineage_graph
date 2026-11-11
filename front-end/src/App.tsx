@@ -122,9 +122,6 @@ function Explorer() {
                 <kbd>L</kbd>layout
               </span>
               <span>
-                <kbd>E</kbd>expand
-              </span>
-              <span>
                 <kbd>Z</kbd>fit
               </span>
               <span>

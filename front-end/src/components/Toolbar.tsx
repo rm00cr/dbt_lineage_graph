@@ -5,6 +5,8 @@
 
 import { useReactFlow } from '@xyflow/react'
 import {
+  ChevronsDownUp,
+  ChevronsUpDown,
   Columns3,
   Copy,
   Crosshair,
@@ -12,12 +14,10 @@ import {
   EyeOff,
   Filter,
   GitBranch,
-  Layers,
   Map as MapIcon,
   Maximize2,
   MousePointerSquareDashed,
   RefreshCw,
-  Rows3,
   TriangleAlert,
   Workflow,
   X,
@@ -25,19 +25,47 @@ import {
 import { useMemo, useState } from 'react'
 
 import { VIOLATION_LABELS, boundaryViolations } from '../graph/boundary'
+import { allFolderKeys } from '../graph/collapse'
 import type { ZoneMode } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { CompareBar } from './Compare'
-import { STAGE_LABELS, copyToClipboard, useStageColor } from './visual'
+import { copyToClipboard, useStages } from './visual'
 
 const FOCUS_LABEL = { off: 'Focus off', dim: 'Focus: dim', isolate: 'Focus: isolate' } as const
 const FOCUS_ICON = { off: EyeOff, dim: Eye, isolate: Crosshair } as const
 
 const ZONE_OPTIONS: { mode: ZoneMode; label: string; title: string }[] = [
-  { mode: 'stages', label: 'Stages', title: 'Stage columns only (src / int / out)' },
+  { mode: 'stages', label: 'Stages', title: 'Stage columns only (one per layer)' },
+  { mode: 'folders', label: 'Folders', title: 'Stage columns, one box per model sub-folder inside each' },
   { mode: 'both', label: 'Stages × Groups', title: 'Stage columns, one row per dbt group' },
   { mode: 'groups', label: 'Groups', title: 'One row per dbt group, columns by DAG depth' },
 ]
+
+/** Collapses every group box into one node, or opens them all again. */
+function FoldAllButton({
+  keys,
+  collapsed,
+  onChange,
+}: {
+  keys: string[]
+  collapsed: ReadonlySet<string>
+  onChange: (keys: Iterable<string>) => void
+}) {
+  const allCollapsed = keys.length > 0 && keys.every((k) => collapsed.has(k))
+  const Icon = allCollapsed ? ChevronsUpDown : ChevronsDownUp
+  const label = allCollapsed ? 'Expand all groups' : 'Collapse all groups'
+  return (
+    <button
+      className="btn btn--icon"
+      onClick={() => onChange(allCollapsed ? [] : keys)}
+      disabled={keys.length === 0}
+      title={`${label} (click a group header to toggle a single one)`}
+      aria-label={label}
+    >
+      <Icon size={14} />
+    </button>
+  )
+}
 
 interface ToolbarProps {
   onToast: (message: string) => void
@@ -48,10 +76,14 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const setLayoutMode = useExplorerStore((s) => s.setLayoutMode)
   const zoneMode = useExplorerStore((s) => s.zoneMode)
   const setZoneMode = useExplorerStore((s) => s.setZoneMode)
+  const hasFolders = useExplorerStore((s) => s.graph?.nodes.some((n) => n.folder) ?? false)
   const hasGroups = useExplorerStore((s) => s.graph?.nodes.some((n) => n.group) ?? false)
-  const splitPipelines = useExplorerStore((s) => s.splitPipelines)
-  const setSplitPipelines = useExplorerStore((s) => s.setSplitPipelines)
-  const pipelineCount = useExplorerStore((s) => s.graph?.stats.pipelines.length ?? 0)
+  // without model sub-folders the 'folders' (Groups) default is drawn as plain stages
+  const shownZoneMode = zoneMode === 'folders' && !hasFolders ? 'stages' : zoneMode
+  const collapsedFolders = useExplorerStore((s) => s.collapsedFolders)
+  const setCollapsedFolders = useExplorerStore((s) => s.setCollapsedFolders)
+  // the zones layout splits by pipeline whenever more than one is shown (layout.ts)
+  const multiPipeline = useExplorerStore((s) => new Set(s.graph?.nodes.map((n) => n.pipeline)).size > 1)
   const graph = useExplorerStore((s) => s.graph)
   const select = useExplorerStore((s) => s.select)
   const violations = useMemo(() => {
@@ -76,7 +108,6 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const applySelector = useExplorerStore((s) => s.applySelector)
   const selectedIds = useExplorerStore((s) => s.selectedIds)
   const clearSelection = useExplorerStore((s) => s.clearSelection)
-  const expandSelectionLineage = useExplorerStore((s) => s.expandSelectionLineage)
   const dbtSelectorString = useExplorerStore((s) => s.dbtSelectorString)
 
   const filters = useExplorerStore((s) => s.filters)
@@ -85,7 +116,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const refresh = useExplorerStore((s) => s.refresh)
 
   const [showFilters, setShowFilters] = useState(false)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
   const { fitView } = useReactFlow()
 
   const FocusIcon = FOCUS_ICON[focusMode]
@@ -129,22 +160,25 @@ export function Toolbar({ onToast }: ToolbarProps) {
         <button
           className={`btn ${layoutMode === 'lanes' ? 'btn--active' : ''}`}
           onClick={() => setLayoutMode('lanes')}
-          title="Zones: stages (src / int / out) as columns and/or dbt groups as rows"
+          title="Zones: stages (layers) as columns, with model folders as boxes or dbt groups as rows"
         >
           <Columns3 size={14} /> Zones
         </button>
         {layoutMode === 'lanes' && (
           <div className="segmented toolbar__zones" role="group" aria-label="Zones">
             {ZONE_OPTIONS.map(({ mode, label, title }) => {
-              const needsGroups = mode !== 'stages'
-              const disabled = needsGroups && !hasGroups
+              const needsGroups = mode === 'both' || mode === 'groups'
+              const disabled = (mode === 'folders' && !hasFolders) || (needsGroups && !hasGroups)
+              const reason = needsGroups
+                ? 'No dbt groups in this project (set `group:` on your models)'
+                : 'No model sub-folders in this project (put models in e.g. 02_intermediate/<folder>/)'
               return (
                 <button
                   key={mode}
-                  data-active={zoneMode === mode}
+                  data-active={shownZoneMode === mode}
                   disabled={disabled}
                   onClick={() => setZoneMode(mode)}
-                  title={disabled ? 'No dbt groups in this project (set `group:` on your models)' : title}
+                  title={disabled ? reason : title}
                 >
                   {label}
                 </button>
@@ -152,20 +186,12 @@ export function Toolbar({ onToast }: ToolbarProps) {
             })}
           </div>
         )}
-        {layoutMode === 'lanes' && (
-          <button
-            className={`btn btn--icon ${splitPipelines && pipelineCount > 1 ? 'btn--active' : ''}`}
-            onClick={() => setSplitPipelines(!splitPipelines)}
-            disabled={pipelineCount < 2}
-            aria-pressed={splitPipelines}
-            title={
-              pipelineCount < 2
-                ? 'Split by pipeline: needs 2+ pipelines in view'
-                : 'Split by pipeline: one band per pipeline, upstream first'
-            }
-          >
-            <Rows3 size={14} />
-          </button>
+        {layoutMode === 'lanes' && zoneMode === 'folders' && hasFolders && graph && (
+          <FoldAllButton
+            keys={allFolderKeys(graph.nodes, multiPipeline)}
+            collapsed={collapsedFolders}
+            onChange={setCollapsedFolders}
+          />
         )}
 
         <span className="toolbar__divider" />
@@ -256,14 +282,6 @@ export function Toolbar({ onToast }: ToolbarProps) {
         >
           Apply
         </button>
-        <button
-          className="btn btn--sm"
-          onClick={expandSelectionLineage}
-          disabled={selectedIds.size === 0}
-          title="Grow the selection to the full upstream + downstream lineage"
-        >
-          <Layers size={13} /> + lineage +
-        </button>
         <button className="btn btn--sm" onClick={() => void copySelector()} title="Copy dbt run command">
           <Copy size={13} /> dbt run
         </button>
@@ -296,11 +314,11 @@ export function Toolbar({ onToast }: ToolbarProps) {
               onClick={() => toggleStage(stage)}
               style={
                 filters.stages.includes(stage)
-                  ? { color: stageColor(stage as 'src'), borderColor: stageColor(stage as 'src') }
+                  ? { color: stageColor(stage), borderColor: stageColor(stage) }
                   : undefined
               }
             >
-              {STAGE_LABELS[stage as 'src'] ?? stage}
+              {stageLabel(stage)}
             </button>
           ))}
 

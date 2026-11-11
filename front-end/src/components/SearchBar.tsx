@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import type { GraphNode, SearchHit } from '../api/types'
 import { useExplorerStore } from '../store/useExplorerStore'
-import { STAGE_LABELS, useStageColor } from './visual'
+import { useStages } from './visual'
 
 type Mode = 'models' | 'columns'
 
@@ -22,6 +22,7 @@ interface Row {
   id: string
   name: string
   stage: GraphNode['stage']
+  role?: GraphNode['role']
   meta: string
   column?: string
   /** direct column-lineage edges; null/undefined when unknown */
@@ -52,7 +53,7 @@ export function SearchBar() {
   const [columnHits, setColumnHits] = useState<SearchHit[]>([])
   const [loading, setLoading] = useState(false)
   const [columnError, setColumnError] = useState<string | null>(null)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
 
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -124,7 +125,8 @@ export function SearchBar() {
           id: hit.item.id,
           name: hit.item.name,
           stage: hit.item.stage,
-          meta: `${STAGE_LABELS[hit.item.stage]} · ${hit.item.materialization} · ${hit.item.pipeline}`,
+          role: hit.item.role,
+          meta: `${stageLabel(hit.item.stage)} · ${hit.item.materialization} · ${hit.item.pipeline}`,
           score: 1 - (hit.score ?? 0),
         }))
     }
@@ -133,6 +135,7 @@ export function SearchBar() {
       id: hit.id,
       name: hit.name,
       stage: hit.stage,
+      role: hit.role,
       meta: hit.column?.type ? `${hit.column.type} · ${hit.pipeline}` : hit.pipeline,
       column: hit.column?.name,
       upstream: hit.column?.upstream_count,
@@ -262,7 +265,7 @@ export function SearchBar() {
               onMouseEnter={() => setCursor(index)}
               onClick={() => pick(row)}
             >
-              <span className="result__dot" style={{ background: stageColor(row.stage), color: stageColor(row.stage) }} />
+              <span className="result__dot" style={{ background: stageColor(row), color: stageColor(row) }} />
               <span className="result__main">
                 <span className="result__name">
                   {row.column ? (

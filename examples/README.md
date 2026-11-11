@@ -23,8 +23,10 @@ bestand_mfp ──▶ schaden_claims ──▶ finance_controlling
      └──────────────────────────────────────▲
 ```
 
-Each project uses the standard layout (`models/01_source` → `02_intermediate` →
-`03_output`), dbt groups with owners, tags, `meta.execution_mode` (daily / hourly / ...),
+The layers (stage columns) are declared in `pipelines.yaml`: `bestand_mfp` and
+`schaden_claims` use `models/01_source` → `02_intermediate` → `03_output` (the top-level
+`layers:`), `finance_controlling` overrides them with `staging` → `intermediate` → `marts`
+(`stg_` / `int_` / `mart_` models). All use dbt groups with owners, tags, `meta.execution_mode` (daily / hourly / ...),
 descriptions and a few tests. All three are called `dbt_pnc`, as in production;
 `pipelines.yaml` gives them their names. A pipeline reads another one's output by declaring
 the table as a dbt source, and the Explorer links them by table name.
@@ -38,7 +40,7 @@ the table as a dbt source, and the Explorer links them by table name.
 | | **net_of_ri** | `include_reinsurance: true` | adds `raw_claims.ri_recoveries`, `int_claims_net_payments`, `out_claims_ri_report`; the loss ratio is net |
 | | **large_loss_watch** | `large_loss_threshold: 250000` | same graph, different SQL in `int_claims_cases` |
 | `finance_controlling` (P&L) | **actuals** | `include_plan: false` | booked figures |
-| | **plan_vs_actual** | `include_plan: true` | adds the premium plan, `int_fin_plan_vs_actual`, `out_fin_plan_variance`, and reads `out_mfp_portfolio_monthly` |
+| | **plan_vs_actual** | `include_plan: true` | adds the premium plan, `int_fin_plan_vs_actual`, `mart_fin_plan_variance`, and reads `out_mfp_portfolio_monthly` |
 | | **flat_allocation** | `expense_alloc: flat` | same graph, shared costs split equally |
 
 **Modes across pipelines:** `finance_controlling` in *plan_vs_actual* reads

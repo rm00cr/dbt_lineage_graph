@@ -11,6 +11,7 @@
  *   model_name+3        3 downstream levels
  *   tag:mfp             every node carrying the tag
  *   stage:out           every node of a stage
+ *   folder:contract_with_claim  every node in a model sub-folder (sources: their consumers' folder)
  *   pipeline:bestand_mfp
  *   materialization:incremental  (alias: config.materialized:incremental)
  *   a b                 union of both selectors            (dbt: space = union)
@@ -102,7 +103,7 @@ export interface ParsedSelector {
   raw: string
   upstreamDepth: number // 0 = no upstream
   downstreamDepth: number
-  method: 'name' | 'tag' | 'stage' | 'pipeline' | 'materialization'
+  method: 'name' | 'tag' | 'stage' | 'folder' | 'pipeline' | 'materialization'
   value: string
 }
 
@@ -110,6 +111,7 @@ const METHOD_ALIASES: Record<string, ParsedSelector['method']> = {
   tag: 'tag',
   stage: 'stage',
   layer: 'stage',
+  folder: 'folder',
   pipeline: 'pipeline',
   project: 'pipeline',
   materialization: 'materialization',
@@ -172,6 +174,8 @@ function matchNodes(index: AdjacencyIndex, selector: ParsedSelector): string[] {
           return node.tags.some((t) => t.toLowerCase() === value)
         case 'stage':
           return node.stage === value
+        case 'folder':
+          return (node.folder ?? '').toLowerCase() === value
         case 'pipeline':
           return node.pipeline.toLowerCase() === value
         case 'materialization':

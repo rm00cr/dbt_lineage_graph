@@ -3,13 +3,21 @@
 from __future__ import annotations
 
 import json
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
 import pytest
 
-from app.config import ArtifactPair, PipelinesConfigError, load_pipelines_config, resolve_stage
-from app.loader import LineageGraph, load_graph
+from app.config import (
+    ArtifactPair,
+    Layer,
+    PipelinesConfigError,
+    load_pipelines_config,
+    read_pipelines_config,
+    resolve_stage,
+)
+from app.loader import LineageGraph, load_graph, merge_layer_orders
 
 CONTRACTS = "model.bestand_mfp.int_mfp_contracts"
 SRC_CONTRACTS = "model.bestand_mfp.src_mfp_contracts"
@@ -279,3 +287,151 @@ def test_catalog_stats(graph: LineageGraph) -> None:
     node = graph.nodes[CONTRACTS]
     assert node.row_count == 4_812_004
     assert node.size_bytes == 1_073_741_824
+
+
+STAGING_MARTS = """\
+layers:
+  - {name: staging, label: Staging, folders: [01_staging], prefixes: [stg_]}
+  - intermediate
+  - {name: marts, folders: 03_marts}
+"""
+
+
+def test_layers_are_configurable(tmp_path: Path) -> None:
+    (tmp_path / "pipelines.yaml").write_text(
+        STAGING_MARTS
+        + """\
+pipelines:
+  - {name: a, dir: a}
+  - name: b
+    dir: b
+    layers: [raw, src, out]
+"""
+    )
+    (a, b), default = read_pipelines_config(tmp_path / "pipelines.yaml")
+    assert default == a.layers
+    assert [(layer.name, layer.label, layer.role) for layer in a.layers] == [
+        ("staging", "Staging", "src"), ("intermediate", "intermediate", "int"), ("marts", "marts", "out"),
+    ]
+    assert a.layers[0].folders == ("01_staging",) and a.layers[1].folders == ("intermediate",)
+    assert a.layers[2].folders == ("03_marts",)
+    assert [layer.role for layer in b.layers] == ["src", "int", "out"]  # the role is the position
+
+    def stage(path: str | None, name: str = "x", tags: list[str] | None = None) -> str:
+        return resolve_stage(name=name, resource_type="model", original_file_path=path, tags=tags, layers=a.layers)
+
+    assert stage("models/01_staging/x.sql") == "staging"
+    assert stage("models/staging/x.sql") == "staging"  # the numeric prefix is optional
+    assert stage("models/02_intermediate/x.sql") == "intermediate"
+    assert stage("models/marts/x.sql") == "marts"
+    assert stage("models/01_source/x.sql") == "other"  # the default folders no longer apply
+    assert stage(None, name="stg_orders") == "staging"
+    assert stage(None, name="int_orders") == "other"  # no prefixes configured
+    assert stage(None, tags=["stage:marts"]) == "marts"
+    assert resolve_stage(name="t", resource_type="source", original_file_path=None, layers=a.layers) == "staging"
+
+    for bad, message in (
+        ("layers: [only]", "at least two"),
+        ("layers: [a, a]", "used twice"),
+        ("layers: [a, other]", "reserved"),
+        ("layers: [a, 'b c']", "may only contain"),
+        ("layers: [a, {name: b, colour: red}]", "unknown keys"),
+        ("layers: [a, {name: b, folders: [1]}]", "folders must be"),
+    ):
+        (tmp_path / "bad.yaml").write_text(f"{bad}\npipelines:\n  - {{name: p, dir: p}}\n")
+        with pytest.raises(PipelinesConfigError, match=message):
+            load_pipelines_config(tmp_path / "bad.yaml")
+
+
+def test_custom_layers_drive_stage_role_and_links(tmp_path: Path) -> None:
+    (tmp_path / "pipelines.yaml").write_text(STAGING_MARTS + "pipelines: []\n")
+    _, layers = read_pipelines_config(tmp_path / "pipelines.yaml")
+    up = replace(_project(tmp_path, "up", models=[
+        {"name": "orders", "folder": "03_marts"},
+        {"name": "orders_int", "folder": "02_intermediate"},
+    ]), layers=layers)
+    down = replace(_project(tmp_path, "down", models=[
+        {"name": "stg_orders", "folder": "01_staging", "deps": ["source.dbt_pnc.up.orders"]},
+    ], sources=[{"source_name": "up", "table": "orders", "database": "d", "schema": "s"}]), layers=layers)
+    graph = load_graph([up, down])
+
+    marts = graph.nodes["model.up.orders"]
+    assert (marts.stage, marts.role) == ("marts", "out")
+    assert graph.nodes["model.up.orders_int"].role == "int"
+    source = graph.nodes["source.down.up.orders"]
+    assert (source.stage, source.role) == ("staging", "src")  # sources land in the first layer
+    assert ("model.up.orders", "source.down.up.orders") in graph.edges  # the last layer links
+    assert graph.stages == ["staging", "intermediate", "marts"]
+
+
+def test_stage_order_merges_the_pipelines_layer_orders() -> None:
+    def layers(*names: str) -> tuple[Layer, ...]:
+        roles = ["src", *["int"] * (len(names) - 2), "out"]
+        return tuple(Layer(n, n, r, (n,)) for n, r in zip(names, roles, strict=True))
+
+    assert merge_layer_orders({"a": layers("src", "int", "out"), "b": layers("raw", "src", "core", "out")}) == [
+        "raw", "src", "core", "int", "out", "other",
+    ]
+    # differently named layers interleave by role
+    assert merge_layer_orders({"a": layers("src", "int", "out"), "b": layers("staging", "intermediate", "marts")}) == [
+        "staging", "src", "intermediate", "int", "marts", "out", "other",
+    ]
+
+
+def test_folder_of_is_first_subfolder_below_layer() -> None:
+    from app.config import folder_of
+
+    assert folder_of("models/02_intermediate/contract_with_claim/int_x.sql") == "contract_with_claim"
+    assert folder_of("models/01_source/claim/src_x.sql") == "claim"
+    # numeric prefix on the layer folder is ignored, and deeper levels are flattened
+    assert folder_of("models/02_intermediate/contract/sub/deep/int_x.sql") == "contract"
+    assert folder_of("models\\03_output\\datamart\\out_x.sql") == "datamart"
+    # directly in the layer folder -> no box
+    assert folder_of("models/03_output/crpc_statistik_int.sql") is None
+    # no layer folder at all
+    assert folder_of("models/misc/x.sql") is None
+    assert folder_of(None) is None
+
+
+def test_source_takes_the_folder_of_its_consumers(tmp_path: Path) -> None:
+    manifest = {
+        "metadata": {"project_name": "p"},
+        "nodes": {
+            "model.p.src_a": {
+                "name": "src_a", "resource_type": "model", "original_file_path": "models/01_source/claim/src_a.sql",
+                "depends_on": {"nodes": ["source.p.ds.tbl_a", "source.p.ds.tbl_b"]},
+            },
+            "model.p.src_b": {
+                "name": "src_b", "resource_type": "model", "original_file_path": "models/01_source/claim/src_b.sql",
+                "depends_on": {"nodes": ["source.p.ds.tbl_b"]},
+            },
+            "model.p.src_c": {
+                "name": "src_c", "resource_type": "model", "original_file_path": "models/01_source/adam/src_c.sql",
+                "depends_on": {"nodes": ["source.p.ds.tbl_b"]},
+            },
+            "model.p.src_d": {
+                "name": "src_d", "resource_type": "model", "original_file_path": "models/01_source/adam/src_d.sql",
+                "depends_on": {"nodes": ["source.p.ds.tbl_a"]},
+            },
+        },
+        "sources": {
+            "source.p.ds.tbl_a": {"name": "tbl_a", "source_name": "ds", "identifier": "tbl_a", "resource_type": "source"},
+            "source.p.ds.tbl_b": {"name": "tbl_b", "source_name": "ds", "identifier": "tbl_b", "resource_type": "source"},
+            "source.p.ds.tbl_orphan": {"name": "tbl_orphan", "source_name": "ds", "identifier": "tbl_orphan", "resource_type": "source"},
+        },
+    }
+    (tmp_path / "manifest.json").write_text(json.dumps(manifest))
+    graph = load_graph([ArtifactPair(manifest=tmp_path / "manifest.json", name="p")])
+    # tbl_b: claim (2 consumers) beats adam (1); tbl_a: tie claim/adam -> alphabetical
+    assert graph.nodes["source.p.ds.tbl_b"].folder == "claim"
+    assert graph.nodes["source.p.ds.tbl_a"].folder == "adam"
+    assert graph.nodes["source.p.ds.tbl_orphan"].folder is None
+
+
+def test_folder_of_follows_the_configured_layers() -> None:
+    from app.config import folder_of
+
+    layers = (Layer("staging", "staging", "src", ("staging",)), Layer("marts", "marts", "out", ("marts",)))
+    assert folder_of("models/staging/claim/stg_x.sql", layers) == "claim"
+    assert folder_of("models/marts/finance/mart_x.sql", layers) == "finance"
+    assert folder_of("models/02_intermediate/contract/int_x.sql", layers) is None  # not a layer here

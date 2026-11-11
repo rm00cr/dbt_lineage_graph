@@ -1,17 +1,17 @@
 version: 2
 
 models:
-  - name: out_fin_pnl_summary
+  - name: mart_fin_pnl_summary
     description: Underwriting P&L and combined ratio per month and product, next to the claims view of it.
     config: {group: finance, tags: [finance, kpi, public], meta: {execution_mode: monthly}}
     columns:
       - {name: combined_ratio, description: (incurred + expenses) / earned premium - with booked expenses.}
       - {name: claims_combined_ratio, description: The combined ratio schaden_claims reports (flat expense assumption).}
 
-  - name: out_fin_expense_ratio
+  - name: mart_fin_expense_ratio
     description: Expense ratio per month, product and expense type.
     config: {group: finance, tags: [finance, kpi, public], meta: {execution_mode: monthly}}
 
-  - name: out_fin_plan_variance
+  - name: mart_fin_plan_variance
     description: Plan vs. actual only - variance of premium, loss and expense ratio against plan.
     config: {group: planning, tags: [finance, plan, public], meta: {execution_mode: monthly}}

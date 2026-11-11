@@ -26,12 +26,12 @@ on-run-start:
 
 models:
   dbt_pnc:
-    01_source:
-      +schema: fin_source
+    staging:
+      +schema: fin_staging
       +materialized: view
-    02_intermediate:
+    intermediate:
       +schema: fin_intermediate
       +materialized: table
-    03_output:
-      +schema: fin_output
+    marts:
+      +schema: fin_marts
       +materialized: table

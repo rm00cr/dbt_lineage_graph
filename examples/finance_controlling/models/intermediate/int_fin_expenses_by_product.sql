@@ -7,8 +7,8 @@ with expenses as (
         expenses.expense_type,
         cost_centers.department,
         expenses.amount_chf
-    from {{ ref('src_fin_expenses') }} as expenses
-    inner join {{ ref('src_fin_cost_centers') }} as cost_centers
+    from {{ ref('stg_fin_expenses') }} as expenses
+    inner join {{ ref('stg_fin_cost_centers') }} as cost_centers
         on expenses.cost_center_id = cost_centers.cost_center_id
 ),
 
@@ -21,7 +21,7 @@ products as (
 {% else %}
         1.0 / count(*) over (partition by reporting_month)                                             as allocation_share
 {% endif %}
-    from {{ ref('src_fin_mfp_premium') }}
+    from {{ ref('stg_fin_mfp_premium') }}
 ),
 
 direct_expenses as (

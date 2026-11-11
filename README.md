@@ -72,7 +72,6 @@ cd front-end && npm test
 | Search columns | switch the search toggle to **Columns** (hits `/api/search/columns`) |
 | Focus the lineage | `F` cycles **dim → isolate → off**; the path keeps a stage-coloured ring, everything else fades and blurs |
 | Select a subgraph | selector field: `+int_mfp_contracts+`, `tag:mfp`, `stage:out`, `2+out_claims_kpi_daily` |
-| Grow the selection | `E` or the **+ lineage +** button |
 | Copy a dbt command | **dbt run** button (toolbar = whole selection, overlay = one model) |
 | Stage zones | **Stage zones** toggle or `L` — src / int / out as columns |
 | Area select | Shift + drag, or toggle the box-select button for plain left drag |
@@ -140,11 +139,12 @@ Start at **AP-4** — everything it needs is in place:
 4. **BigQuery cost & execution metadata (4.2 / 3.5)** — an `INFORMATION_SCHEMA` adapter
    feeding new fields into `stats`.
 5. **Real fixtures**: point `PIPELINES_CONFIG` at the real PnC pipelines and check that
-   their `01_source / 02_intermediate / 03_output` folders resolve as expected.
+   their layer folders (`layers:` in the YAML) resolve as expected.
 
 Open points from section 8 of the brief, as decided here (change freely):
-a pipeline is one dbt project (`project_name`), with layers `models/01_source` →
-`02_intermediate` → `03_output`; stage from layer folder → name prefix → tag;
+a pipeline is one dbt project (`project_name`), with layers declared in `pipelines.yaml`
+(default `src` / `int` / `out`; e.g. `01_source` → `02_intermediate` → `03_output`, or
+`staging` → `intermediate` → `marts` per pipeline); stage from layer folder → name prefix → tag;
 BigQuery deeplink to the node's own `database` unless `BQ_CONSOLE_PROJECT` is set;
 `+model+` is both a visual selection *and* exportable as a `dbt run --select` string.
 

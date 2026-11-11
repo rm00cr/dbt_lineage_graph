@@ -3,11 +3,21 @@
 Pipelines
 ---------
 A *pipeline* is one dbt project, delivered as its own ``manifest.json`` + ``catalog.json``
-(``dbt docs generate``). Every pipeline uses the same layer layout::
+(``dbt docs generate``). Its models are laid out in *layers* (the stages, the columns of the
+zones layout), declared in the YAML - top-level for every pipeline, per pipeline to override::
 
-    models/01_source/        -> stage src   imports raw sources and other pipelines' outputs
-    models/02_intermediate/  -> stage int   internal to the pipeline
-    models/03_output/        -> stage out   the pipeline's public interface
+    layers:
+      - name: staging                   # the stage id, shown in the UI; letters, digits, _, -
+        label: Staging                  # optional, default: the name
+        folders: [01_staging]           # optional, default: [name]; folder below models/
+        prefixes: [stg_]                # optional: name prefixes for models outside the folders
+      - intermediate                    # shorthand for {name: intermediate}
+      - marts
+
+The order is the flow, left to right. The first layer imports (dbt sources and other
+pipelines' outputs land there), the last one is the pipeline's public interface (the only
+models other pipelines may link to). Without ``layers`` the default is src / int / out
+(``DEFAULT_LAYERS``).
 
 Which pipelines exist and where their artifacts live is declared in a YAML file
 (see ``fixtures/pipelines.yaml``)::
@@ -71,30 +81,34 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_PIPELINES_CONFIG = REPO_ROOT / "fixtures" / "pipelines.yaml"
 
-# --- stage convention (see contract.md 1.1) --------------------------------------------
-STAGE_PREFIXES: dict[str, str] = {
-    "src_": "src",
-    "stg_": "src",
-    "int_": "int",
-    "out_": "out",
-    "mart_": "out",
-}
+# --- layers (stages), see contract.md 1.1 ----------------------------------------------
+#: role of a layer, from its position: first = imports, last = public outputs, else internal
+LayerRole = str  # "src" | "int" | "out" | "other"
+OTHER_STAGE = "other"
 
-# Folder names below `models/`. A numeric ordering prefix (`01_`, `2-`) is ignored, so the
-# standard layout `01_source / 02_intermediate / 03_output` matches `source / intermediate /
-# output` here.
-STAGE_FOLDERS: dict[str, str] = {
-    "source": "src",
-    "sources": "src",
-    "staging": "src",
-    "intermediate": "int",
-    "output": "out",
-    "out": "out",
-    "marts": "out",
-    "mart": "out",
-}
 
-STAGE_ORDER: list[str] = ["src", "int", "out", "other"]
+@dataclass(frozen=True)
+class Layer:
+    """One layer of a pipeline (= a stage, a column of the zones layout)."""
+
+    name: str  # the stage id
+    label: str
+    role: LayerRole
+    # folder names below `models/`; a numeric ordering prefix (`01_`, `2-`) is ignored on
+    # both sides, so `01_source` matches `source` and the other way round
+    folders: tuple[str, ...] = ()
+    prefixes: tuple[str, ...] = ()  # name prefixes, for models outside the folders
+
+
+def _roles(count: int) -> list[LayerRole]:
+    return ["src" if i == 0 else "out" if i == count - 1 else "int" for i in range(count)]
+
+
+DEFAULT_LAYERS: tuple[Layer, ...] = (
+    Layer("src", "Source", "src", ("source", "sources", "staging"), ("src_", "stg_")),
+    Layer("int", "Intermediate", "int", ("intermediate",), ("int_",)),
+    Layer("out", "Output", "out", ("output", "out", "marts", "mart"), ("out_", "mart_")),
+)
 
 _ORDERING_PREFIX = re.compile(r"^\d+[_-]")
 _PIPELINE_NAME = re.compile(r"^[A-Za-z0-9_-]+$")
@@ -132,6 +146,7 @@ class ArtifactPair:
     prepare: tuple[str, ...] = ()
     # how to call dbt, e.g. ("uv", "run", "--project", "/abs/examples", "dbt"); None -> dbt
     dbt_command: tuple[str, ...] | None = None
+    layers: tuple[Layer, ...] = DEFAULT_LAYERS  # the stages, in flow order
 
     @property
     def exists(self) -> bool:
@@ -160,6 +175,11 @@ _MODE_KEYS = {"vars", "dir", "manifest", "catalog"}
 
 def load_pipelines_config(path: Path) -> list[ArtifactPair]:
     """Read the pipelines YAML (format in the module docstring) into artifact pairs."""
+    return read_pipelines_config(path)[0]
+
+
+def read_pipelines_config(path: Path) -> tuple[list[ArtifactPair], tuple[Layer, ...]]:
+    """The pipelines YAML: its pipelines and the default layers (top-level ``layers``)."""
     if not path.is_file():
         raise PipelinesConfigError(f"pipelines config not found: {path}")
     data: Any = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
@@ -169,6 +189,7 @@ def load_pipelines_config(path: Path) -> list[ArtifactPair]:
 
     base = path.parent
     defaults = _parse_dbt_defaults(path, data.get("dbt"))
+    defaults["layers"] = _parse_layers(str(path), data["layers"]) if "layers" in data else DEFAULT_LAYERS
     pairs: list[ArtifactPair] = []
     names: set[str] = set()
     for position, entry in enumerate(entries, start=1):
@@ -185,7 +206,61 @@ def load_pipelines_config(path: Path) -> list[ArtifactPair]:
             raise PipelinesConfigError(f"{path}: pipeline name {name!r} is used twice")
         names.add(name)
         pairs.append(_parse_pipeline(path, base, name, entry, defaults))
-    return pairs
+    return pairs, defaults["layers"]
+
+
+_LAYER_KEYS = {"name", "label", "folders", "prefixes"}
+
+
+def _parse_layers(where: str, raw: Any) -> tuple[Layer, ...]:
+    """`layers:` - a list of layer names or mappings (format in the module docstring)."""
+    if not isinstance(raw, list) or len(raw) < 2:
+        raise PipelinesConfigError(
+            f"{where}: 'layers' must list at least two layers, in flow order (first: imports, last: outputs)"
+        )
+    specs: list[dict[str, Any]] = []
+    for position, item in enumerate(raw, start=1):
+        spec = {"name": item} if isinstance(item, str) else item
+        if not isinstance(spec, dict):
+            raise PipelinesConfigError(f"{where}: layer #{position} must be a name or a mapping with 'name'")
+        unknown = sorted(str(k) for k in spec if k not in _LAYER_KEYS)
+        if unknown:
+            raise PipelinesConfigError(
+                f"{where}: layer #{position} has unknown keys {unknown} (allowed: {', '.join(sorted(_LAYER_KEYS))})"
+            )
+        specs.append(spec)
+
+    layers: list[Layer] = []
+    seen: set[str] = set()
+    for position, (spec, role) in enumerate(zip(specs, _roles(len(specs)), strict=True), start=1):
+        name = str(spec.get("name") or "").strip()
+        if not name:
+            raise PipelinesConfigError(f"{where}: layer #{position} needs a 'name'")
+        if not _PIPELINE_NAME.match(name):
+            raise PipelinesConfigError(f"{where}: layer name {name!r} may only contain letters, digits, '_' and '-'")
+        if name.lower() == OTHER_STAGE or name.lower() in seen:
+            reason = "is reserved for unassigned models" if name.lower() == OTHER_STAGE else "is used twice"
+            raise PipelinesConfigError(f"{where}: layer name {name!r} {reason}")
+        seen.add(name.lower())
+        layers.append(
+            Layer(
+                name=name,
+                label=str(spec.get("label") or "").strip() or name,
+                role=role,
+                folders=_strings(where, f"layer {name!r} folders", spec.get("folders"), default=(name,)),
+                prefixes=_strings(where, f"layer {name!r} prefixes", spec.get("prefixes"), default=()),
+            )
+        )
+    return tuple(layers)
+
+
+def _strings(where: str, what: str, raw: Any, *, default: tuple[str, ...]) -> tuple[str, ...]:
+    if raw is None:
+        return default
+    items = [raw] if isinstance(raw, str) else raw
+    if not isinstance(items, list) or not all(isinstance(i, str) and i.strip() for i in items):
+        raise PipelinesConfigError(f"{where}: {what} must be a name or a list of names")
+    return tuple(i.strip() for i in items)
 
 
 def _parse_dbt_defaults(path: Path, raw: Any) -> dict[str, Any]:
@@ -225,6 +300,7 @@ def _parse_pipeline(
 ) -> ArtifactPair:
     where = f"{path}: pipeline {name!r}"
     project_dir = _resolve(base, entry.get("project_dir"))
+    layers = _parse_layers(where, entry["layers"]) if "layers" in entry else defaults["layers"]
     target = str(entry.get("target") or "").strip() or None
     dbt: dict[str, Any] = {
         "project_dir": project_dir,
@@ -233,6 +309,7 @@ def _parse_pipeline(
         "dbt_command": defaults["dbt_command"],
         # a pipeline's own `prepare` (also an empty list) replaces the default
         "prepare": _prepare(path, name, entry["prepare"]) if "prepare" in entry else defaults["prepare"],
+        "layers": layers,
     }
     folder = _resolve(base, entry.get("dir"))
     # dbt's usual spot when only the project is given
@@ -337,6 +414,8 @@ def _resolve(base: Path, value: Any) -> Path | None:
 @dataclass(frozen=True)
 class Settings:
     artifacts: list[ArtifactPair] = field(default_factory=list)
+    # top-level `layers` of the pipelines YAML: for pipelines it does not list (uploads)
+    layers: tuple[Layer, ...] = DEFAULT_LAYERS
     bq_console_project: str | None = None
     cors_origins: list[str] = field(default_factory=list)
     # file keeping per-model column lineage across restarts; None -> in memory only
@@ -349,13 +428,40 @@ class Settings:
             "CORS_ORIGINS",
             "http://localhost:5173,http://127.0.0.1:5173,http://localhost:4173",
         )
+        artifacts, layers = read_pipelines_config(config_path)
         cache_env = os.getenv("COLUMN_LINEAGE_CACHE")
         return Settings(
-            artifacts=load_pipelines_config(config_path),
+            artifacts=artifacts,
+            layers=layers,
             bq_console_project=os.getenv("BQ_CONSOLE_PROJECT") or None,
             cors_origins=[o.strip() for o in origins_env.split(",") if o.strip()],
             column_lineage_cache=Path(cache_env).expanduser() if cache_env else None,
         )
+
+
+def _bare(folder: str) -> str:
+    return _ORDERING_PREFIX.sub("", folder.lower())
+
+
+def _is_layer_folder(segment: str, layer: Layer) -> bool:
+    return any(segment.lower() == f.lower() or _bare(segment) == _bare(f) for f in layer.folders)
+
+
+def folder_of(original_file_path: str | None, layers: tuple[Layer, ...] = DEFAULT_LAYERS) -> str | None:
+    """The first sub-folder below the layer folder, e.g.
+    ``models/02_intermediate/contract_with_claim/int_x.sql`` -> ``contract_with_claim``.
+
+    Returns None when the model sits directly in the layer folder (``03_output/out_x.sql``)
+    or when no layer folder is found. Only one level is used; deeper folders are flattened.
+    """
+    segments = (original_file_path or "").replace("\\", "/").split("/")
+    for index, segment in enumerate(segments[:-1]):  # the last segment is the file itself
+        if any(_is_layer_folder(segment, layer) for layer in layers):
+            # the segment right after the layer folder, if it is not the file itself
+            if index + 1 < len(segments) - 1:
+                return segments[index + 1]
+            return None
+    return None
 
 
 def resolve_stage(
@@ -364,26 +470,35 @@ def resolve_stage(
     resource_type: str,
     original_file_path: str | None,
     tags: list[str] | None = None,
+    layers: tuple[Layer, ...] = DEFAULT_LAYERS,
 ) -> str:
-    """Derive the layer (src / int / out) of a dbt node (see contract.md 1.1)."""
+    """Derive the layer (stage) of a dbt node (see contract.md 1.1): sources go to the first
+    layer; models by layer folder, then name prefix, then a `stage:<layer>` tag."""
     if resource_type == "source":
-        return "src"
+        return layers[0].name
 
     # the layer folder is the convention; name prefixes only cover models outside it
-    for segment in (original_file_path or "").lower().replace("\\", "/").split("/"):
-        folder = _ORDERING_PREFIX.sub("", segment)
-        if folder in STAGE_FOLDERS:
-            return STAGE_FOLDERS[folder]
+    segments = (original_file_path or "").lower().replace("\\", "/").split("/")
+    for segment in segments[:-1]:  # the last segment is the file
+        for layer in layers:
+            if _is_layer_folder(segment, layer):
+                return layer.name
 
     lowered = name.lower()
-    for prefix, stage in STAGE_PREFIXES.items():
-        if lowered.startswith(prefix):
-            return stage
+    for layer in layers:
+        if any(lowered.startswith(prefix.lower()) for prefix in layer.prefixes):
+            return layer.name
 
     for tag in tags or []:
         if tag.lower().startswith("stage:"):
             candidate = tag.split(":", 1)[1].strip().lower()
-            if candidate in STAGE_ORDER:
-                return candidate
+            for layer in layers:
+                if layer.name.lower() == candidate:
+                    return layer.name
 
-    return "other"
+    return OTHER_STAGE
+
+
+def layer_role(layers: tuple[Layer, ...], stage: str) -> LayerRole:
+    """The role (src / int / out / other) of ``stage`` among ``layers``."""
+    return next((layer.role for layer in layers if layer.name == stage), OTHER_STAGE)

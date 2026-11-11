@@ -1,6 +1,7 @@
 /**
  * Pipeline boundary convention: a pipeline is only read by other pipelines through its
- * outputs (OUT models), and the consuming pipeline imports them through a src model.
+ * outputs (models of its last layer, role out), and the consuming pipeline imports them
+ * through a model of its first layer (role src). Layers: pipelines.yaml `layers`.
  *
  *   ok            out (pipeline A)  -> src (pipeline B)
  *   'internal'    int / src of A    -> any model of B      reads another pipeline's internals
@@ -11,12 +12,13 @@
  */
 
 import type { GraphEdge, GraphNode } from '../api/types'
+import { roleOf } from './stage'
 
 export type BoundaryViolation = 'internal' | 'skips-src'
 
 export const VIOLATION_LABELS: Record<BoundaryViolation, string> = {
   internal: 'reads internals of another pipeline (only outputs may cross)',
-  'skips-src': 'reads another pipeline’s output without a src model',
+  'skips-src': 'reads another pipeline’s output without importing it in its first layer',
 }
 
 export function boundaryViolation(edge: GraphEdge, nodesById: Map<string, GraphNode>): BoundaryViolation | null {
@@ -24,8 +26,8 @@ export function boundaryViolation(edge: GraphEdge, nodesById: Map<string, GraphN
   const target = nodesById.get(edge.target)
   if (!source || !target || source.pipeline === target.pipeline) return null
   if (source.resource_type === 'source') return null
-  if (source.stage !== 'out') return 'internal'
-  if (target.stage !== 'src') return 'skips-src'
+  if (roleOf(source) !== 'out') return 'internal'
+  if (roleOf(target) !== 'src') return 'skips-src'
   return null
 }
 

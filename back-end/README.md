@@ -22,8 +22,10 @@ uv run ruff check .
 
 ## Configuration
 
-A **pipeline is one dbt project** with its own `manifest.json` + `catalog.json`, laid out as
-`models/01_source` → `02_intermediate` → `03_output` (src / int / out). The pipelines to load
+A **pipeline is one dbt project** with its own `manifest.json` + `catalog.json`, laid out in
+layers declared under `layers:` in the YAML (top level, or per pipeline), e.g.
+`models/01_source` → `02_intermediate` → `03_output`; first layer = imports, last = outputs
+(see `contract.md` 1.0). The pipelines to load
 are listed in a YAML file; relative paths resolve against the YAML's folder. `name` is
 required. It identifies the pipeline, because all dbt projects share the `project_name`
 `dbt_pnc`, and node ids are scoped by it (`model.dbt_pnc.x` → `model.<name>.x`):

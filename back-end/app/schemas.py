@@ -8,7 +8,10 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-Stage = Literal["src", "int", "out", "other"]
+# a layer name from pipelines.yaml `layers` (default: src / int / out), or "other"
+Stage = str
+# what a layer does, from its position: src = first (imports), out = last (public outputs)
+StageRole = Literal["src", "int", "out", "other"]
 Materialization = Literal["table", "view", "incremental", "ephemeral", "source", "other"]
 ResourceType = Literal["model", "source"]
 ChangeStatus = Literal["added", "removed", "modified", "unchanged"]
@@ -20,6 +23,7 @@ class NodeRef(BaseModel):
     id: str
     name: str
     stage: Stage
+    role: StageRole = "other"
     materialization: Materialization
     pipeline: str
     resource_type: ResourceType
@@ -29,6 +33,7 @@ class GraphNode(NodeRef):
     """Node as rendered on the canvas — intentionally slim."""
 
     group: str | None = None  # dbt group = domain row in the stage-lanes layout
+    folder: str | None = None  # model sub-folder of the stage; sources: their consumers' folder
     schema_name: str | None = None
     database: str | None = None
     description: str | None = None
@@ -95,10 +100,12 @@ class ModelDetail(BaseModel):
     id: str
     name: str
     stage: Stage
+    role: StageRole = "other"
     materialization: Materialization
     pipeline: str
     resource_type: ResourceType
     group: str | None = None
+    folder: str | None = None
     description: str | None = None
     tags: list[str] = Field(default_factory=list)
     schema_name: str | None = None
@@ -127,6 +134,14 @@ class SearchResponse(BaseModel):
     results: list[SearchHit]
 
 
+class LayerInfo(BaseModel):
+    """A layer (stage) from pipelines.yaml `layers`."""
+
+    name: str
+    label: str
+    role: StageRole
+
+
 class MetaResponse(BaseModel):
     project_names: list[str]
     adapter_type: str | None = None
@@ -135,6 +150,8 @@ class MetaResponse(BaseModel):
     pipelines: list[str]
     groups: list[str] = Field(default_factory=list)
     stages: list[str]
+    # every configured layer once, in flow order (stages lists only the ones with nodes)
+    layers: list[LayerInfo] = Field(default_factory=list)
     materializations: list[str]
     tags: list[str]
     node_count: int
@@ -173,6 +190,7 @@ class PipelineInfo(BaseModel):
     """A configured pipeline and - if it has execution modes - which one is shown."""
 
     name: str
+    layers: list[str] = Field(default_factory=list)  # its stages, in flow order
     active_mode: str | None = None  # null: the pipeline has no execution modes = the front mode
     stacked_modes: list[str] = Field(default_factory=list)  # selected back modes, shown behind
     pending_mode: str | None = None  # being generated; shown once done

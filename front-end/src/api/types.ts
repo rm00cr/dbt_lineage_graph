@@ -3,7 +3,10 @@
  * ../../../back-end/app/schemas.py (Pydantic).
  */
 
-export type Stage = 'src' | 'int' | 'out' | 'other'
+/** a layer name from pipelines.yaml `layers` (default: src / int / out), or 'other' */
+export type Stage = string
+/** what a layer does, from its position: src = first (imports), out = last (public outputs) */
+export type StageRole = 'src' | 'int' | 'out' | 'other'
 export type Materialization = 'table' | 'view' | 'incremental' | 'ephemeral' | 'source' | 'other'
 export type ResourceType = 'model' | 'source'
 /** state comparison: how a node / edge differs between the running and the uploaded state */
@@ -13,6 +16,8 @@ export interface NodeRef {
   id: string
   name: string
   stage: Stage
+  /** role of the stage in its pipeline; derived from the stage name when missing */
+  role?: StageRole
   materialization: Materialization
   pipeline: string
   resource_type: ResourceType
@@ -21,6 +26,9 @@ export interface NodeRef {
 export interface GraphNode extends NodeRef {
   /** dbt group (domain) = row in the stage-lanes layout; sources inherit their consumers' group */
   group?: string | null
+  /** model sub-folder below the stage folder (sources: the folder most of their consumers are in);
+   *  null = directly in the stage folder / a source without folder-bearing consumers */
+  folder?: string | null
   schema_name: string | null
   database: string | null
   description: string | null
@@ -88,6 +96,7 @@ export interface BigQueryRef {
 
 export interface ModelDetail extends NodeRef {
   group?: string | null
+  folder?: string | null
   description: string | null
   tags: string[]
   schema_name: string | null
@@ -116,6 +125,13 @@ export interface SearchResponse {
   results: SearchHit[]
 }
 
+/** A layer (stage) from pipelines.yaml `layers` */
+export interface LayerInfo {
+  name: string
+  label: string
+  role: StageRole
+}
+
 export interface MetaResponse {
   project_names: string[]
   adapter_type: string | null
@@ -124,6 +140,8 @@ export interface MetaResponse {
   pipelines: string[]
   groups?: string[]
   stages: string[]
+  /** every configured layer once, in flow order */
+  layers?: LayerInfo[]
   materializations: string[]
   tags: string[]
   node_count: number
@@ -165,6 +183,8 @@ export interface PipelineModeInfo {
 
 export interface PipelineInfo {
   name: string
+  /** its stages, in flow order */
+  layers?: string[]
   /** the shown execution mode (= the front mode); null when the pipeline has none */
   active_mode: string | null
   /** selected back modes, stacked behind the front mode */

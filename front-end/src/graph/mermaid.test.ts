@@ -92,3 +92,21 @@ describe('labels and markdown', () => {
     expect(mermaidMarkdown('flowchart LR\n')).toBe('```mermaid\nflowchart LR\n```\n')
   })
 })
+
+describe('collapsed groups', () => {
+  it('draws a collapsed folder as one double-bordered node with its model count', () => {
+    const summary = { ...node('contract', 'int', 'other'), id: '__folder__:|int|contract', folder: 'contract' }
+    const text = toMermaid([summary, node('out_report', 'out', 'table')], [
+      { id: 'x', source: summary.id, target: 'model.proj.out_report', cross_pipeline: false },
+    ], { collapsed: new Map([[summary.id, ['a', 'b', 'c']]]) })
+    expect(text).toContain('  n1[["contract (3 models)"]]')
+    expect(text).toContain('  n1 --> n2')
+    expect(text).toContain('double-bordered = collapsed group')
+  })
+
+  it('names the stage of a collapsed "(root)" group', () => {
+    const root = { ...node('(root)', 'int', 'other'), id: '__folder__:|int|', folder: null }
+    const text = toMermaid([root], [], { collapsed: new Map([[root.id, ['a']]]) })
+    expect(text).toContain('  n1[["(root, int) (1 model)"]]')
+  })
+})
