@@ -133,6 +133,133 @@ def test_select_star_is_expanded() -> None:
     }
 
 
+def test_select_star_except_and_replace() -> None:
+    sql = f"select * except (amount) replace (upper(status) as status) from `{DB}`.raw.orders"
+    index = _build(ORDERS, _model("m", sql, [ORDERS.id]))
+    assert _edges(index, "m") == {
+        ("orders", "order_id->order_id"): "passthrough",
+        ("orders", "customer_id->customer_id"): "passthrough",
+        ("orders", "status->status"): "transform",
+    }
+
+
+# BigQuery arrays: `tags ARRAY<STRING>`, `items ARRAY<STRUCT<sku, qty>>`
+BASKETS = replace(
+    _source("baskets", []),
+    columns=[
+        Column(name="basket_id", type="STRING"),
+        Column(name="tags", type="ARRAY<STRING>"),
+        Column(name="items", type="ARRAY<STRUCT<sku STRING, qty INT64>>"),
+    ],
+)
+
+
+def _unnest_edges(select: str) -> dict[tuple[str, str], str]:
+    model = _model("m", select.replace("BASKETS", f"`{DB}`.raw.baskets"), [BASKETS.id])
+    index = _build(BASKETS, model)
+    assert index.models[model.id].status == "ok", index.models[model.id]
+    return _edges(index, "m")
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select b.basket_id, tag from BASKETS b, unnest(b.tags) as tag",
+        "select b.basket_id, tag from BASKETS b cross join unnest(b.tags) tag",
+        "select basket_id, tag from BASKETS, unnest(tags) tag",
+    ],
+)
+def test_unnest_of_a_scalar_array(sql: str) -> None:
+    assert _unnest_edges(sql) == {
+        ("baskets", "basket_id->basket_id"): "passthrough",
+        ("baskets", "tags->tag"): "unnest",
+    }
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
+        "select b.basket_id, i.sku, i.qty from BASKETS b, unnest(b.items) i",
+        "select b.basket_id, i.* from BASKETS b, unnest(b.items) i",
+    ],
+)
+def test_unnest_of_a_struct_array_reaches_the_array(sql: str) -> None:
+    assert _unnest_edges(sql) == {
+        ("baskets", "basket_id->basket_id"): "passthrough",
+        ("baskets", "items->sku"): "unnest",
+        ("baskets", "items->qty"): "unnest",
+    }
+
+
+def test_unnest_with_offset() -> None:
+    edges = _unnest_edges("select basket_id, tag, pos from BASKETS, unnest(tags) tag with offset pos")
+    assert edges[("baskets", "tags->tag")] == "unnest"
+    assert edges[("baskets", "tags->pos")] == "unnest"
+
+
+@pytest.mark.parametrize(
+    ("sql", "kind"),
+    [
+        # renaming the element afterwards (here or in a later CTE) is still just the unnest
+        ("select tag as label from BASKETS, unnest(tags) tag", "unnest"),
+        ("with x as (select tag from BASKETS, unnest(tags) tag) select tag as label from x", "unnest"),
+        # anything computed on the element outranks it
+        ("select upper(tag) as label from BASKETS, unnest(tags) tag", "transform"),
+        ("select max(tag) as label from BASKETS, unnest(tags) tag", "aggregate"),
+    ],
+)
+def test_unnest_ranks_between_rename_and_transform(sql: str, kind: str) -> None:
+    assert _unnest_edges(sql) == {("baskets", "tags->label"): kind}
+
+
+def test_unnest_edge_shows_the_unnest() -> None:
+    sql = f"select i.sku from `{DB}`.raw.baskets b, unnest(b.items) i"
+    index = _build(BASKETS, _model("m", sql, [BASKETS.id]))
+    (edge,) = index.edges
+    assert (edge.kind, edge.expression) == ("unnest", "UNNEST(`b`.`items`) AS `i`")
+
+
+def test_unnest_expression_hides_the_made_up_alias() -> None:
+    sql = f"select (select count(*) from unnest(tags)) as n from `{DB}`.raw.baskets"
+    index = _build(BASKETS, _model("m", sql, [BASKETS.id]))
+    (edge,) = index.edges
+    assert edge.expression is not None and "__unnest_" not in edge.expression
+    assert "UNNEST(`baskets`.`tags`)" in edge.expression
+
+
+@pytest.mark.parametrize(
+    ("sql", "kind"),
+    [
+        # unaliased UNNEST of an unqualified outer column: used to fail the whole model
+        ("select basket_id, (select count(*) from unnest(tags)) as n from BASKETS", "aggregate"),
+        ("select basket_id, (select max(sku) from unnest(items)) as n from BASKETS", "aggregate"),
+        ("select b.basket_id, (select sum(i.qty) from unnest(b.items) i) as n from BASKETS b", "aggregate"),
+        ("select basket_id, array(select upper(t) from unnest(tags) t) as n from BASKETS", "transform"),
+        (
+            "select basket_id, exists(select 1 from unnest(tags) t where t = 'x') as n from BASKETS",
+            "transform",
+        ),
+    ],
+)
+def test_unnest_in_a_correlated_subquery(sql: str, kind: str) -> None:
+    edges = _unnest_edges(sql)
+    assert edges.pop(("baskets", "basket_id->basket_id")) == "passthrough"
+    assert list(edges.values()) == [kind]
+    ((_, edge),) = edges
+    assert edge.endswith("->n") and edge.split("->")[0] in ("tags", "items")
+
+
+def test_unnest_in_a_correlated_subquery_through_an_outer_cte() -> None:
+    sql = """
+        with c as (select basket_id, tags as labels from BASKETS)
+        select basket_id, (select count(*) from unnest(labels)) as n from c
+    """
+    assert _unnest_edges(sql) == {
+        ("baskets", "basket_id->basket_id"): "passthrough",
+        ("baskets", "tags->n"): "aggregate",
+    }
+
+
 def test_cte_chain_keeps_the_strongest_kind() -> None:
     sql = f"""
         with base as (select customer_id, amount * 1.1 as gross from `{DB}`.raw.orders),

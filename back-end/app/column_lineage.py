@@ -11,8 +11,9 @@ How it works
   SQL, so downstream models can still be resolved.
 * dbt inlines ephemeral models as ``__dbt__cte__<name>`` CTEs. Those CTEs are swapped for
   a reference to the ephemeral node, so the ephemeral model stays visible as a hop.
-* Each edge is classified as ``passthrough`` | ``rename`` | ``transform`` | ``aggregate``
-  by looking at every expression on the path from the output column to the source column.
+* Each edge is classified as ``passthrough`` | ``rename`` | ``unnest`` | ``transform`` |
+  ``aggregate`` by looking at every expression on the path from the output column to the
+  source column. ``unnest``: an array element (or a field of a struct element) taken as is.
 * Parse problems never break loading: each model gets a status (``ok`` / ``partial`` /
   ``failed`` / ``skipped``) with the reason, so the UI can be honest about coverage.
 
@@ -50,25 +51,25 @@ from typing import Any, Literal
 import sqlglot
 from sqlglot import exp
 from sqlglot.errors import SqlglotError
-from sqlglot.lineage import Node, lineage
+from sqlglot.lineage import Node, lineage, to_node
 from sqlglot.optimizer.qualify import qualify
-from sqlglot.optimizer.scope import build_scope
+from sqlglot.optimizer.scope import Scope, ScopeType, build_scope
 from sqlglot.schema import MappingSchema
 
 from .loader import LineageGraph, LineageNode, table_name
 
 log = logging.getLogger(__name__)
 
-EdgeKind = Literal["passthrough", "rename", "transform", "aggregate"]
+EdgeKind = Literal["passthrough", "rename", "unnest", "transform", "aggregate"]
 ModelStatus = Literal["ok", "partial", "failed", "skipped"]
 Direction = Literal["up", "down", "both"]
 
 EPHEMERAL_CTE_PREFIX = "__dbt__cte__"
 MAX_EXPRESSION_CHARS = 240
 # bump whenever the builder's output for the same input changes: invalidates cached results
-CACHE_VERSION = 1
+CACHE_VERSION = 3
 CACHE_MAX_ENTRIES = 100_000
-_KIND_RANK: dict[str, int] = {"passthrough": 0, "rename": 1, "transform": 2, "aggregate": 3}
+_KIND_RANK: dict[str, int] = {"passthrough": 0, "rename": 1, "unnest": 2, "transform": 3, "aggregate": 4}
 
 # dbt adapter_type -> sqlglot dialect (only where the names differ)
 _DIALECTS: dict[str, str] = {
@@ -414,7 +415,7 @@ class _Builder:
         parsed = sqlglot.parse_one(node.compiled_code or "", dialect=self.dialect)
         if not isinstance(parsed, exp.Query):
             raise TypeError(f"expected a SELECT statement, got {type(parsed).__name__}")
-        return self._inline_ephemerals(parsed, result)
+        return _alias_subquery_unnests(self._inline_ephemerals(parsed, result))
 
     def _model(self, node: LineageNode) -> None:
         result = ModelLineage(node.id, "ok")
@@ -541,11 +542,12 @@ class _Builder:
         if isinstance(roots, Node):  # single-column queries
             roots = {roots.name: roots}
 
+        scopes = {id(s.expression): s for s in scope.traverse()} if scope else {}
         unknown: set[str] = set()
         for output, root in roots.items():
             target_column = self._column_name(node.id, output)
             best: dict[tuple[str, str], ColumnEdge] = {}
-            for leaf, path in _leaf_paths(root):
+            for leaf, path in self._sources(root, scopes):
                 if not isinstance(leaf.source, exp.Table):
                     continue  # constants, current_date(), count(*) ...
                 source_id = self._resolve(leaf.source)
@@ -576,6 +578,47 @@ class _Builder:
                     self.index.add(
                         ColumnEdge(upstream_id, column, source.id, source_columns[lowered], "passthrough")
                     )
+
+    # ------------------------------------------------------------------ correlated subqueries
+    def _sources(
+        self, root: Node, scopes: dict[int, Scope], prefix: list[Node] | None = None, depth: int = 0
+    ) -> Iterator[tuple[Node, list[Node]]]:
+        """``_leaf_paths`` plus what sqlglot leaves open in correlated subqueries such as
+        ``(select max(i.qty) from unnest(o.items) i)``:
+
+        * a reference to the outer query (``o.items``) ends in a ``Placeholder`` leaf; it is
+          resolved to the outer table, or traced on through an outer CTE / derived table;
+        * a value without a column of its own (``count(*)``, ``exists(select 1 ...)``) still
+          depends on the outer arrays the subquery unnests.
+        """
+        for leaf, path in _leaf_paths(root):
+            path = [*(prefix or []), *path]
+            if depth < 8 and isinstance(leaf.source, exp.Placeholder) and path:
+                column = _to_column(leaf.name)
+                if column is not None:
+                    yield from self._outer(column, path[-1].source, path, scopes, depth)
+                    continue
+            if depth < 8 and isinstance(leaf.source, exp.Select):
+                for column in _outer_unnest_columns(leaf.source, scopes):
+                    yield from self._outer(column, leaf.source, [*path, leaf], scopes, depth)
+            yield leaf, path
+
+    def _outer(
+        self, column: exp.Column, inner: exp.Expr, path: list[Node], scopes: dict[int, Scope], depth: int
+    ) -> Iterator[tuple[Node, list[Node]]]:
+        """Resolve the outer reference ``column`` seen from ``inner`` (inside the subquery)."""
+        alias, expression = column.table, inner
+        while expression is not None:
+            scope = scopes.get(id(expression))
+            if scope is not None and alias in scope.selected_sources:
+                source = scope.selected_sources[alias][1]
+                if isinstance(source, exp.Table):
+                    yield Node(name=f"{alias}.{column.name}", expression=source, source=source), path
+                elif isinstance(source, Scope):
+                    upstream = to_node(column.name, source, self.dialect, self.mapping, trim_selects=False)
+                    yield from self._sources(upstream, scopes, path, depth + 1)
+                return
+            expression = expression.parent
 
     # ------------------------------------------------------------------ helpers
     def _inline_ephemerals(self, query: exp.Query, result: ModelLineage) -> exp.Query:
@@ -620,19 +663,35 @@ class _Builder:
     ) -> tuple[EdgeKind, str | None]:
         kind: EdgeKind = "passthrough"
         expression: str | None = None
+        unnests = [step.source for step in path if isinstance(step.source, exp.Unnest)]
         for step in path:
+            if isinstance(step.source, exp.Unnest):
+                continue  # the UNNEST itself: see below
             inner = step.expression.this if isinstance(step.expression, exp.Alias) else step.expression
             if not isinstance(inner, exp.Expr) or isinstance(inner, exp.Column):
                 continue
+            if unnests and _is_field_access(inner):
+                continue  # `i.sku` on an unnested struct is part of the unnest
             if expression is None:
-                expression = inner.sql(self.dialect)[:MAX_EXPRESSION_CHARS]
+                expression = self._render(inner)
             if inner.find(exp.AggFunc):
                 kind = "aggregate"
             elif kind != "aggregate":
                 kind = "transform"
+        if kind == "passthrough" and unnests:
+            return "unnest", self._render(unnests[-1])
         if kind == "passthrough" and source_column.lower() != target_column.lower():
             kind = "rename"
         return kind, expression
+
+    def _render(self, expression: exp.Expr) -> str:
+        """SQL for the overlay, without the aliases ``_alias_subquery_unnests`` made up."""
+        if any(_synthetic_alias(u) for u in expression.find_all(exp.Unnest)):
+            expression = expression.copy()
+            for unnest in list(expression.find_all(exp.Unnest)):
+                if _synthetic_alias(unnest):
+                    unnest.set("alias", None)
+        return expression.sql(self.dialect)[:MAX_EXPRESSION_CHARS]
 
 
 def _leaf_paths(root: Node) -> Iterator[tuple[Node, list[Node]]]:
@@ -644,6 +703,67 @@ def _leaf_paths(root: Node) -> Iterator[tuple[Node, list[Node]]]:
             continue
         for child in node.downstream:
             stack.append((child, [*path, node]))
+
+
+UNNEST_ALIAS_PREFIX = "__unnest_"
+
+
+def _alias_subquery_unnests(query: exp.Query) -> exp.Query:
+    """Give every unaliased ``UNNEST`` read by a subquery an alias.
+
+    ``(select count(*) from unnest(tags))`` cannot be qualified otherwise: sqlglot treats the
+    unaliased UNNEST as a source of unknown columns, and then refuses to attribute ``tags``
+    to the outer query. Struct fields (``unnest(items)`` then ``sku``) still resolve."""
+    if not query.find(exp.Unnest):
+        return query
+    count = 0
+    for scope in build_scope(query).traverse():
+        if scope.scope_type != ScopeType.SUBQUERY:
+            continue
+        for unnest in scope.expression.find_all(exp.Unnest):
+            if unnest.args.get("alias") or not isinstance(unnest.parent, (exp.From, exp.Join)):
+                continue
+            if unnest.parent_select is not scope.expression:
+                continue  # a nested subquery: its own scope handles it
+            unnest.set("alias", exp.TableAlias(columns=[exp.to_identifier(f"{UNNEST_ALIAS_PREFIX}{count}")]))
+            count += 1
+    return query
+
+
+def _outer_unnest_columns(select: exp.Select, scopes: dict[int, Scope]) -> Iterator[exp.Column]:
+    """Outer-query columns a correlated subquery reads its rows from (``unnest(o.tags)``)."""
+    scope = scopes.get(id(select))
+    if scope is None or scope.scope_type != ScopeType.SUBQUERY:
+        return
+    for unnest in select.find_all(exp.Unnest):
+        if unnest.parent_select is not select or not isinstance(unnest.parent, (exp.From, exp.Join)):
+            continue
+        for argument in unnest.expressions:
+            for column in argument.find_all(exp.Column):
+                # selected_sources, not sources: those also hold every CTE name in reach
+                if column.table and column.table not in scope.selected_sources:
+                    yield column
+
+
+def _synthetic_alias(unnest: exp.Unnest) -> bool:
+    alias = unnest.args.get("alias")
+    columns = alias.columns if isinstance(alias, exp.TableAlias) else []
+    return len(columns) == 1 and columns[0].name.startswith(UNNEST_ALIAS_PREFIX)
+
+
+def _is_field_access(expression: exp.Expr) -> bool:
+    """``a.b.c``: a reference to a struct field, nothing computed."""
+    return isinstance(expression, exp.Dot) and all(
+        isinstance(part, (exp.Dot, exp.Column, exp.Identifier)) for part in expression.walk()
+    )
+
+
+def _to_column(name: str) -> exp.Column | None:
+    try:
+        column = exp.to_column(name)
+    except SqlglotError:
+        return None
+    return column if column.table else None
 
 
 def _leaf_column(leaf: Node) -> str:
