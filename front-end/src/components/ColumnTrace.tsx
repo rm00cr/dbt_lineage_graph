@@ -5,10 +5,11 @@
  */
 
 import { ArrowDownRight, ArrowUpRight, Route, TriangleAlert, X } from 'lucide-react'
-import { useMemo } from 'react'
+import { Fragment, useCallback, useMemo, type CSSProperties } from 'react'
 
 import type { ColumnEdgeKind, ColumnLineageEdge, TraceDirection } from '../api/types'
-import { EDGE_KIND_LABELS } from '../graph/columnTrace'
+import { EDGE_KIND_LABELS, crossesPipeline, pipelineRoute } from '../graph/columnTrace'
+import { pipelineColor, pipelineFromId } from '../graph/pipelines'
 import { useExplorerStore } from '../store/useExplorerStore'
 
 const DIRECTIONS: { value: TraceDirection; label: string; title: string }[] = [
@@ -22,6 +23,28 @@ const KINDS: ColumnEdgeKind[] = ['passthrough', 'rename', 'transform', 'aggregat
 function useModelName() {
   const index = useExplorerStore((s) => s.index)
   return (id: string) => index.byId.get(id)?.name ?? id.split('.').slice(2).join('.')
+}
+
+/** A model's pipeline and the pipeline's identity colour (shared with its canvas band). */
+export function usePipelines() {
+  const index = useExplorerStore((s) => s.index)
+  const pipelines = useExplorerStore((s) => s.graph?.stats.pipelines)
+  const pipelineOf = useCallback(
+    (id: string) => index.byId.get(id)?.pipeline ?? pipelineFromId(id),
+    [index],
+  )
+  const colorOf = useCallback((pipeline: string) => pipelineColor(pipelines ?? [], pipeline), [pipelines])
+  return { pipelineOf, colorOf }
+}
+
+/** Pipeline name with its colour dot; the name is always shown, never the colour alone. */
+export function PipelineChip({ pipeline, color }: { pipeline: string; color: string }) {
+  return (
+    <span className="pipeline-chip" style={{ '--chip-color': color } as CSSProperties} title={`pipeline ${pipeline}`}>
+      <span className="pipeline-chip__dot" aria-hidden />
+      <span className="pipeline-chip__name">{pipeline}</span>
+    </span>
+  )
 }
 
 function DirectionSwitch() {
@@ -45,11 +68,46 @@ function DirectionSwitch() {
 
 export function TraceBar() {
   const trace = useExplorerStore((s) => s.columnTrace)
-  const clear = useExplorerStore((s) => s.clearColumnTrace)
   const withOverlay = useExplorerStore((s) => s.activeId !== null)
   const modelName = useModelName()
+  const { pipelineOf, colorOf } = usePipelines()
+  const view = trace?.view
+  const route = useMemo(() => (view ? pipelineRoute(view, pipelineOf) : []), [view, pipelineOf])
   if (!trace) return null
 
+  return (
+    <>
+      {/* the pipelines the trace runs through, in a pill of its own above the bar: the bar
+          has no room left for them next to the stage legend */}
+      {route.length > 0 && (
+        <div
+          className={`trace-route${withOverlay ? ' trace-bar--with-overlay' : ''}`}
+          title="pipelines of this trace, from its origins to its impact"
+        >
+          <span className="trace-route__label">{route.length === 1 ? 'pipeline' : 'pipelines'}</span>
+          {route.map((pipeline, i) => (
+            <Fragment key={pipeline}>
+              {i > 0 && <span className="trace-route__arrow">→</span>}
+              <PipelineChip pipeline={pipeline} color={colorOf(pipeline)} />
+            </Fragment>
+          ))}
+        </div>
+      )}
+      <TraceBarMain trace={trace} withOverlay={withOverlay} modelName={modelName} />
+    </>
+  )
+}
+
+function TraceBarMain({
+  trace,
+  withOverlay,
+  modelName,
+}: {
+  trace: NonNullable<ReturnType<typeof useExplorerStore.getState>['columnTrace']>
+  withOverlay: boolean
+  modelName: (id: string) => string
+}) {
+  const clear = useExplorerStore((s) => s.clearColumnTrace)
   const columnCount = trace.view ? [...trace.view.columnsByNode.values()].reduce((n, c) => n + c.length, 0) : 0
 
   return (
@@ -91,6 +149,7 @@ export function ColumnTracePanel() {
   const clear = useExplorerStore((s) => s.clearColumnTrace)
   const openModel = useExplorerStore((s) => s.openModel)
   const modelName = useModelName()
+  const { pipelineOf, colorOf } = usePipelines()
 
   const hops = useMemo(() => {
     if (!trace?.view) return { up: [] as ColumnLineageEdge[], down: [] as ColumnLineageEdge[] }
@@ -116,14 +175,34 @@ export function ColumnTracePanel() {
 
   if (!trace) return null
 
-  const ref = (model: string, column: string) => (
+  const chip = (pipeline: string) => <PipelineChip pipeline={pipeline} color={colorOf(pipeline)} />
+
+  /** a hop's model; its pipeline chip is left out when the hop stays in `samePipelineAs`'s */
+  const ref = (model: string, column: string, samePipelineAs?: string) => (
     <>
+      {(samePipelineAs === undefined || pipelineOf(samePipelineAs) !== pipelineOf(model)) && chip(pipelineOf(model))}
       <button onClick={() => void openModel(model, { tab: 'schema' })} title={model}>
         {modelName(model)}
       </button>
       .{column}
     </>
   )
+
+  /** "crosses from A into B", once per run of hops that make the same pipeline change */
+  const crossing = (edge: ColumnLineageEdge, previous: ColumnLineageEdge | undefined) => {
+    if (!crossesPipeline(edge, pipelineOf)) return null
+    const from = pipelineOf(edge.source_model)
+    const into = pipelineOf(edge.target_model)
+    if (previous && pipelineOf(previous.source_model) === from && pipelineOf(previous.target_model) === into) {
+      return null
+    }
+    return (
+      <div className="trace-cross" role="separator">
+        <span className="trace-cross__label">crosses from</span> {chip(from)}{' '}
+        <span className="trace-cross__label">into</span> {chip(into)}
+      </div>
+    )
+  }
 
   const section = (title: string, icon: React.ReactNode, edges: ColumnLineageEdge[], empty: string) => (
     <div style={{ marginTop: 8 }}>
@@ -133,15 +212,19 @@ export function ColumnTracePanel() {
       {edges.length === 0 ? (
         <div style={{ color: 'var(--text-faint)', fontSize: 12 }}>{empty}</div>
       ) : (
-        edges.map((edge) => (
-          <div key={edge.id} className="trace-hop">
-            <span className={`cedge-swatch cedge-swatch--${edge.kind}`} title={edge.kind} />
-            <span className="trace-hop__path">
-              {ref(edge.source_model, edge.source_column)} → {ref(edge.target_model, edge.target_column)}{' '}
-              <span style={{ color: 'var(--text-faint)' }}>({edge.kind})</span>
-            </span>
-            {edge.expression && <code className="trace-hop__expr">{edge.expression}</code>}
-          </div>
+        edges.map((edge, i) => (
+          <Fragment key={edge.id}>
+            {crossing(edge, edges[i - 1])}
+            <div className="trace-hop">
+              <span className={`cedge-swatch cedge-swatch--${edge.kind}`} title={edge.kind} />
+              <span className="trace-hop__path">
+                {ref(edge.source_model, edge.source_column)} →{' '}
+                {ref(edge.target_model, edge.target_column, edge.source_model)}{' '}
+                <span style={{ color: 'var(--text-faint)' }}>({edge.kind})</span>
+              </span>
+              {edge.expression && <code className="trace-hop__expr">{edge.expression}</code>}
+            </div>
+          </Fragment>
         ))
       )}
     </div>

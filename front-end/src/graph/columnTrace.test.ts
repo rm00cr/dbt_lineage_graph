@@ -4,9 +4,11 @@ import type { ColumnLineageEdge, ColumnLineageResponse, ColumnNode } from '../ap
 import {
   MAX_TRACE_ROWS,
   buildTraceView,
+  crossesPipeline,
   decodeTraceParam,
   edgeHandles,
   encodeTraceParam,
+  pipelineRoute,
   rowHandleId,
   traceNodeHeight,
 } from './columnTrace'
@@ -98,5 +100,45 @@ describe('URL param', () => {
     expect(decodeTraceParam('broken')).toBeNull()
     expect(decodeTraceParam('model|')).toBeNull()
     expect(decodeTraceParam(null)).toBeNull()
+  })
+})
+
+describe('pipelines of a trace', () => {
+  /**
+   *  bestand: raw.amount ─> stg.amount (root)
+   *  claims:  imported stg ─> fct.total
+   *  finance: rpt.amount (downstream of stg, two hops away through claims' import)
+   */
+  const PIPELINE: Record<string, string> = { raw: 'bestand', stg: 'bestand', fct: 'claims', rpt: 'finance' }
+  const pipelineOf = (id: string) => PIPELINE[id] ?? ''
+
+  it('flags edges that enter another pipeline', () => {
+    const [rawToStg, stgToFct, stgToRpt] = TRACE.edges
+    expect(crossesPipeline(rawToStg, pipelineOf)).toBe(false)
+    expect(crossesPipeline(stgToFct, pipelineOf)).toBe(true)
+    expect(crossesPipeline(stgToRpt, pipelineOf)).toBe(true)
+  })
+
+  it('orders the route from origins to impact', () => {
+    const view = buildTraceView({ ...TRACE, nodes: [...TRACE.nodes.slice(0, 3), col('rpt', 'amount', 2)] })
+    expect(pipelineRoute(view, pipelineOf)).toEqual(['bestand', 'claims', 'finance'])
+  })
+
+  it('places a pipeline by its furthest-upstream column', () => {
+    // claims holds an origin (distance 2 upstream) and an impact column: it comes first
+    const view = buildTraceView({
+      ...TRACE,
+      nodes: [...TRACE.nodes, col('origin', 'amount', 2)],
+      edges: [...TRACE.edges, edge('origin', 'amount', 'raw', 'amount')],
+    })
+    expect(pipelineRoute(view, (id) => ({ ...PIPELINE, origin: 'claims' })[id] ?? '')).toEqual([
+      'claims',
+      'bestand',
+      'finance',
+    ])
+  })
+
+  it('is a single pipeline when the trace stays inside one', () => {
+    expect(pipelineRoute(buildTraceView(TRACE), () => 'only')).toEqual(['only'])
   })
 })

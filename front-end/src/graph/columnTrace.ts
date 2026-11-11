@@ -123,6 +123,27 @@ export function edgeHandles(
   }
 }
 
+/** A column edge whose two models belong to different pipelines (an import of another pipeline). */
+export function crossesPipeline(edge: ColumnLineageEdge, pipelineOf: (modelId: string) => string): boolean {
+  return pipelineOf(edge.source_model) !== pipelineOf(edge.target_model)
+}
+
+/**
+ * The pipelines a trace runs through, from its origins to its impact: each pipeline sits at
+ * the furthest-upstream column it holds (upstream hops count negative, downstream positive).
+ */
+export function pipelineRoute(view: TraceView, pipelineOf: (modelId: string) => string): string[] {
+  const position = new Map<string, number>()
+  for (const [modelId, columns] of view.columnsByNode) {
+    const pipeline = pipelineOf(modelId)
+    for (const column of columns) {
+      const signed = column.role === 'downstream' ? column.distance : -column.distance
+      position.set(pipeline, Math.min(position.get(pipeline) ?? Infinity, signed))
+    }
+  }
+  return [...position.entries()].sort((a, b) => a[1] - b[1] || a[0].localeCompare(b[0])).map(([p]) => p)
+}
+
 /** `<model>|<column>`, the `col=` URL parameter. */
 export function encodeTraceParam(modelId: string, column: string): string {
   return `${modelId}|${column}`

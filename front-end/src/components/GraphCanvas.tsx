@@ -25,7 +25,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GraphEdge, GraphNode } from '../api/types'
 import { boundaryViolations } from '../graph/boundary'
 import { COLLAPSED_NODE_HEIGHT, COLLAPSED_PREFIX, isCollapsedNodeId } from '../graph/collapse'
-import { edgeHandles, traceNodeHeight } from '../graph/columnTrace'
+import { crossesPipeline, edgeHandles, traceNodeHeight } from '../graph/columnTrace'
+import { pipelineColor, pipelineFromId } from '../graph/pipelines'
 import { NODE_HEIGHT, NODE_WIDTH, cardHeight, layoutGraph } from '../graph/layout'
 import { shownView, touches as touchesIn, visibleSubgraph } from '../graph/visible'
 import { STACK_HEAD, isStacked } from '../graph/stack'
@@ -287,17 +288,28 @@ export function GraphCanvas() {
           className: `edge--dim ${crossClass(edge)}`.trim(),
           markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: arrowColor(edge, edgeColor) },
         }))
+      const pipelineById = new Map(graph.nodes.map((n) => [n.id, n.pipeline]))
+      const pipelineOf = (id: string) => pipelineById.get(id) ?? pipelineFromId(id)
+      // where the trace changes pipeline, one label per model pair names both pipelines
+      const labelled = new Set<string>()
       const columnEdges = traceView.edges
         .filter((edge) => visibleIds.has(edge.source_model) && visibleIds.has(edge.target_model))
-        .map((edge) => ({
-          id: `col:${edge.id}`,
-          source: edge.source_model,
-          target: edge.target_model,
-          ...edgeHandles(traceView, edge),
-          className: `cedge cedge--${edge.kind}`,
-          zIndex: 1,
-          markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: accentColor },
-        }))
+        .map((edge) => {
+          const cross = crossesPipeline(edge, pipelineOf)
+          const pair = `${edge.source_model}->${edge.target_model}`
+          const label = cross && !labelled.has(pair) ? `${pipelineOf(edge.source_model)} → ${pipelineOf(edge.target_model)}` : undefined
+          if (label) labelled.add(pair)
+          return {
+            id: `col:${edge.id}`,
+            source: edge.source_model,
+            target: edge.target_model,
+            ...edgeHandles(traceView, edge),
+            className: `cedge cedge--${edge.kind}${cross ? ' cedge--cross' : ''}`,
+            zIndex: 1,
+            markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: accentColor },
+            ...(label ? { label, labelBgPadding: [6, 3] as [number, number], labelBgBorderRadius: 99 } : {}),
+          }
+        })
       return [...modelEdges, ...columnEdges]
     }
 
@@ -429,11 +441,14 @@ export function GraphCanvas() {
               <div
                 key={band.pipeline}
                 className="pipeline-band"
-                style={{
-                  transform: `translate(${band.x}px, ${band.y}px)`,
-                  width: band.width,
-                  height: band.height,
-                }}
+                style={
+                  {
+                    transform: `translate(${band.x}px, ${band.y}px)`,
+                    width: band.width,
+                    height: band.height,
+                    '--pipeline-color': pipelineColor(graph?.stats.pipelines ?? [], band.pipeline),
+                  } as React.CSSProperties
+                }
               >
                 <div className="pipeline-band__label">
                   {band.pipeline}
