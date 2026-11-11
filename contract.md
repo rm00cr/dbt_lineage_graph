@@ -15,14 +15,35 @@
 ### 1.0 Pipelines and layers — the model this tool assumes
 
 A **pipeline is one dbt project**, delivered as its own `manifest.json` + `catalog.json`
-(`dbt docs generate`). Every pipeline is laid out in three layers:
+(`dbt docs generate`). Its models are laid out in **layers** (the stages), declared in the
+pipelines YAML, in flow order. The position gives each layer its **role**:
 
+| Position | Role | Meaning |
+|---|---|---|
+| first | `src` | imports: raw sources and other pipelines' outputs |
+| between | `int` | internal to the pipeline |
+| last | `out` | the pipeline's public interface |
+
+```yaml
+layers:                                  # top level: every pipeline; default src / int / out
+  - {name: src, label: Source, folders: [01_source]}
+  - {name: int, label: Intermediate, folders: [02_intermediate]}
+  - {name: out, label: Output, folders: [03_output]}
+pipelines:
+  - name: finance_controlling
+    project_dir: finance_controlling
+    layers:                              # per pipeline: overrides the top-level list
+      - {name: staging, prefixes: [stg_]}
+      - intermediate                     # shorthand for {name: intermediate}
+      - marts
 ```
-models/
-├── 01_source/        src  imports: raw sources and other pipelines' outputs
-├── 02_intermediate/  int  internal to the pipeline
-└── 03_output/        out  the pipeline's public interface
-```
+
+Per layer: `name` (required; the stage id, letters / digits / `_` / `-`, not `other`),
+`label` (UI, default the name), `folders` (folder names below `models/`, default `[name]`;
+a numeric prefix like `01_` is optional on either side), `prefixes` (model name prefixes for
+models outside the folders). At least two layers. Without `layers` the default is
+`src` / `int` / `out` with the folders `source|sources|staging`, `intermediate`,
+`output|out|marts|mart` and the prefixes `src_|stg_`, `int_`, `out_|mart_`.
 
 Which pipelines exist and where their artifacts are is declared in a YAML file
 (`PIPELINES_CONFIG`, default `fixtures/pipelines.yaml`):
@@ -37,31 +58,35 @@ pipelines:
 ```
 
 **Across pipelines.** A pipeline reads another pipeline's output by declaring that table
-as a dbt **source** (in `01_source`). Separate manifests do not reference each other, so the
+as a dbt **source** (in its first layer). Separate manifests do not reference each other, so the
 backend links them on the **table name only** (source `identifier` = model `alias`). Database
 and dataset are ignored on purpose, because pipelines are deployed to different GCP projects /
-datasets. Only `out` models (`03_output`) are link targets: a source whose name matches only
-a `src` / `int` model of another pipeline stays unlinked. A source may also point at a
+datasets. Only models with role `out` (the last layer) are link targets: a source whose name matches
+only a model of another layer of another pipeline stays unlinked. A source may also point at a
 passthrough view `{table}_v` of an output (e.g. source `orders_v` -> output `orders`); an exact
 name match wins over the `_v` match. **Assumption: output table names are
 unique across all pipelines.** If a name matches several `out` models, the source stays
 unlinked and the backend logs a warning. The resulting edge is
-`upstream out model -> imported source (src)`, with `cross_pipeline: true`.
+`upstream out model -> imported source (first layer)`, with `cross_pipeline: true`.
 Column lineage maps the columns of that edge 1:1 (`passthrough`).
 
-### 1.1 Stages (`src` | `int` | `out` | `other`)
+### 1.1 Stages (a layer name, or `other`) and roles (`src` | `int` | `out` | `other`)
 
-Resolved by the backend in this order:
+`stage` is the name of the node's layer in its pipeline (1.0); `role` is that layer's role
+(first `src`, last `out`, else `int`; `other` for unassigned nodes). Resolved by the backend
+against the pipeline's layers, in this order:
 
-1. dbt **sources** → always `src`
-2. **layer folder** in `original_file_path`, ignoring a numeric prefix: `01_source` →
-   `src`, `02_intermediate` → `int`, `03_output` → `out` (also `staging`, `marts`, …)
-3. **name prefix** for models outside the layer folders: `src_`/`stg_` → `src`, `int_` →
-   `int`, `out_`/`mart_` → `out`
-4. **dbt tag** `stage:<src|int|out>` if present
+1. dbt **sources** → always the first layer
+2. **layer folder** in `original_file_path` (any folder below `models/`) matching a layer's
+   `folders`, a numeric prefix ignored
+3. **name prefix** matching a layer's `prefixes`
+4. **dbt tag** `stage:<layer name>` if present
 5. fallback → `other`
 
-Configurable through `STAGE_FOLDERS` / `STAGE_PREFIXES` in `back-end/app/config.py`.
+The UI colours by role, draws one column per layer in layer order, and labels with the
+layer `label` (`/api/meta` `layers`: every layer once, in flow order; pipelines with
+differently named layers interleave by role). `/api/pipelines` lists each pipeline's own
+`layers`.
 
 ### 1.2 Pipeline
 
@@ -90,18 +115,18 @@ selector.
 Sources cannot have a dbt group: explicit `meta.group` on the source, else the group most of
 its direct consumers belong to (ties alphabetical), else `null`. The stage-lanes layout draws
 one horizontal row per group (ungrouped nodes last); without any groups it is a single row.
-The zones toggle picks stages only / stages × groups / groups only (`?zones=stages|groups`),
-and *split by pipeline* (`?split=pipeline`) gives every pipeline its own grid in its own box.
-It assumes the convention that only a pipeline's outputs feed other pipelines (into a src
-model): a consuming pipeline is placed right of the pipelines it reads from, independent
+The zones toggle picks stages only / stages × groups / groups only (`?zones=stages|groups`).
+With two or more pipelines in view, every pipeline gets its own grid (its own layer columns)
+in its own box, always. It assumes the convention that only a pipeline's outputs feed other
+pipelines (into its first layer): a consuming pipeline is placed right of the pipelines it reads from, independent
 pipelines are stacked in the same column (frontend only, no API change).
 
 ### 1.2c Pipeline boundary convention
 
-Only a pipeline's outputs may feed another pipeline, imported through a src model:
-cross-pipeline edges must be `out -> src`. The frontend flags the rest
+Only a pipeline's outputs may feed another pipeline, imported in its first layer:
+cross-pipeline edges must go from role `out` to role `src`. The frontend flags the rest
 (`front-end/src/graph/boundary.ts`): `internal` (upstream is not an `out` model) and
-`skips-src` (an output read by a non-`src` model). Edges from dbt sources never count. The
+`skips-src` (an output read by a model outside the first layer). Edges from dbt sources never count. The
 fixtures follow the convention
 (`out_mfp_* -> source bestand_mfp.out_mfp_* -> src_claims_mfp_*`).
 
@@ -114,10 +139,10 @@ Enabled dbt tests only; disabled ones are dropped.
   "generic"`, `test_name`, `column` and a lower-cased `severity`.
 - **Singular tests** (`.sql` under `tests/`, e.g. the `dq_check_*` checks) are nodes of their
   own: `resource_type` and `materialization` `test`, SQL as code, an edge from every node they
-  read, `dbt_run_command` `dbt test --select <name>`. Their stage and folder come from the path
-  like a model's (`tests/02_intermediate/claim/x.sql` -> `int` / `claim`). A test outside a
-  layer folder takes the latest stage of the nodes it reads, and the folder and group most of
-  those nodes in that stage have.
+  read, `dbt_run_command` `dbt test --select <name>`. Their stage (layer), role and folder
+  come from the path like a model's (`tests/02_intermediate/claim/x.sql` -> `int` / `claim`).
+  A test outside a layer folder takes the last layer of its pipeline among the nodes it reads,
+  and the folder and group most of those nodes in that layer have.
 - Tests never count as consumers when a source's group or folder is inferred (1.2a / 1.2b).
 
 The frontend hides singular-test nodes and the test lists until the **Tests** toggle is on.
@@ -142,7 +167,7 @@ Ids are URL-encoded in `/api/model/{id}`.
 | Method | Path | Purpose | Prio |
 |---|---|---|---|
 | `GET` | `/api/health` | liveness + which artifacts are loaded | — |
-| `GET` | `/api/meta` | pipelines, stages, materializations, counts (toolbar filters) | 1 |
+| `GET` | `/api/meta` | pipelines, stages, layers (label, role), materializations, counts (toolbar filters) | 1 |
 | `GET` | `/api/graph` | whole lineage graph, slim payload for rendering | 1.1 |
 | `GET` | `/api/model/{id}` | model detail for the overlay (lazy); `?state=` reads a compared state | 1.2, 1.3, 2.1, 3.1 |
 | `GET` | `/api/search` | fuzzy search over model names | 1.5 |
@@ -168,7 +193,8 @@ Query params (all optional): `pipeline` (repeatable), `stage` (repeatable), `inc
     {
       "id": "model.bestand_mfp.int_mfp_contracts",
       "name": "int_mfp_contracts",
-      "stage": "int",                       // src | int | out | other
+      "stage": "int",                       // a layer name (1.1), or other
+      "role": "int",                        // src | int | out | other: the layer's role
       "materialization": "table",           // table | view | incremental | ephemeral | source | test
       "pipeline": "bestand_mfp",
       "resource_type": "model",             // model | source | test (singular test = .sql under tests/)
@@ -292,7 +318,7 @@ because `/api/model/{id:path}` already swallows slashes. 404 for an unknown mode
     { "id": "model…int_claims_loss_ratio.paid_chf->model…out_pnc_combined_ratio.incurred_chf",
       "source_model": "model.schaden_claims.int_claims_loss_ratio", "source_column": "paid_chf",
       "target_model": "model.schaden_claims.out_pnc_combined_ratio", "target_column": "incurred_chf",
-      "kind": "aggregate",                    // passthrough | rename | transform | aggregate
+      "kind": "aggregate",                    // passthrough | rename | unnest | transform | aggregate
       "expression": "sum(`l`.`paid_chf` + `l`.`reserve_chf`)" }   // first non-trivial SQL on the path
   ],
   "warnings": []                              // e.g. "int_x: lineage partial - relations not found …"

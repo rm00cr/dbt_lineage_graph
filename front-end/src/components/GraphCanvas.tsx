@@ -25,7 +25,8 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { GraphEdge, GraphNode } from '../api/types'
 import { boundaryViolations } from '../graph/boundary'
 import { COLLAPSED_NODE_HEIGHT, COLLAPSED_PREFIX, isCollapsedNodeId } from '../graph/collapse'
-import { edgeHandles, traceNodeHeight } from '../graph/columnTrace'
+import { crossesPipeline, edgeHandles, traceNodeHeight } from '../graph/columnTrace'
+import { pipelineColor, pipelineFromId } from '../graph/pipelines'
 import { NODE_HEIGHT, NODE_WIDTH, cardHeight, layoutGraph } from '../graph/layout'
 import { placeTestNodes, testListExtraHeight } from '../graph/tests'
 import { shownView, touches as touchesIn, visibleSubgraph } from '../graph/visible'
@@ -34,16 +35,17 @@ import { useExplorerStore } from '../store/useExplorerStore'
 import { useTheme } from '../theme/useTheme'
 import { FolderNode, type FolderNodeType } from './nodes/FolderNode'
 import { ModelNode, type ModelNodeType } from './nodes/ModelNode'
-import { STAGE_LABELS, useChangeColor, useStageColor } from './visual'
+import { useChangeColor, useStages } from './visual'
 
 const NODE_TYPES = { model: ModelNode, folder: FolderNode }
 const PULSE_MS = 1900
+const ORIGIN: XYPosition = { x: 0, y: 0 }
 
 export function GraphCanvas() {
   const graph = useExplorerStore((s) => s.graph)
   const layoutMode = useExplorerStore((s) => s.layoutMode)
   const zoneMode = useExplorerStore((s) => s.zoneMode)
-  const splitPipelines = useExplorerStore((s) => s.splitPipelines)
+  const layers = useExplorerStore((s) => s.meta?.layers)
   const collapsedFolders = useExplorerStore((s) => s.collapsedFolders)
   const toggleFolder = useExplorerStore((s) => s.toggleFolder)
   const focusMode = useExplorerStore((s) => s.focusMode)
@@ -63,13 +65,37 @@ export function GraphCanvas() {
   const clearSelection = useExplorerStore((s) => s.clearSelection)
   const closeOverlay = useExplorerStore((s) => s.closeOverlay)
 
-  const { setCenter, fitView, fitBounds, getNodesBounds } = useReactFlow()
+  const { setCenter, fitView, fitBounds, getNodesBounds, getZoom, getViewport, setViewport } =
+    useReactFlow()
   const canvasRef = useRef<HTMLDivElement>(null)
   const theme = useTheme((s) => s.resolved)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
   const changeColor = useChangeColor()
 
+  // React Flow's scroll-to-zoom reads only deltaY, so a horizontal wheel (tilt wheel,
+  // thumb wheel, sideways trackpad swipe) does nothing. Pan sideways instead, and leave
+  // vertical scrolling and Ctrl+wheel to React Flow's zoom.
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) return
+      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return
+      const target = event.target as Element | null
+      if (!target?.closest('.react-flow__renderer') || target.closest('.nowheel')) return
+      event.preventDefault() // no browser back/forward swipe
+      event.stopPropagation() // keep it from React Flow's zoom handler
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientWidth : 1
+      const { x, y, zoom } = getViewport()
+      void setViewport({ x: x - event.deltaX * unit, y, zoom })
+    }
+    el.addEventListener('wheel', onWheel, { capture: true, passive: false })
+    return () => el.removeEventListener('wheel', onWheel, { capture: true })
+  }, [getViewport, setViewport])
+
   const [dragged, setDragged] = useState<Map<string, XYPosition>>(new Map())
+  /** how far each pipeline band was dragged (zones layout); moves its boxes and nodes along */
+  const [bandOffsets, setBandOffsets] = useState<Map<string, XYPosition>>(new Map())
   const [pulseId, setPulseId] = useState<string | null>(null)
   const selectionRef = useRef(selectedIds)
   selectionRef.current = selectedIds
@@ -84,12 +110,11 @@ export function GraphCanvas() {
         layoutMode,
         zoneMode,
         collapsedFolders,
-        splitPipelines,
         // a column trace needs its models: their folders stay open while it is shown
         keep: traceView?.nodeIds,
         showTests,
       }),
-    [graph, layoutMode, zoneMode, collapsedFolders, splitPipelines, traceView, showTests],
+    [graph, layoutMode, zoneMode, collapsedFolders, traceView, showTests],
   )
 
   // traced nodes (2.3) grow by their column rows; the layout makes room for them
@@ -118,13 +143,29 @@ export function GraphCanvas() {
   const layout = useMemo(() => {
     const nodes = view.nodes.filter((n) => !testIds.has(n.id))
     const edges = view.edges.filter((e) => !testIds.has(e.source) && !testIds.has(e.target))
-    return layoutGraph(nodes, edges, layoutMode, heights, { zones: zoneMode, splitPipelines })
-  }, [view, testIds, layoutMode, heights, zoneMode, splitPipelines])
+    return layoutGraph(nodes, edges, layoutMode, heights, { zones: zoneMode, stageOrder: layers?.map((l) => l.name) })
+  }, [view, testIds, layoutMode, heights, zoneMode, layers])
   const testPositions = useMemo(() => {
     if (testIds.size === 0) return new Map<string, XYPosition>()
     const heightOf = (id: string) => heights.get(id) ?? NODE_HEIGHT
     return placeTestNodes([...testIds], view.edges, layout.positions, heightOf, NODE_WIDTH, heightOf)
   }, [testIds, view, layout, heights])
+
+  // a dragged pipeline band takes its nodes along; `dragged` holds positions without that shift
+  const pipelineOf = useMemo(() => new Map(view.nodes.map((n) => [n.id, n.pipeline])), [view])
+  const bandShift = useCallback(
+    (pipeline: string | null | undefined): XYPosition => (pipeline && bandOffsets.get(pipeline)) || ORIGIN,
+    [bandOffsets],
+  )
+  const positionOf = useCallback(
+    (id: string): XYPosition | undefined => {
+      const base = dragged.get(id) ?? layout.positions.get(id) ?? testPositions.get(id)
+      if (!base) return undefined
+      const shift = bandShift(pipelineOf.get(id))
+      return { x: base.x + shift.x, y: base.y + shift.y }
+    },
+    [dragged, layout, testPositions, bandShift, pipelineOf],
+  )
 
   // moved nodes would sit at stale spots once boxes collapse / expand
   const collapseSignature = [...view.members.keys()].sort().join('|')
@@ -156,9 +197,10 @@ export function GraphCanvas() {
     void fitBounds({ ...bounds, width: (bounds.width * width) / (width - covered) }, { duration: 650, padding: 0.12 })
   }, [fitView, fitBounds, getNodesBounds])
 
-  const layoutSignature = `${layoutMode}:${layoutMode === 'lanes' ? `${zoneMode}:${splitPipelines}` : ''}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
+  const layoutSignature = `${layoutMode}:${layoutMode === 'lanes' ? zoneMode : ''}:${graph?.nodes.length ?? 0}:${graph?.edges.length ?? 0}`
   useEffect(() => {
     setDragged(new Map())
+    setBandOffsets(new Map())
     const timer = window.setTimeout(frameView, 60)
     return () => window.clearTimeout(timer)
   }, [layoutSignature, frameView])
@@ -191,14 +233,15 @@ export function GraphCanvas() {
       toggleFolder(shownAs.slice(COLLAPSED_PREFIX.length))
       return
     }
-    const position = dragged.get(shownAs) ?? layout.positions.get(shownAs) ?? testPositions.get(shownAs)
+    const position = positionOf(shownAs)
     if (!position || centeredFor.current === centerRequest) return
     centeredFor.current = centerRequest
     setCenter(position.x + NODE_WIDTH / 2, position.y + (heights.get(shownAs) ?? NODE_HEIGHT) / 2, {
       zoom: 1.05,
       duration: 700,
     })
-    // `dragged` intentionally not a dependency: we only centre on an explicit request.
+    // `positionOf` (changes with every drag) intentionally not a dependency: we only centre
+    // on an explicit request.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [centerRequest, layout, testPositions, view, setCenter, toggleFolder])
 
@@ -218,7 +261,7 @@ export function GraphCanvas() {
       .map((node) => {
         const common = {
           id: node.id,
-          position: dragged.get(node.id) ?? layout.positions.get(node.id) ?? testPositions.get(node.id) ?? { x: 0, y: 0 },
+          position: positionOf(node.id) ?? ORIGIN,
           // Explicit dimensions: the nodes are fully controlled, so React Flow never writes
           // measurements back into them — without this the mini-map stays empty.
           width: NODE_WIDTH,
@@ -261,7 +304,7 @@ export function GraphCanvas() {
           },
         }
       })
-  }, [graph, view, visibleIds, dragged, layout, testPositions, heights, traceView, showTests, selectedIds, highlightedIds, focusMode, activeId, pulseId, touches])
+  }, [graph, view, visibleIds, positionOf, heights, traceView, showTests, selectedIds, highlightedIds, focusMode, activeId, pulseId, touches])
 
   const accentColor = theme === 'light' ? '#4f46e5' : '#6366f1'
   const edgeColor = theme === 'light' ? 'rgba(71,85,105,0.5)' : 'rgba(148,163,184,0.4)'
@@ -299,17 +342,22 @@ export function GraphCanvas() {
           className: `edge--dim ${crossClass(edge)}`.trim(),
           markerEnd: { type: MarkerType.ArrowClosed, width: 16, height: 16, color: arrowColor(edge, edgeColor) },
         }))
+      const pipelineById = new Map(graph.nodes.map((n) => [n.id, n.pipeline]))
+      const pipelineOf = (id: string) => pipelineById.get(id) ?? pipelineFromId(id)
       const columnEdges = traceView.edges
         .filter((edge) => visibleIds.has(edge.source_model) && visibleIds.has(edge.target_model))
-        .map((edge) => ({
-          id: `col:${edge.id}`,
-          source: edge.source_model,
-          target: edge.target_model,
-          ...edgeHandles(traceView, edge),
-          className: `cedge cedge--${edge.kind}`,
-          zIndex: 1,
-          markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: accentColor },
-        }))
+        .map((edge) => {
+          const cross = crossesPipeline(edge, pipelineOf)
+          return {
+            id: `col:${edge.id}`,
+            source: edge.source_model,
+            target: edge.target_model,
+            ...edgeHandles(traceView, edge),
+            className: `cedge cedge--${edge.kind}${cross ? ' cedge--cross' : ''}`,
+            zIndex: 1,
+            markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: accentColor },
+          }
+        })
       return [...modelEdges, ...columnEdges]
     }
 
@@ -348,7 +396,8 @@ export function GraphCanvas() {
 
       for (const change of changes) {
         if (change.type === 'position' && change.position) {
-          moved.push([change.id, change.position])
+          const shift = bandShift(pipelineOf.get(change.id))
+          moved.push([change.id, { x: change.position.x - shift.x, y: change.position.y - shift.y }])
         } else if (change.type === 'select' && !isCollapsedNodeId(change.id)) {
           ;(change.selected ? selectionAdds : selectionRemoves).push(change.id)
         }
@@ -371,8 +420,45 @@ export function GraphCanvas() {
         }
       }
     },
-    [select],
+    [select, bandShift, pipelineOf],
   )
+
+  /** drag a pipeline band by its label: the whole pipeline (boxes, nodes, edges) moves */
+  const bandDrag = useRef<{ pipeline: string; x: number; y: number; origin: XYPosition } | null>(null)
+  const onBandPointerDown = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>, pipeline: string) => {
+      if (event.button !== 0) return
+      event.stopPropagation()
+      event.currentTarget.setPointerCapture(event.pointerId)
+      bandDrag.current = { pipeline, x: event.clientX, y: event.clientY, origin: bandShift(pipeline) }
+    },
+    [bandShift],
+  )
+  const onBandPointerMove = useCallback(
+    (event: React.PointerEvent<HTMLDivElement>) => {
+      const drag = bandDrag.current
+      if (!drag) return
+      const zoom = getZoom()
+      const offset = {
+        x: drag.origin.x + (event.clientX - drag.x) / zoom,
+        y: drag.origin.y + (event.clientY - drag.y) / zoom,
+      }
+      setBandOffsets((prev) => new Map(prev).set(drag.pipeline, offset))
+    },
+    [getZoom],
+  )
+  const onBandPointerUp = useCallback((event: React.PointerEvent<HTMLDivElement>) => {
+    if (!bandDrag.current) return
+    bandDrag.current = null
+    event.currentTarget.releasePointerCapture(event.pointerId)
+  }, [])
+  const resetBand = useCallback((pipeline: string) => {
+    setBandOffsets((prev) => {
+      const next = new Map(prev)
+      next.delete(pipeline)
+      return next
+    })
+  }, [])
 
   const onNodeClick = useCallback(
     (_event: React.MouseEvent, node: RFNode) => {
@@ -428,7 +514,7 @@ export function GraphCanvas() {
             nodeColor={(node) => {
               const data = node.data as { node?: GraphNode; stage?: GraphNode['stage'] }
               if (!data.node) return stageColor(data.stage ?? 'other') // collapsed folder
-              return comparing ? changeColor(data.node.change) : stageColor(data.node.stage)
+              return comparing ? changeColor(data.node.change) : stageColor(data.node)
             }}
             nodeStrokeWidth={0}
             style={{ width: 190, height: 130 }}
@@ -441,13 +527,24 @@ export function GraphCanvas() {
               <div
                 key={band.pipeline}
                 className="pipeline-band"
-                style={{
-                  transform: `translate(${band.x}px, ${band.y}px)`,
-                  width: band.width,
-                  height: band.height,
-                }}
+                style={
+                  {
+                    transform: `translate(${band.x + bandShift(band.pipeline).x}px, ${band.y + bandShift(band.pipeline).y}px)`,
+                    width: band.width,
+                    height: band.height,
+                    '--pipeline-color': pipelineColor(graph?.stats.pipelines ?? [], band.pipeline),
+                  } as React.CSSProperties
+                }
               >
-                <div className="pipeline-band__label">
+                <div
+                  className="pipeline-band__label nopan nodrag"
+                  title="Drag to move this pipeline (double-click to put it back)"
+                  onPointerDown={(event) => onBandPointerDown(event, band.pipeline)}
+                  onPointerMove={onBandPointerMove}
+                  onPointerUp={onBandPointerUp}
+                  onPointerCancel={onBandPointerUp}
+                  onDoubleClick={() => resetBand(band.pipeline)}
+                >
                   {band.pipeline}
                   <span className="row-band__count">{band.count}</span>
                 </div>
@@ -458,7 +555,7 @@ export function GraphCanvas() {
                 key={`${row.pipeline ?? ''}:${row.group ?? '__ungrouped__'}`}
                 className={`row-band ${row.group ? '' : 'row-band--ungrouped'}`}
                 style={{
-                  transform: `translate(${row.x}px, ${row.y}px)`,
+                  transform: `translate(${row.x + bandShift(row.pipeline).x}px, ${row.y + bandShift(row.pipeline).y}px)`,
                   width: row.width,
                   height: row.height,
                 }}
@@ -475,13 +572,13 @@ export function GraphCanvas() {
                 className="lane"
                 style={{
                   ['--stage-color' as string]: stageColor(lane.stage),
-                  transform: `translate(${lane.x}px, ${lane.y}px)`,
+                  transform: `translate(${lane.x + bandShift(lane.pipeline).x}px, ${lane.y + bandShift(lane.pipeline).y}px)`,
                   width: lane.width,
                   height: lane.height,
                 }}
               >
                 <div className="lane__label" style={{ ['--stage-color' as string]: stageColor(lane.stage) }}>
-                  {STAGE_LABELS[lane.stage]}
+                  {stageLabel(lane.stage)}
                   <span className="lane__count">{lane.count}</span>
                 </div>
               </div>
@@ -497,7 +594,7 @@ export function GraphCanvas() {
                   className={`folder-band ${box.folder ? '' : 'folder-band--root'}`}
                   style={{
                     ['--stage-color' as string]: stageColor(box.stage),
-                    transform: `translate(${box.x}px, ${box.y}px)`,
+                    transform: `translate(${box.x + bandShift(box.pipeline).x}px, ${box.y + bandShift(box.pipeline).y}px)`,
                     width: box.width,
                     height: box.height,
                   }}

@@ -37,7 +37,7 @@ const folderNodes = [node('a1', 'int', 'claim'), node('a2', 'int', 'claim'), nod
 const folderEdges = [edge('a1', 'o'), edge('a2', 'o')]
 const claim = folderKey(folderNodes[0], false)
 const shown = (graph: GraphResponse, patch: Partial<Parameters<typeof shownView>[0]> = {}) =>
-  shownView({ graph, layoutMode: 'lanes', zoneMode: 'folders', collapsedFolders: new Set([claim]), splitPipelines: false, ...patch })
+  shownView({ graph, layoutMode: 'lanes', zoneMode: 'folders', collapsedFolders: new Set([claim]), ...patch })
 
 describe('shownView: what the canvas (and an export) shows', () => {
   it('collapses folders only where folder boxes are drawn', () => {

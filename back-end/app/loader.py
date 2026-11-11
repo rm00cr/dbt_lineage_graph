@@ -18,7 +18,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
-from .config import STAGE_ORDER, ArtifactPair, folder_of, resolve_stage
+from .config import DEFAULT_LAYERS, OTHER_STAGE, ArtifactPair, Layer, folder_of, layer_role, resolve_stage
 
 MATERIALIZATIONS = {"table", "view", "incremental", "ephemeral", "source", "test"}
 
@@ -75,6 +75,8 @@ class LineageNode:
     depends_on: list[str] = field(default_factory=list)
     dependents: list[str] = field(default_factory=list)
     tests: list[NodeTest] = field(default_factory=list)
+    # role of the stage in its pipeline: src (first layer) / int / out (last layer) / other
+    role: str = OTHER_STAGE
 
 
 @dataclass
@@ -87,6 +89,8 @@ class LineageGraph:
     adapter_type: str | None = None
     dbt_version: str | None = None
     generated_at: str | None = None
+    # pipeline -> its layers (the stages, in flow order)
+    layers: dict[str, tuple[Layer, ...]] = field(default_factory=dict)
 
     # ---------------------------------------------------------------- convenience
     @property
@@ -99,12 +103,19 @@ class LineageGraph:
 
     @property
     def stages(self) -> list[str]:
-        present = {n.stage for n in self.nodes.values()}
-        return [s for s in STAGE_ORDER if s in present]
+        """Stages present in the graph, in flow order (see ``stage_order``)."""
+        return self.stage_order({n.stage for n in self.nodes.values()})
+
+    def stage_order(self, present: set[str]) -> list[str]:
+        """``present`` stages in flow order: every pipeline's layer order merged (in pipeline
+        name order), ``other`` last."""
+        order = merge_layer_orders(self.layers)
+        unknown = sorted(present - set(order))  # e.g. of a pipeline that is not in this graph
+        return [s for s in [*order[:-1], *unknown, order[-1]] if s in present]
 
     @property
     def materializations(self) -> list[str]:
-        order = ["source", "view", "table", "incremental", "ephemeral", "other"]
+        order = ["source", "view", "table", "incremental", "ephemeral", "test", "other"]
         present = {n.materialization for n in self.nodes.values()}
         return [m for m in order if m in present]
 
@@ -212,6 +223,7 @@ class LoadedArtifacts:
     name: str | None = None
     # where it came from, listed in /api/health
     source: str = "upload"
+    layers: tuple[Layer, ...] = DEFAULT_LAYERS
 
     @property
     def project_name(self) -> str:
@@ -239,6 +251,7 @@ def read_artifacts(pairs: Iterable[ArtifactPair]) -> list[LoadedArtifacts]:
                 catalog=_read_json(pair.catalog) if pair.catalog and pair.catalog.is_file() else None,
                 name=pair.name,
                 source=str(pair.manifest),
+                layers=pair.layers,
             )
         )
     return loaded
@@ -257,7 +270,7 @@ def build_graph(artifacts: Iterable[LoadedArtifacts]) -> LineageGraph:
         if item.catalog:
             graph.catalog_loaded = True
         graph.artifacts.append(item.source)
-        _ingest(graph, item.manifest, item.catalog, item.name or item.project_name)
+        _ingest(graph, item.manifest, item.catalog, item.name or item.project_name, item.layers)
     _link(graph)
     return graph
 
@@ -282,7 +295,9 @@ def _ingest(
     manifest: dict[str, Any],
     catalog: dict[str, Any] | None,
     pipeline: str,
+    layers: tuple[Layer, ...] = DEFAULT_LAYERS,
 ) -> None:
+    graph.layers[pipeline] = layers
     """Add one pipeline; its nodes get pipeline-scoped ids (`_scope_id`)."""
     metadata = manifest.get("metadata") or {}
     project = (metadata.get("project_name") or "dbt")
@@ -317,13 +332,14 @@ def _ingest(
                 resource_type="model",
                 original_file_path=node.get("original_file_path") or node.get("path"),
                 tags=tags,
+                layers=layers,
             ),
             materialization=_materialization_of(node),
             pipeline=_pipeline_of(node, pipeline),
             resource_type="model",
             project=node.get("package_name") or project,
             group=node.get("group") or config.get("group") or None,
-            folder=folder_of(node.get("original_file_path") or node.get("path")),
+            folder=folder_of(node.get("original_file_path") or node.get("path"), layers),
             schema_name=node.get("schema"),
             database=node.get("database"),
             alias=node.get("alias") or node.get("name"),
@@ -350,7 +366,7 @@ def _ingest(
         graph.nodes[id_map.get(node_id, node_id)] = LineageNode(
             id=id_map.get(node_id, node_id),
             name=display_name,
-            stage="src",
+            stage=layers[0].name,
             materialization="source",
             pipeline=_pipeline_of(node, pipeline),
             resource_type="source",
@@ -372,8 +388,13 @@ def _ingest(
         )
 
     # ------------------------------------------------------------------- tests
-    _ingest_singular_tests(graph, manifest, id_map, pipeline, project)
+    _ingest_singular_tests(graph, manifest, id_map, pipeline, project, layers)
     _ingest_generic_tests(graph, manifest, id_map)
+
+    # the role of a stage depends on the layers of the project that defines the node
+    for scoped in id_map.values():
+        if scoped in graph.nodes:
+            graph.nodes[scoped].role = layer_role(layers, graph.nodes[scoped].stage)
 
 
 def _enabled_tests(manifest: dict[str, Any]):
@@ -391,6 +412,7 @@ def _ingest_singular_tests(
     id_map: dict[str, str],
     pipeline: str,
     project: str,
+    layers: tuple[Layer, ...] = DEFAULT_LAYERS,
 ) -> None:
     """Singular tests (.sql under tests/, incl. the dq_check_* checks) are graph nodes of
     their own: stage from their layer folder, SQL as code, edges from the models they read."""
@@ -405,14 +427,14 @@ def _ingest_singular_tests(
             name=node.get("name") or node_id.split(".")[-1],
             stage=resolve_stage(
                 name=node.get("name") or "", resource_type="test",
-                original_file_path=path, tags=tags,
+                original_file_path=path, tags=tags, layers=layers,
             ),
             materialization="test",
             pipeline=_pipeline_of(node, pipeline),
             resource_type="test",
             project=node.get("package_name") or project,
             group=node.get("group") or config.get("group") or None,
-            folder=folder_of(path),
+            folder=folder_of(path, layers),
             schema_name=node.get("schema"),
             database=node.get("database"),
             alias=node.get("alias") or node.get("name"),
@@ -448,6 +470,34 @@ def _ingest_generic_tests(graph: LineageGraph, manifest: dict[str, Any], id_map:
                 target.tests.append(test)
 
 
+def ordered_layers(layers: dict[str, tuple[Layer, ...]]) -> list[Layer]:
+    """Every layer once, in flow order; for a stage name used by several pipelines the first
+    pipeline (by name) gives label and role."""
+    first: dict[str, Layer] = {}
+    for pipeline in sorted(layers):
+        for layer in layers[pipeline]:
+            first.setdefault(layer.name, layer)
+    return [first[s] for s in merge_layer_orders(layers) if s in first]
+
+
+def merge_layer_orders(layers: dict[str, tuple[Layer, ...]]) -> list[str]:
+    """One stage order out of every pipeline's layer order (in pipeline name order): a stage
+    not seen yet is placed right after the stage before it in its pipeline. Then grouped by
+    role, so pipelines with differently named layers interleave (staging, src, intermediate,
+    int, ...). ``other`` last."""
+    order: list[str] = []
+    role: dict[str, str] = {}
+    for pipeline in sorted(layers):
+        previous: str | None = None
+        for layer in layers[pipeline]:
+            if layer.name not in order:
+                order.insert(order.index(previous) + 1 if previous else 0, layer.name)
+                role[layer.name] = layer.role
+            previous = layer.name
+    rank = {"src": 0, "int": 1, "out": 2}
+    return [*sorted(order, key=lambda s: rank.get(role[s], 1)), OTHER_STAGE]
+
+
 PASSTHROUGH_VIEW_SUFFIX = "_v"
 
 
@@ -459,8 +509,8 @@ def _stitch_pipelines(graph: LineageGraph) -> None:
     **table name only**: pipelines are often deployed to different GCP projects / datasets
     (and per environment), so database and schema are deliberately ignored.
 
-    Only `out` models (a pipeline's public interface) are link targets; `src` and `int`
-    models are never matched, even if their table name fits.
+    Only models of a pipeline's last layer (role `out`, its public interface) are link
+    targets; models of the other layers are never matched, even if their table name fits.
 
     A source may also read an output through a passthrough view named `{table}_v`. An exact
     name match wins; only if there is none is the `_v` suffix stripped and matched again.
@@ -475,7 +525,7 @@ def _stitch_pipelines(graph: LineageGraph) -> None:
     for node in graph.nodes.values():
         if (
             node.resource_type == "model"
-            and node.stage == "out"
+            and node.role == "out"
             and node.materialization != "ephemeral"
         ):
             by_table[table_name(node).lower()].append(node)
@@ -573,17 +623,20 @@ def _infer_source_folders(graph: LineageGraph) -> None:
 
 def _infer_test_placement(graph: LineageGraph) -> None:
     """A singular test outside a layer folder (e.g. ``tests/dq_check_x.sql``) resolves to stage
-    "other". It takes the latest stage of the nodes it reads instead, and - when its path gives
-    none - the folder and group most of those nodes in that stage have, so the check is drawn
-    and collapsed with what it checks."""
+    "other". It takes the last layer (of its pipeline) among the nodes it reads instead, and -
+    when its path gives none - the folder and group most of those nodes in that layer have,
+    so the check is drawn and collapsed with what it checks."""
     for node in graph.nodes.values():
-        if node.resource_type != "test" or node.stage != "other":
+        if node.resource_type != "test" or node.stage != OTHER_STAGE:
             continue
+        layers = graph.layers.get(node.pipeline, DEFAULT_LAYERS)
+        order = [layer.name for layer in layers]
         parents = [graph.nodes[i] for i in node.depends_on]
-        stages = [p.stage for p in parents if p.stage != "other"]
+        stages = [p.stage for p in parents if p.stage in order]
         if not stages:
             continue
-        node.stage = max(stages, key=STAGE_ORDER.index)
+        node.stage = max(stages, key=order.index)
+        node.role = layer_role(layers, node.stage)
         same_stage = [p for p in parents if p.stage == node.stage]
         node.folder = node.folder or _most_common([p.folder for p in same_stage])
         node.group = node.group or _most_common([p.group for p in same_stage])

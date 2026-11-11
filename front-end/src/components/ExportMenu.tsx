@@ -39,7 +39,6 @@ function shownNow(s: StoreState) {
     layoutMode: s.layoutMode,
     zoneMode: s.zoneMode,
     collapsedFolders: s.collapsedFolders,
-    splitPipelines: s.splitPipelines,
     keep: s.columnTrace?.view?.nodeIds,
     showTests: s.showTests,
   })

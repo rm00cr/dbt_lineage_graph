@@ -12,6 +12,8 @@ import { PipelinePicker } from './components/PipelinePicker'
 import { SearchBar } from './components/SearchBar'
 import { TaskIndicator } from './components/TaskIndicator'
 import { ThemeToggle } from './components/ThemeToggle'
+import { HelpMenu } from './components/HelpMenu'
+import { Tour } from './components/Tour'
 import { Toolbar } from './components/Toolbar'
 import { useKeyboardShortcuts } from './hooks/useKeyboardShortcuts'
 import { useUrlSync } from './hooks/useUrlSync'
@@ -73,6 +75,7 @@ function Explorer() {
         <ExportMenu onToast={showToast} />
         <CompareButton />
         <ThemeToggle />
+        <HelpMenu />
 
         <div className="topbar__stats">
           <div className="stat-chip">
@@ -127,6 +130,9 @@ function Explorer() {
               <span>
                 <kbd>⇧</kbd>box select
               </span>
+              <span>
+                <kbd>?</kbd>help
+              </span>
             </div>
 
             {toast && <div className="toast">{toast}</div>}
@@ -134,6 +140,7 @@ function Explorer() {
         )}
       </div>
       <CompareDialog />
+      <Tour />
     </div>
   )
 }

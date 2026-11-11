@@ -9,18 +9,20 @@ from pathlib import Path
 from dotenv import dotenv_values
 
 ENV_FILE = Path(__file__).resolve().parents[1] / ".env"  # back-end/.env
+_PATH_KEYS = {"PIPELINES_CONFIG", "COLUMN_LINEAGE_CACHE"}
 
 
 def load_env_file(path: Path = ENV_FILE) -> None:
     """Apply `back-end/.env` (template: `.env.example`). Variables already set in the
     environment win, so `PIPELINES_CONFIG=... ./dev.sh` still overrides the file. A relative
-    PIPELINES_CONFIG in the file is resolved against the file's folder, not the cwd."""
+    PIPELINES_CONFIG / COLUMN_LINEAGE_CACHE in the file is resolved against the file's
+    folder, not the cwd."""
     if not path.is_file():
         return
     for key, value in dotenv_values(path).items():
         if value is None or key in os.environ:
             continue
-        if key == "PIPELINES_CONFIG" and not Path(value).expanduser().is_absolute():
+        if key in _PATH_KEYS and value and not Path(value).expanduser().is_absolute():
             value = str((path.parent / value).resolve())
         os.environ[key] = value
 

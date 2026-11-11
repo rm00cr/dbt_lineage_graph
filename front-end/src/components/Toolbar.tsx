@@ -19,7 +19,6 @@ import {
   Maximize2,
   MousePointerSquareDashed,
   RefreshCw,
-  Rows3,
   TriangleAlert,
   Workflow,
   X,
@@ -31,13 +30,13 @@ import { allFolderKeys } from '../graph/collapse'
 import type { ZoneMode } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { CompareBar } from './Compare'
-import { STAGE_LABELS, copyToClipboard, useStageColor } from './visual'
+import { copyToClipboard, useStages } from './visual'
 
 const FOCUS_LABEL = { off: 'Focus off', dim: 'Focus: dim', isolate: 'Focus: isolate' } as const
 const FOCUS_ICON = { off: EyeOff, dim: Eye, isolate: Crosshair } as const
 
 const ZONE_OPTIONS: { mode: ZoneMode; label: string; title: string }[] = [
-  { mode: 'stages', label: 'Stages', title: 'Stage columns only (src / int / out)' },
+  { mode: 'stages', label: 'Stages', title: 'Stage columns only (one per layer)' },
   { mode: 'folders', label: 'Groups', title: 'Stage columns, one box per model folder (group) inside each' },
 ]
 
@@ -79,11 +78,10 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const hasFolders = useExplorerStore((s) => s.graph?.nodes.some((n) => n.folder) ?? false)
   // without model sub-folders the 'folders' (Groups) default is drawn as plain stages
   const shownZoneMode = zoneMode === 'folders' && !hasFolders ? 'stages' : zoneMode
-  const splitPipelines = useExplorerStore((s) => s.splitPipelines)
-  const setSplitPipelines = useExplorerStore((s) => s.setSplitPipelines)
   const collapsedFolders = useExplorerStore((s) => s.collapsedFolders)
   const setCollapsedFolders = useExplorerStore((s) => s.setCollapsedFolders)
-  const pipelineCount = useExplorerStore((s) => s.graph?.stats.pipelines.length ?? 0)
+  // the zones layout splits by pipeline whenever more than one is shown (layout.ts)
+  const multiPipeline = useExplorerStore((s) => new Set(s.graph?.nodes.map((n) => n.pipeline)).size > 1)
   const graph = useExplorerStore((s) => s.graph)
   const select = useExplorerStore((s) => s.select)
   const violations = useMemo(() => {
@@ -127,7 +125,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const refresh = useExplorerStore((s) => s.refresh)
 
   const [showFilters, setShowFilters] = useState(false)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
   const { fitView } = useReactFlow()
 
   const FocusIcon = FOCUS_ICON[focusMode]
@@ -161,6 +159,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
   return (
     <div className="toolbar">
       <div className="toolbar__row">
+        <div className="toolbar__group" data-tour="layout">
         <button
           className={`btn ${layoutMode === 'dag' ? 'btn--active' : ''}`}
           onClick={() => setLayoutMode('dag')}
@@ -196,30 +195,17 @@ export function Toolbar({ onToast }: ToolbarProps) {
         )}
         {layoutMode === 'lanes' && zoneMode === 'folders' && hasFolders && graph && (
           <FoldAllButton
-            keys={allFolderKeys(graph.nodes, splitPipelines && pipelineCount > 1)}
+            keys={allFolderKeys(graph.nodes, multiPipeline)}
             collapsed={collapsedFolders}
             onChange={setCollapsedFolders}
           />
         )}
-        {layoutMode === 'lanes' && (
-          <button
-            className={`btn btn--icon ${splitPipelines && pipelineCount > 1 ? 'btn--active' : ''}`}
-            onClick={() => setSplitPipelines(!splitPipelines)}
-            disabled={pipelineCount < 2}
-            aria-pressed={splitPipelines}
-            title={
-              pipelineCount < 2
-                ? 'Split by pipeline: needs 2+ pipelines in view'
-                : 'Split by pipeline: one band per pipeline, upstream first'
-            }
-          >
-            <Rows3 size={14} />
-          </button>
-        )}
+        </div>
 
         <span className="toolbar__divider" />
 
         <button
+          data-tour="focus"
           className={`btn ${focusMode !== 'off' ? 'btn--active' : ''}`}
           onClick={cycleFocusMode}
           title="Focus mode: dim or isolate everything outside the selected lineage (F)"
@@ -250,6 +236,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
         </button>
 
         <button
+          data-tour="area-select"
           className={`btn btn--icon ${selectionDrag ? 'btn--active' : ''}`}
           onClick={toggleSelectionDrag}
           title="Area select with left drag (otherwise Shift + drag)"
@@ -268,6 +255,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
         <span className="toolbar__divider" />
 
         <button
+          data-tour="filters"
           className={`btn btn--icon ${showFilters ? 'btn--active' : ''}`}
           onClick={() => setShowFilters((v) => !v)}
           title="Filters"
@@ -281,6 +269,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
 
         {violations.length > 0 && (
           <button
+            data-tour="boundary"
             className="btn btn--danger"
             onClick={selectViolations}
             title={[
@@ -319,7 +308,12 @@ export function Toolbar({ onToast }: ToolbarProps) {
         >
           Apply
         </button>
-        <button className="btn btn--sm" onClick={() => void copySelector()} title="Copy dbt run command">
+        <button
+          data-tour="dbt-run"
+          className="btn btn--sm"
+          onClick={() => void copySelector()}
+          title="Copy dbt run command"
+        >
           <Copy size={13} /> dbt run
         </button>
         {selectedIds.size > 0 && (
@@ -351,11 +345,11 @@ export function Toolbar({ onToast }: ToolbarProps) {
               onClick={() => toggleStage(stage)}
               style={
                 filters.stages.includes(stage)
-                  ? { color: stageColor(stage as 'src'), borderColor: stageColor(stage as 'src') }
+                  ? { color: stageColor(stage), borderColor: stageColor(stage) }
                   : undefined
               }
             >
-              {STAGE_LABELS[stage as 'src'] ?? stage}
+              {stageLabel(stage)}
             </button>
           ))}
 

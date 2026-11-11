@@ -25,6 +25,8 @@ import { useId, useState } from 'react'
 import type { ChangeStatus, NodeChange, NodeRef } from '../api/types'
 import { CHANGE_LABELS, CHANGE_SYMBOLS, type DiffLine, parseUnifiedDiff } from '../graph/diff'
 import { useExplorerStore } from '../store/useExplorerStore'
+import { usePanelPrefs } from '../store/usePanelPrefs'
+import { WrapToggle } from './CodeViewer'
 import { formatBytes } from './visual'
 
 // --------------------------------------------------------------------------- entry point
@@ -35,6 +37,7 @@ export function CompareButton() {
   return (
     <button
       type="button"
+      data-tour="compare"
       className={`btn btn--sm${comparing ? ' btn--active' : ''}`}
       onClick={() => open(true)}
       title="Compare the running state with another manifest.json / catalog.json"
@@ -440,6 +443,8 @@ export function ChangesPanel({ change, onPick }: { change: NodeChange; onPick: (
         <div className="section">
           <div className="section__title">
             <FileJson size={12} /> SQL changes <span className="tab__count">raw_code</span>
+            <span style={{ flex: 1 }} />
+            <WrapToggle />
           </div>
           <CodeDiff diff={change.code_diff} />
         </div>
@@ -468,8 +473,9 @@ export function CodeDiff({ diff }: { diff: string | null }) {
 
 /** Numbered, coloured diff lines (shared by the comparison and the stacked modes). */
 export function DiffLines({ lines, label = 'SQL diff' }: { lines: DiffLine[]; label?: string }) {
+  const wrap = usePanelPrefs((s) => s.wrap)
   return (
-    <div className="code-diff" role="table" aria-label={label}>
+    <div className={`code-diff${wrap ? ' code-diff--wrap' : ''}`} role="table" aria-label={label}>
       {lines.map((line, index) => (
         <div key={index} className="code-diff__line" data-kind={line.kind} role="row">
           <span className="code-diff__no">{line.oldNo ?? ''}</span>

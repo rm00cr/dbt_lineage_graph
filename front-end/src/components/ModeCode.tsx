@@ -15,7 +15,7 @@ import { ApiError, api } from '../api/client'
 import type { ModelDetail } from '../api/types'
 import { lineDiff } from '../graph/diff'
 import { useExplorerStore } from '../store/useExplorerStore'
-import { CodeViewer } from './CodeViewer'
+import { CodeViewer, WrapToggle } from './CodeViewer'
 import { DiffLines } from './Compare'
 
 type View = 'single' | 'side' | 'diff'
@@ -264,6 +264,8 @@ function ModeDiff({ from, to, a, b }: { from: string; to: string; a: Loaded; b: 
       <div className="mode-code__legend">
         <span className="diff-word diff-word--removed">− only in {from}</span>
         <span className="diff-word diff-word--added">+ only in {to}</span>
+        <span style={{ flex: 1 }} />
+        <WrapToggle />
       </div>
       {changed ? (
         <DiffLines lines={lines} label={`SQL diff ${from} with ${to}`} />

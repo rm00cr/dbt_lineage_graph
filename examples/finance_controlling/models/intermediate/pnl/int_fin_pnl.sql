@@ -17,8 +17,8 @@ select
     premium.earned_premium_chf
         - coalesce(claims.paid_chf, 0) - coalesce(claims.reserve_chf, 0)
         - coalesce(expenses.expenses_chf, 0)                           as underwriting_result_chf
-from {{ ref('src_fin_mfp_premium') }} as premium
-left join {{ ref('src_fin_claims_kpi') }} as claims
+from {{ ref('stg_fin_mfp_premium') }} as premium
+left join {{ ref('stg_fin_claims_kpi') }} as claims
     on premium.reporting_month = claims.reporting_month
     and premium.product_code = claims.product_code
 left join expenses

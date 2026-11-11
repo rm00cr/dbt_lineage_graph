@@ -9,9 +9,9 @@ it, so copy from there.
 
 | You see | Comes from |
 |---|---|
-| **Columns** (src / int / out) | the layer folder of the model (`01_source`, `02_intermediate`, `03_output`) |
+| **Columns** (one per layer) | the layer folder of the model, matched against `layers:` in `pipelines.yaml` |
 | **Rows** (domains) in the lanes layout | the dbt **group** of each model |
-| **Boxes** with *split by pipeline* | one per entry in `pipelines.yaml` |
+| **Boxes** in the lanes layout | one per entry in `pipelines.yaml` (with 2+ pipelines in view) |
 | Edges between pipelines | a **source** whose table name equals another pipeline's **output** |
 | Badge + "Execution mode" in the overlay | `meta.execution_mode` (e.g. `daily`) |
 | Search hits, filters | model names, tags, descriptions, column names |
@@ -19,7 +19,7 @@ it, so copy from there.
 | Column lineage | the compiled SQL plus the catalog |
 | Mode dropdown in the pipeline picker | `execution_modes` in `pipelines.yaml` |
 
-## 1. Layout: three layers, one folder each
+## 1. Layout: layers, one folder each
 
 ```
 models/
@@ -28,10 +28,23 @@ models/
 └── 03_output/        out   the public interface: what reports and other pipelines read
 ```
 
-- The **folder** decides the stage; the numeric prefix (`01_`) only sorts. Names like
-  `staging/` or `marts/` work too, but stick to one scheme across all pipelines.
+- The **folder** decides the stage. Which folders are layers is declared in
+  `pipelines.yaml`, in flow order: the first layer imports, the last one is the public
+  interface, anything between is internal. Declare them once at the top level, or per
+  pipeline when a project uses another scheme (e.g. dbt-labs style `staging` /
+  `intermediate` / `marts`, see `finance_controlling` in [examples/](../examples/pipelines.yaml)):
+
+  ```yaml
+  layers:
+    - {name: src, label: Source, folders: [01_source], prefixes: [src_]}
+    - {name: int, label: Intermediate, folders: [02_intermediate], prefixes: [int_]}
+    - {name: out, label: Output, folders: [03_output], prefixes: [out_]}
+  ```
+
+  A numeric prefix (`01_`) is optional on either side. Without `layers:` the Explorer
+  recognises `source` / `intermediate` / `output` (also `staging`, `marts`).
 - Prefix the model names anyway (`src_`, `int_`, `out_`). It reads better in search, and
-  it is the fallback for models outside the layer folders.
+  with `prefixes:` it is the fallback for models outside the layer folders.
 - Give each layer its own schema and keep it stable across environments, with a small
   `generate_schema_name` override (see [examples/bestand_mfp/macros](../examples/bestand_mfp/macros/generate_schema_name.sql)):
 
@@ -44,8 +57,8 @@ models/
       03_output:       {+schema: mfp_output,       +materialized: table}
   ```
 
-- **Only outputs leave the pipeline.** Other pipelines must never read your `src` or `int`
-  tables: only `out` models can be link targets, so such a read shows up as an unlinked source.
+- **Only outputs leave the pipeline.** Other pipelines must never read the tables of your
+  other layers: only models of the last layer can be link targets, so such a read shows up as an unlinked source.
 
 ## 2. dbt groups: the domain rows
 
@@ -112,7 +125,7 @@ sources:
 ```
 
 ```sql
--- schaden_claims/models/01_source/src_claims_mfp_contracts.sql
+-- schaden_claims/models/01_source/from_bestand/src_claims_mfp_contracts.sql
 select contract_id, partner_id, product_code, canton, annual_premium_chf
 from {{ source('mfp_output', 'out_mfp_contracts') }}
 ```
@@ -223,7 +236,7 @@ and a `bigquery` target in `profiles.yml`, and make source databases configurabl
 
 ## Checklist
 
-- [ ] Models in `01_source` / `02_intermediate` / `03_output`, prefixed `src_` / `int_` / `out_`
+- [ ] Models in the layer folders declared in `pipelines.yaml` (e.g. `01_source` / `02_intermediate` / `03_output`), prefixed `src_` / `int_` / `out_`
 - [ ] 3–6 groups from the shared domain list, defined with owners, every model assigned
 - [ ] Output table names unique across all pipelines (domain prefix)
 - [ ] Other pipelines' outputs imported as sources (named after the pipeline) through `src` models

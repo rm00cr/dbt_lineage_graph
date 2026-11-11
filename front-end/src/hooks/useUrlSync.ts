@@ -24,7 +24,6 @@ export function useUrlSync() {
   const overlayTab = useExplorerStore((s) => s.overlayTab)
   const layoutMode = useExplorerStore((s) => s.layoutMode)
   const zoneMode = useExplorerStore((s) => s.zoneMode)
-  const splitPipelines = useExplorerStore((s) => s.splitPipelines)
   const focusMode = useExplorerStore((s) => s.focusMode)
   const pipelines = useExplorerStore((s) => s.filters.pipelines)
   const traceModel = useExplorerStore((s) => s.columnTrace?.modelId ?? null)
@@ -46,7 +45,6 @@ export function useUrlSync() {
 
     const zones = params.get('zones') as ZoneMode | null
     if (zones && ZONE_MODES.includes(zones)) store.setZoneMode(zones)
-    if (params.get('split') === 'pipeline') store.setSplitPipelines(true)
 
     const focus = params.get('focus') as FocusMode | null
     if (focus && FOCUS.includes(focus)) store.setFocusMode(focus)
@@ -88,12 +86,12 @@ export function useUrlSync() {
     set('tab', activeId && overlayTab !== 'overview' && overlayTab !== 'changes' ? overlayTab : null)
     set('layout', layoutMode === 'dag' ? null : layoutMode)
     set('zones', layoutMode === 'lanes' && zoneMode !== DEFAULT_ZONE_MODE ? zoneMode : null)
-    set('split', layoutMode === 'lanes' && splitPipelines ? 'pipeline' : null)
+    set('split', null) // retired: the zones layout always splits by pipeline
     set('pipeline', pipelines.length ? pipelines.join(',') : null)
     set('focus', focusMode === 'dim' ? null : focusMode)
     set('col', traceModel && traceColumn ? encodeTraceParam(traceModel, traceColumn) : null)
     set('coldir', traceModel && traceDirection !== 'both' ? traceDirection : null)
 
     window.history.replaceState(null, '', url)
-  }, [activeId, overlayTab, layoutMode, zoneMode, splitPipelines, pipelines, focusMode, traceModel, traceColumn, traceDirection])
+  }, [activeId, overlayTab, layoutMode, zoneMode, pipelines, focusMode, traceModel, traceColumn, traceDirection])
 }

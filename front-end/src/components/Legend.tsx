@@ -5,7 +5,7 @@ import { useMemo } from 'react'
 import { boundaryViolations } from '../graph/boundary'
 import { CHANGE_LABELS } from '../graph/diff'
 import { useExplorerStore } from '../store/useExplorerStore'
-import { MATERIALIZATION_ICONS, STAGE_LABELS, useChangeColor, useStageColor } from './visual'
+import { MATERIALIZATION_ICONS, useChangeColor, useStages } from './visual'
 
 const MATERIALIZATIONS = ['table', 'view', 'incremental', 'ephemeral', 'source'] as const
 /** with the Tests toggle on, dq check nodes (singular tests) are drawn too */
@@ -14,11 +14,11 @@ const CHANGES = ['added', 'modified', 'removed'] as const
 
 export function Legend() {
   const graph = useExplorerStore((s) => s.graph)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
   const changeColor = useChangeColor()
   const comparing = useExplorerStore((s) => s.compare !== null)
   const showTests = useExplorerStore((s) => s.showTests)
-  const stages = (graph?.stats.stages ?? ['src', 'int', 'out']) as ('src' | 'int' | 'out')[]
+  const stages = graph?.stats.stages ?? []
   const hasViolations = useMemo(
     () => (graph ? boundaryViolations(graph.nodes, graph.edges).size > 0 : false),
     [graph],
@@ -61,7 +61,7 @@ export function Legend() {
               className="legend__swatch"
               style={{ background: stageColor(stage), color: stageColor(stage) }}
             />
-            {STAGE_LABELS[stage]}
+            {stageLabel(stage)}
           </span>
         ))}
       </div>
@@ -98,7 +98,7 @@ export function Legend() {
       </div>
       {hasViolations && (
         <div className="legend__row">
-          <span className="legend__item" title="Only a pipeline's outputs may feed another pipeline, through a src model">
+          <span className="legend__item" title="Only a pipeline's outputs (its last layer) may feed another pipeline, imported in its first layer">
             <svg width="26" height="8" aria-hidden>
               <line x1="0" y1="4" x2="26" y2="4" stroke="var(--danger)" strokeWidth="2" strokeDasharray="3 4" />
             </svg>

@@ -20,7 +20,6 @@ export interface ShownInput {
   layoutMode: LayoutMode
   zoneMode: ZoneMode
   collapsedFolders: ReadonlySet<string>
-  splitPipelines: boolean
   /** models that must stay visible (a column trace): their folders stay open */
   keep?: ReadonlySet<string>
   /** Tests toggle: draw the singular-test (dq check) nodes */
@@ -33,14 +32,14 @@ export function shownView({
   layoutMode,
   zoneMode,
   collapsedFolders,
-  splitPipelines,
   keep,
   showTests = false,
 }: ShownInput): CollapsedView {
   const shownGraph = graph && withTestsFor(graph, showTests)
   const nodes = shownGraph?.nodes ?? []
   const edges = shownGraph?.edges ?? []
-  const split = splitPipelines && new Set(nodes.map((n) => n.pipeline)).size > 1
+  // the zones layout gives every pipeline its own box once there are several (layout.ts)
+  const split = new Set(nodes.map((n) => n.pipeline)).size > 1
   // folders only collapse where folder boxes are drawn (not in the "no sub-folders" fallback)
   const boxes = layoutMode === 'lanes' && effectiveZoneMode(zoneMode, nodes) === 'folders'
   return collapseFolders(nodes, edges, boxes ? collapsedFolders : NONE, split, keep ?? NONE)

@@ -3,10 +3,11 @@
  * line numbers and a copy button.
  */
 
-import { Check, Copy, Download } from 'lucide-react'
+import { Check, Copy, Download, WrapText } from 'lucide-react'
 import { Highlight, themes } from 'prism-react-renderer'
 import { useState } from 'react'
 
+import { usePanelPrefs } from '../store/usePanelPrefs'
 import { useTheme } from '../theme/useTheme'
 import { copyToClipboard } from './visual'
 
@@ -22,6 +23,7 @@ export function CodeViewer({ compiled, raw, fileName }: CodeViewerProps) {
   const [variant, setVariant] = useState<Variant>(compiled ? 'compiled' : 'raw')
   const [copied, setCopied] = useState(false)
   const theme = useTheme((s) => s.resolved)
+  const wrap = usePanelPrefs((s) => s.wrap)
 
   const code = (variant === 'compiled' ? compiled : raw) ?? ''
 
@@ -65,6 +67,7 @@ export function CodeViewer({ compiled, raw, fileName }: CodeViewerProps) {
           {lineCount} lines
         </span>
 
+        <WrapToggle />
         <button className="btn btn--sm btn--icon" onClick={download} title="Download as .sql">
           <Download size={13} />
         </button>
@@ -80,13 +83,13 @@ export function CodeViewer({ compiled, raw, fileName }: CodeViewerProps) {
         theme={theme === 'light' ? themes.oneLight : themes.vsDark}
       >
         {({ tokens, getLineProps, getTokenProps }) => (
-          <pre className="code__lines">
+          <pre className={`code__lines${wrap ? ' code__lines--wrap' : ''}`}>
             {tokens.map((line, lineIndex) => {
               const lineProps = getLineProps({ line })
               return (
                 <div key={lineIndex} {...lineProps} className={`code__line ${lineProps.className ?? ''}`}>
                   <span className="code__lineno">{lineIndex + 1}</span>
-                  <span>
+                  <span className="code__text">
                     {line.map((token, tokenIndex) => (
                       <span key={tokenIndex} {...getTokenProps({ token })} />
                     ))}
@@ -98,5 +101,21 @@ export function CodeViewer({ compiled, raw, fileName }: CodeViewerProps) {
         )}
       </Highlight>
     </div>
+  )
+}
+
+/** Word wrap on/off for every code view of the panel (Alt+Z, as in VS Code). */
+export function WrapToggle() {
+  const wrap = usePanelPrefs((s) => s.wrap)
+  const toggleWrap = usePanelPrefs((s) => s.toggleWrap)
+  return (
+    <button
+      className={`btn btn--sm btn--icon${wrap ? ' btn--active' : ''}`}
+      aria-pressed={wrap}
+      onClick={toggleWrap}
+      title={wrap ? 'Word wrap is on (Alt+Z)' : 'Word wrap (Alt+Z)'}
+    >
+      <WrapText size={13} />
+    </button>
   )
 }

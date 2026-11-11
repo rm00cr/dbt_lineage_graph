@@ -14,7 +14,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { api } from '../api/client'
 import type { GraphNode, SearchHit } from '../api/types'
 import { useExplorerStore } from '../store/useExplorerStore'
-import { MATERIALIZATION_ICONS, STAGE_LABELS, useStageColor } from './visual'
+import { MATERIALIZATION_ICONS, useStages } from './visual'
 
 type Mode = 'models' | 'columns'
 
@@ -22,6 +22,7 @@ interface Row {
   id: string
   name: string
   stage: GraphNode['stage']
+  role?: GraphNode['role']
   materialization: GraphNode['materialization']
   /** shown after the stage label: materialization / column type, pipeline */
   details: string[]
@@ -53,8 +54,10 @@ function NameParts({ name }: { name: string }) {
 }
 
 /** the materialization only when it adds something (a source in the Source stage does not) */
-const materializationDetail = (node: Pick<GraphNode, 'stage' | 'materialization'>) =>
-  node.materialization === STAGE_LABELS[node.stage].toLowerCase() ? [] : [node.materialization]
+const materializationDetail = (
+  node: Pick<GraphNode, 'stage' | 'materialization'>,
+  stageLabel: (stage: GraphNode['stage']) => string,
+) => (node.materialization === stageLabel(node.stage).toLowerCase() ? [] : [node.materialization])
 
 export function SearchBar() {
   const graph = useExplorerStore((s) => s.graph)
@@ -70,7 +73,7 @@ export function SearchBar() {
   const [columnHits, setColumnHits] = useState<SearchHit[]>([])
   const [loading, setLoading] = useState(false)
   const [columnError, setColumnError] = useState<string | null>(null)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
 
   const inputRef = useRef<HTMLInputElement>(null)
   const containerRef = useRef<HTMLDivElement>(null)
@@ -142,8 +145,9 @@ export function SearchBar() {
           id: hit.item.id,
           name: hit.item.name,
           stage: hit.item.stage,
+          role: hit.item.role,
           materialization: hit.item.materialization,
-          details: [...materializationDetail(hit.item), hit.item.pipeline],
+          details: [...materializationDetail(hit.item, stageLabel), hit.item.pipeline],
           score: 1 - (hit.score ?? 0),
         }))
     }
@@ -152,6 +156,7 @@ export function SearchBar() {
       id: hit.id,
       name: hit.name,
       stage: hit.stage,
+      role: hit.role,
       materialization: hit.materialization,
       details: hit.column?.type ? [hit.column.type, hit.pipeline] : [hit.pipeline],
       column: hit.column?.name,
@@ -159,7 +164,7 @@ export function SearchBar() {
       downstream: hit.column?.downstream_count,
       score: hit.score,
     }))
-  }, [query, mode, fuse, columnHits])
+  }, [query, mode, fuse, columnHits, stageLabel])
 
   useEffect(() => setCursor(0), [query, mode])
 
@@ -286,8 +291,8 @@ export function SearchBar() {
             >
               <span
                 className="result__icon"
-                style={{ ['--stage-color' as string]: stageColor(row.stage) }}
-                title={`${STAGE_LABELS[row.stage]} · ${row.materialization}`}
+                style={{ ['--stage-color' as string]: stageColor(row) }}
+                title={`${stageLabel(row.stage)} · ${row.materialization}`}
               >
                 <Icon size={13} strokeWidth={2.2} />
               </span>
@@ -302,8 +307,8 @@ export function SearchBar() {
                   <NameParts name={row.name} />
                 </span>
                 <span className="result__meta">
-                  <span className="result__stage" style={{ color: stageColor(row.stage) }}>
-                    {STAGE_LABELS[row.stage]}
+                  <span className="result__stage" style={{ color: stageColor(row) }}>
+                    {stageLabel(row.stage)}
                   </span>
                   {row.details.map((detail, i) => (
                     <span key={i} className="result__detail">

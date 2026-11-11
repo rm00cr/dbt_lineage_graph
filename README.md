@@ -110,7 +110,7 @@ cd front-end && npm test
 - 2.3 Column-level lineage: sqlglot parses each model's compiled SQL against the catalog
   schema (`back-end/app/column_lineage.py`). In the Schema tab, the ↑/↓ button on a column
   traces it: the traced columns appear as rows inside the nodes, column edges are coloured by
-  kind (passthrough / rename / transform / aggregate) and the overlay lists every hop with its
+  kind (passthrough / rename / unnest / transform / aggregate) and the overlay lists every hop with its
   SQL expression. `GET /api/lineage/status` reports which models parsed.
 
 **Look and feel** — light and dark themes, defaulting to the operating system setting and
@@ -140,11 +140,12 @@ Start at **AP-4** — everything it needs is in place:
 4. **BigQuery cost & execution metadata (4.2 / 3.5)** — an `INFORMATION_SCHEMA` adapter
    feeding new fields into `stats`.
 5. **Real fixtures**: point `PIPELINES_CONFIG` at the real PnC pipelines and check that
-   their `01_source / 02_intermediate / 03_output` folders resolve as expected.
+   their layer folders (`layers:` in the YAML) resolve as expected.
 
 Open points from section 8 of the brief, as decided here (change freely):
-a pipeline is one dbt project (`project_name`), with layers `models/01_source` →
-`02_intermediate` → `03_output`; stage from layer folder → name prefix → tag;
+a pipeline is one dbt project (`project_name`), with layers declared in `pipelines.yaml`
+(default `src` / `int` / `out`; e.g. `01_source` → `02_intermediate` → `03_output`, or
+`staging` → `intermediate` → `marts` per pipeline); stage from layer folder → name prefix → tag;
 BigQuery deeplink to the node's own `database` unless `BQ_CONSOLE_PROJECT` is set;
 `+model+` is both a visual selection *and* exportable as a `dbt run --select` string.
 

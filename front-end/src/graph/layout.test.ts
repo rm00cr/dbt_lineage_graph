@@ -91,7 +91,7 @@ describe('lanes layout', () => {
     expect(positions.get('a_src')!.y).not.toBe(positions.get('b_src')!.y)
   })
 
-  describe('split by pipeline', () => {
+  describe('one box per pipeline', () => {
     // convention: only outputs cross pipelines, into a src model.
     // 'zz_up' feeds 'aa_down' (alphabetical order would put aa_down first); 'mm_solo' is independent
     const multi = [
@@ -110,7 +110,7 @@ describe('lanes layout', () => {
       edge('d_int', 'd_fin'),
       edge('s_src', 's_out'),
     ]
-    const split = () => layoutGraph(multi, multiEdges, 'lanes', undefined, { zones: 'both', splitPipelines: true })
+    const split = () => layoutGraph(multi, multiEdges, 'lanes', undefined, { zones: 'both' })
     const band = (result: ReturnType<typeof split>, p: string) => result.pipelines.find((b) => b.pipeline === p)!
 
     it('orders pipelines upstream first', () => {
@@ -146,9 +146,49 @@ describe('lanes layout', () => {
       }
     })
 
-    it('is a no-op with a single pipeline', () => {
-      const { pipelines } = layoutGraph(grouped, groupedEdges, 'lanes', undefined, { splitPipelines: true })
+    it('lines a pipeline up with its one upstream, and puts one reading several below them', () => {
+      // like the examples: base feeds claims and finance, and finance also reads claims
+      const fan = [
+        node('b_out', 'out', null, 'base'),
+        node('c_src', 'src', null, 'claims'),
+        node('c_out', 'out', null, 'claims'),
+        node('f_src', 'src', null, 'finance'),
+        node('f_src2', 'src', null, 'finance'),
+      ]
+      const fanEdges = [edge('b_out', 'c_src'), edge('c_src', 'c_out'), edge('b_out', 'f_src'), edge('c_out', 'f_src2')]
+      const result = layoutGraph(fan, fanEdges, 'lanes', undefined, { zones: 'stages' })
+      const base = band(result, 'base')
+      const claims = band(result, 'claims')
+      const finance = band(result, 'finance')
+      expect(claims.y).toBe(base.y)
+      expect(finance.x).toBeGreaterThan(claims.x + claims.width)
+      expect(finance.y).toBeGreaterThan(Math.max(base.y + base.height, claims.y + claims.height))
+    })
+
+    it('draws no box around a single pipeline', () => {
+      const { pipelines } = layoutGraph(grouped, groupedEdges, 'lanes')
       expect(pipelines).toEqual([])
+    })
+  })
+
+  describe('configured layers', () => {
+    const nodes = [
+      node('m', 'marts'),
+      node('s', 'staging'),
+      node('i', 'intermediate'),
+      node('x', 'other'),
+      node('q', 'zz_unknown'),
+    ]
+    const edges = [edge('s', 'i'), edge('i', 'm')]
+
+    it('lays the stage columns out in the configured order, unknown stages after, other last', () => {
+      const { lanes, positions } = layoutGraph(nodes, edges, 'lanes', undefined, {
+        zones: 'stages',
+        stageOrder: ['staging', 'intermediate', 'marts'],
+      })
+      expect(lanes.map((l) => l.stage)).toEqual(['staging', 'intermediate', 'marts', 'zz_unknown', 'other'])
+      expect(positions.get('s')!.x).toBeLessThan(positions.get('i')!.x)
+      expect(positions.get('i')!.x).toBeLessThan(positions.get('m')!.x)
     })
   })
 })
@@ -266,7 +306,7 @@ describe("folders layout (stage boxes with one box per model sub-folder)", () =>
     expect(folders.length).toBeGreaterThan(0)
   })
 
-  it('places folder boxes inside each pipeline band when split by pipeline', () => {
+  it('places folder boxes inside each pipeline band', () => {
     const multi = [
       node('a_src', 'src', null, 'aa', 'claim'),
       node('a_out', 'out', null, 'aa', null),
@@ -275,7 +315,6 @@ describe("folders layout (stage boxes with one box per model sub-folder)", () =>
     ]
     const result = layoutGraph(multi, [edge('a_src', 'a_out'), edge('b_src', 'b_out')], 'lanes', undefined, {
       zones: 'folders',
-      splitPipelines: true,
     })
     for (const f of result.folders) {
       const band = result.pipelines.find((b) => b.pipeline === f.pipeline)!

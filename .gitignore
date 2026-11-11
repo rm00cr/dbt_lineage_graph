@@ -12,6 +12,9 @@ dist/
 .vite/
 *.local
 
+# Column lineage cache (COLUMN_LINEAGE_CACHE in .env.example)
+back-end/.cache/
+
 # Env
 .env
 .env.*

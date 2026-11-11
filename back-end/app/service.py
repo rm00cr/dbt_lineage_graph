@@ -12,11 +12,19 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import quote, urlencode
 
-from .column_lineage import ColumnLineageIndex, Direction, build_column_lineage
-from .config import STAGE_ORDER, ArtifactPair, ExecutionMode, Settings
+from .column_lineage import ColumnLineageCache, ColumnLineageIndex, Direction, build_column_lineage
+from .config import ArtifactPair, ExecutionMode, Layer, Settings
 from .dbt_runner import DbtRunner, GenerationJob, JobTrigger
 from .diff import GraphDiff, diff_graphs
-from .loader import LineageGraph, LineageNode, LoadedArtifacts, build_graph, load_graph, read_artifacts
+from .loader import (
+    LineageGraph,
+    LineageNode,
+    LoadedArtifacts,
+    build_graph,
+    load_graph,
+    ordered_layers,
+    read_artifacts,
+)
 from .schemas import (
     BigQueryRef,
     ChangeStatus,
@@ -34,6 +42,7 @@ from .schemas import (
     GraphResponse,
     GraphStats,
     HealthResponse,
+    LayerInfo,
     LineageStatusResponse,
     MetaResponse,
     ModelDetail,
@@ -105,6 +114,9 @@ class GraphService:
         self._graph_cache: dict[tuple[tuple[str, str], ...], LineageGraph] = {}
         # built graphs per combination of active modes, so switching back is instant
         self._cache: dict[tuple[tuple[str, str], ...], tuple[LineageGraph, ColumnLineageIndex]] = {}
+        # per-model column lineage, kept across reloads and mode switches: its keys cover
+        # the inputs, so only models whose SQL or upstream columns changed are re-parsed
+        self.column_cache = ColumnLineageCache(settings.column_lineage_cache)
         self._lock = threading.RLock()
         self.graph: LineageGraph
         self.column_lineage: ColumnLineageIndex
@@ -134,8 +146,9 @@ class GraphService:
         built = self._cache.get(key)
         if built is None:
             graph = load_graph(self._effective_pairs())
-            built = (graph, build_column_lineage(graph))
+            built = (graph, build_column_lineage(graph, cache=self.column_cache))
             self._cache[key] = built
+            self.column_cache.save()
         self.graph, self.column_lineage = built
         self.stack = self._build_stack()
 
@@ -286,6 +299,7 @@ class GraphService:
         job = None if pair.modes else self.runner.latest(pair.name, None)
         return PipelineInfo(
             name=pair.name,
+            layers=[layer.name for layer in pair.layers],
             active_mode=active,
             stacked_modes=list(self.stacked_modes.get(pair.name, [])),
             pending_mode=self.pending_modes.get(pair.name),
@@ -326,6 +340,7 @@ class GraphService:
             pipelines=self.graph.pipelines,
             groups=self.graph.groups,
             stages=self.graph.stages,
+            layers=[LayerInfo(name=layer.name, label=layer.label, role=layer.role) for layer in self._layers()],
             materializations=self.graph.materializations,
             tags=self.graph.tags,
             node_count=len(self.graph.nodes),
@@ -333,6 +348,10 @@ class GraphService:
             source_count=sum(1 for n in nodes if n.resource_type == "source"),
             model_count=sum(1 for n in self.graph.nodes.values() if n.resource_type == "model"),
         )
+
+    def _layers(self) -> list[Layer]:
+        """Every layer of the configured and the loaded pipelines, in flow order."""
+        return ordered_layers({**self.graph.layers, **{p.name: p.layers for p in self.settings.artifacts}})
 
     # ------------------------------------------------------------------ graph
     def graph_response(
@@ -398,7 +417,7 @@ class GraphService:
                 edge_count=len(edges),
                 pipelines=sorted({n.pipeline for n in nodes}),
                 groups=sorted({n.group for n in nodes if n.group}),
-                stages=[s for s in STAGE_ORDER if any(n.stage == s for n in nodes)],
+                stages=self.graph.stage_order({n.stage for n in nodes}),
                 materializations=[m for m in MATERIALIZATION_ORDER if any(n.materialization == m for n in nodes)],
             ),
         )
@@ -432,6 +451,7 @@ class GraphService:
             id=node.id,
             name=node.name,
             stage=node.stage,
+            role=node.role,  # type: ignore[arg-type]
             materialization=node.materialization,
             pipeline=node.pipeline,
             resource_type=node.resource_type,
@@ -583,7 +603,9 @@ class GraphService:
         if not has_models and not manifest_data.get("sources"):
             raise ArtifactError("manifest.json contains no models or sources")
 
-        upload = LoadedArtifacts(manifest=manifest_data, catalog=catalog_data, source=f"upload:{label}")
+        upload = LoadedArtifacts(
+            manifest=manifest_data, catalog=catalog_data, source=f"upload:{label}", layers=self.settings.layers
+        )
         running = read_artifacts(self._effective_pairs())
         pipelines = ", ".join(item.name or item.project_name for item in running) or "none"
         pipeline = (pipeline or "").strip() or None
@@ -614,6 +636,7 @@ class GraphService:
         else:
             replaced = running[position]
             upload.name = replaced.name  # keep the pipeline name from pipelines.yaml
+            upload.layers = replaced.layers
             head_items = [*running[:position], upload, *running[position + 1 :]]
             compare_columns = catalog_data is not None and replaced.catalog is not None
             if not compare_columns:
@@ -798,7 +821,8 @@ class GraphService:
         return GraphNode(
             id=node.id,
             name=node.name,
-            stage=node.stage,  # type: ignore[arg-type]
+            stage=node.stage,
+            role=node.role,  # type: ignore[arg-type]
             materialization=node.materialization,  # type: ignore[arg-type]
             pipeline=node.pipeline,
             resource_type=node.resource_type,  # type: ignore[arg-type]
@@ -818,7 +842,8 @@ class GraphService:
         return NodeRef(
             id=node.id,
             name=node.name,
-            stage=node.stage,  # type: ignore[arg-type]
+            stage=node.stage,
+            role=node.role,  # type: ignore[arg-type]
             materialization=node.materialization,  # type: ignore[arg-type]
             pipeline=node.pipeline,
             resource_type=node.resource_type,  # type: ignore[arg-type]

@@ -66,7 +66,7 @@ export interface CompareState {
   changes: Map<string, NodeChange>
 }
 
-interface ExplorerState {
+export interface ExplorerState {
   status: Status
   errorMessage: string | null
   usingMock: boolean
@@ -93,8 +93,6 @@ interface ExplorerState {
   layoutMode: LayoutMode
   /** which zones the 'lanes' layout draws: stage columns, folder boxes, dbt-group rows, or both */
   zoneMode: ZoneMode
-  /** zones layout: one grid per pipeline, placed left to right by pipeline dependency */
-  splitPipelines: boolean
   /** folder boxes (see graph/collapse.ts folderKey) drawn as a single summary node */
   collapsedFolders: Set<string>
   focusMode: FocusMode
@@ -143,7 +141,6 @@ interface ExplorerState {
   dismissNotice: (id: string) => void
   setLayoutMode: (mode: LayoutMode) => void
   setZoneMode: (mode: ZoneMode) => void
-  setSplitPipelines: (split: boolean) => void
   toggleFolder: (key: string) => void
   setCollapsedFolders: (keys: Iterable<string>) => void
   setFocusMode: (mode: FocusMode) => void
@@ -280,7 +277,6 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   filters: { pipelines: pipelinesFromUrl(), stages: [], includeSources: true },
   layoutMode: 'dag',
   zoneMode: DEFAULT_ZONE_MODE,
-  splitPipelines: false,
   collapsedFolders: new Set(),
   focusMode: 'dim',
   showMiniMap: true,
@@ -488,8 +484,6 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   setLayoutMode: (mode) => set({ layoutMode: mode }),
   setZoneMode: (mode) => set({ zoneMode: mode }),
-  // folder boxes are keyed per split mode, so the collapsed set does not carry over
-  setSplitPipelines: (split) => set({ splitPipelines: split, collapsedFolders: new Set() }),
   toggleFolder: (key) =>
     set((state) => {
       const next = new Set(state.collapsedFolders)

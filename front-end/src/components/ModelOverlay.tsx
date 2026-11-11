@@ -8,34 +8,38 @@ import {
   ArrowDownRight,
   ArrowUpRight,
   Check,
-  Code2,
   Database,
+  CircleHelp,
   ExternalLink,
   FileCode2,
   FlaskConical,
   GitCompare,
   Info,
   Layers,
+  Maximize2,
+  Minimize2,
   Play,
   Table2,
   X,
 } from 'lucide-react'
-import { useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 
 import type { ModelDetail, NodeRef } from '../api/types'
 import { type OverlayTab, useExplorerStore } from '../store/useExplorerStore'
+import { PANEL_MIN_WIDTH, usePanelPrefs } from '../store/usePanelPrefs'
+import { useTourStore } from '../tour/useTourStore'
 import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../graph/diff'
 import { testLabel } from '../graph/tests'
 import { ModeCode } from './ModeCode'
 import { ChangesPanel } from './Compare'
+import { PipelineChip, usePipelines } from './ColumnTrace'
 import { SchemaTable } from './SchemaTable'
 import {
   MATERIALIZATION_ICONS,
-  STAGE_LABELS,
   copyToClipboard,
   formatBytes,
   formatCount,
-  useStageColor,
+  useStages,
 } from './visual'
 
 interface ModelOverlayProps {
@@ -50,18 +54,31 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
   const closeOverlay = useExplorerStore((s) => s.closeOverlay)
   const openModel = useExplorerStore((s) => s.openModel)
   const select = useExplorerStore((s) => s.select)
+  const startTour = useTourStore((s) => s.start)
 
   const tab = useExplorerStore((s) => s.overlayTab)
   const setTab = useExplorerStore((s) => s.setOverlayTab)
   const [copied, setCopied] = useState(false)
   // stacked execution modes: the Code tab's side-by-side view needs a wider panel
   const [codeWide, setCodeWide] = useState(false)
-  const stageColor = useStageColor()
+  const { color: stageColor, label: stageLabel } = useStages()
   // state comparison: what changed on this node (null when not comparing or unchanged)
   const change = useExplorerStore((s) => (s.activeId ? s.compare?.changes.get(s.activeId) : undefined) ?? null)
   // stacked execution modes: which mode the panel shows (front, or a ghost's back mode)
   const stackNode = useExplorerStore((s) => (s.activeId ? s.index.byId.get(s.activeId) : undefined))
   const shownMode = stackNode?.modes?.[0]
+
+  // VS Code-like panel chrome: drag the left edge, maximize, (wrap lives in the code views)
+  const maximized = usePanelPrefs((s) => s.maximized)
+  const toggleMaximized = usePanelPrefs((s) => s.toggleMaximized)
+  const wide = tab === 'code' && codeWide
+  const width = usePanelPrefs((s) => (wide ? s.wideWidth : s.width))
+  const panelRef = usePanelOffset(Boolean(activeId))
+  const setMaximized = usePanelPrefs((s) => s.setMaximized)
+  // a closed panel opens again at its normal size
+  useEffect(() => {
+    if (!activeId) setMaximized(false)
+  }, [activeId, setMaximized])
 
   if (!activeId) return null
   const showChanges = tab === 'changes' && change !== null
@@ -70,7 +87,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
     void openModel(id)
   }
 
-  const color = stageColor(detail?.stage ?? 'other')
+  const color = stageColor(detail ?? 'other')
 
   // singular tests (dq checks) run with `dbt test`, models with `dbt run`
   const runLabel = detail?.resource_type === 'test' ? 'dbt test' : 'dbt run'
@@ -84,7 +101,12 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
   }
 
   return (
-    <aside className={`overlay${tab === 'code' && codeWide ? ' overlay--wide' : ''}`} style={{ ['--stage-color' as string]: color }}>
+    <aside
+      ref={panelRef}
+      className={`overlay${wide ? ' overlay--wide' : ''}${maximized ? ' overlay--max' : ''}`}
+      style={{ ['--stage-color' as string]: color, width: !maximized && width ? width : undefined }}
+    >
+      {!maximized && <ResizeSash panelRef={panelRef} wide={wide} />}
       <header className="overlay__head">
         <div className="overlay__eyebrow">
           {shownMode && (
@@ -107,7 +129,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
             </span>
           )}
           <span className="node__badge node__badge--stage" style={{ ['--stage-color' as string]: color }}>
-            {STAGE_LABELS[detail?.stage ?? 'other']}
+            {stageLabel(detail?.stage ?? 'other')}
           </span>
           {detail && (
             <span className="node__badge">
@@ -128,6 +150,23 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
 
         <div className="overlay__title-row">
           <h2 className="overlay__title">{detail?.name ?? activeId.split('.').pop()}</h2>
+          <button
+            className="btn btn--icon btn--ghost"
+            onClick={() => startTour('model')}
+            title="Tour this panel"
+            aria-label="Tour this panel"
+          >
+            <CircleHelp size={15} />
+          </button>
+          <button
+            data-tour="overlay-size"
+            className="btn btn--icon btn--ghost"
+            onClick={toggleMaximized}
+            title={maximized ? 'Restore panel size' : 'Maximize panel'}
+            aria-pressed={maximized}
+          >
+            {maximized ? <Minimize2 size={15} /> : <Maximize2 size={15} />}
+          </button>
           <button className="btn btn--icon btn--ghost" onClick={closeOverlay} title="Close (Esc)">
             <X size={16} />
           </button>
@@ -151,18 +190,6 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
               title={`${detail.bigquery.project}.${detail.bigquery.dataset}.${detail.bigquery.table}`}
             >
               <Database size={13} /> BigQuery <ExternalLink size={11} />
-            </a>
-          )}
-
-          {detail?.bigquery?.query_url && (
-            <a
-              className="btn btn--sm"
-              href={detail.bigquery.query_url}
-              target="_blank"
-              rel="noreferrer"
-              title="Open the compiled SQL in the BigQuery editor"
-            >
-              <Code2 size={13} /> Run in BQ <ExternalLink size={11} />
             </a>
           )}
         </div>
@@ -220,6 +247,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
                   title="Upstream dependencies"
                   icon={<ArrowUpRight size={12} />}
                   nodes={detail.dependencies}
+                  pipeline={detail.pipeline}
                   emptyText="No upstream models — this is a root node."
                   onPick={pick}
                 />
@@ -227,6 +255,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
                   title="Downstream dependents"
                   icon={<ArrowDownRight size={12} />}
                   nodes={detail.dependents}
+                  pipeline={detail.pipeline}
                   emptyText="Nothing depends on this model — it is a leaf."
                   onPick={pick}
                 />
@@ -236,6 +265,72 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
         )}
       </div>
     </aside>
+  )
+}
+
+/**
+ * Publishes the panel's rendered width as `--overlay-offset` on <html>, so the
+ * minimap, zoom controls and trace bar move aside by exactly as much as the panel
+ * covers - whether dragged, widened for side by side or maximized.
+ */
+function usePanelOffset(open: boolean) {
+  const ref = useRef<HTMLElement>(null)
+  useEffect(() => {
+    const panel = ref.current
+    const root = document.documentElement
+    if (!open || !panel) return
+    const observer = new ResizeObserver(() => root.style.setProperty('--overlay-offset', `${panel.offsetWidth}px`))
+    observer.observe(panel)
+    return () => {
+      observer.disconnect()
+      root.style.removeProperty('--overlay-offset')
+    }
+  }, [open])
+  return ref
+}
+
+/** The draggable left edge (like a VS Code sash); a double click restores the default width. */
+function ResizeSash({ panelRef, wide }: { panelRef: React.RefObject<HTMLElement>; wide: boolean }) {
+  const setWidth = usePanelPrefs((s) => s.setWidth)
+  const [dragging, setDragging] = useState(false)
+
+  const onPointerDown = (event: React.PointerEvent<HTMLDivElement>) => {
+    const panel = panelRef.current
+    const container = panel?.offsetParent as HTMLElement | null
+    if (!panel || !container || event.button !== 0) return
+    event.preventDefault()
+    const sash = event.currentTarget
+    sash.setPointerCapture(event.pointerId)
+    setDragging(true)
+    const right = container.getBoundingClientRect().right
+    const max = container.clientWidth
+
+    const move = (e: PointerEvent) => {
+      const next = Math.round(Math.min(max, Math.max(PANEL_MIN_WIDTH, right - e.clientX)))
+      setWidth(next, wide)
+    }
+    const up = () => {
+      setDragging(false)
+      sash.removeEventListener('pointermove', move)
+      sash.removeEventListener('pointerup', up)
+      sash.removeEventListener('pointercancel', up)
+    }
+    sash.addEventListener('pointermove', move)
+    sash.addEventListener('pointerup', up)
+    sash.addEventListener('pointercancel', up)
+  }
+
+  return (
+    <div
+      className="overlay__sash"
+      data-dragging={dragging || undefined}
+      role="separator"
+      aria-orientation="vertical"
+      aria-label="Resize panel"
+      title="Drag to resize · double-click to reset"
+      onPointerDown={onPointerDown}
+      onDoubleClick={() => setWidth(null, wide)}
+    />
   )
 }
 
@@ -322,16 +417,20 @@ function DependencySection({
   title,
   icon,
   nodes,
+  pipeline,
   emptyText,
   onPick,
 }: {
   title: string
   icon: React.ReactNode
   nodes: NodeRef[]
+  /** the open model's pipeline: models of another pipeline get a pipeline chip */
+  pipeline: string
   emptyText: string
   onPick: (id: string) => void
 }) {
-  const stageColor = useStageColor()
+  const { color: stageColor } = useStages()
+  const { colorOf } = usePipelines()
 
   return (
     <div className="section">
@@ -349,8 +448,9 @@ function DependencySection({
               <button key={node.id} className="dep" onClick={() => onPick(node.id)} title={node.id}>
                 <span
                   className="result__dot"
-                  style={{ background: stageColor(node.stage), color: stageColor(node.stage) }}
+                  style={{ background: stageColor(node), color: stageColor(node) }}
                 />
+                {node.pipeline !== pipeline && <PipelineChip pipeline={node.pipeline} color={colorOf(node.pipeline)} />}
                 <span className="dep__name">{node.name}</span>
                 <span className="dep__badge">
                   <Icon size={11} /> {node.materialization}

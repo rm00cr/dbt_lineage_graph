@@ -11,17 +11,19 @@ import {
   type LucideIcon,
 } from 'lucide-react'
 
-import { useCallback } from 'react'
+import { useCallback, useMemo } from 'react'
 
-import type { ChangeStatus, Materialization, Stage } from '../api/types'
+import type { ChangeStatus, Materialization, Stage, StageRole } from '../api/types'
 import { CHANGE_PALETTES } from '../graph/diff'
+import { roleOf } from '../graph/stage'
+import { useExplorerStore } from '../store/useExplorerStore'
 import { type ThemeName, useTheme } from '../theme/useTheme'
 
 /**
- * Stage colours per theme. The light variants are darker so they keep their contrast on a
+ * Stage colours per theme, by the role of the stage (first layer, middle, last layer). The light variants are darker so they keep their contrast on a
  * white canvas; the dark ones glow on the near-black one.
  */
-export const STAGE_PALETTES: Record<ThemeName, Record<Stage, string>> = {
+export const STAGE_PALETTES: Record<ThemeName, Record<StageRole, string>> = {
   dark: {
     src: '#22d3ee',
     int: '#a78bfa',
@@ -36,7 +38,8 @@ export const STAGE_PALETTES: Record<ThemeName, Record<Stage, string>> = {
   },
 }
 
-export const STAGE_LABELS: Record<Stage, string> = {
+/** labels of the default layers; configured layers bring their own (meta `layers`) */
+const DEFAULT_STAGE_LABELS: Record<string, string> = {
   src: 'Source',
   int: 'Intermediate',
   out: 'Output',
@@ -63,15 +66,37 @@ export const MATERIALIZATION_LABELS: Record<Materialization, string> = {
   other: 'other',
 }
 
-export function stageColor(stage: Stage, theme: ThemeName): string {
+export function stageColor(role: StageRole, theme: ThemeName): string {
   const palette = STAGE_PALETTES[theme] ?? STAGE_PALETTES.dark
-  return palette[stage] ?? palette.other
+  return palette[role] ?? palette.other
+}
+
+/** A node or ref (its own role wins), or a bare stage name (role from the configured layers). */
+export type StageTarget = Stage | { stage: Stage; role?: StageRole }
+
+export interface StageInfo {
+  label: (stage: Stage) => string
+  role: (stage: Stage) => StageRole
+  color: (target: StageTarget) => string
+}
+
+/** Labels, roles and colours of the configured layers, bound to the active theme. */
+export function useStages(): StageInfo {
+  const theme = useTheme((s) => s.resolved)
+  const layers = useExplorerStore((s) => s.meta?.layers)
+  return useMemo(() => {
+    const byName = new Map((layers ?? []).map((l) => [l.name, l]))
+    const role = (stage: Stage) => byName.get(stage)?.role ?? roleOf({ stage })
+    const label = (stage: Stage) => byName.get(stage)?.label ?? DEFAULT_STAGE_LABELS[stage] ?? stage
+    const color = (target: StageTarget) =>
+      stageColor(typeof target === 'string' ? role(target) : (target.role ?? role(target.stage)), theme)
+    return { label, role, color }
+  }, [theme, layers])
 }
 
 /** Stage colour resolver bound to the active theme — re-renders when the theme flips. */
-export function useStageColor(): (stage: Stage) => string {
-  const theme = useTheme((s) => s.resolved)
-  return useCallback((stage: Stage) => stageColor(stage, theme), [theme])
+export function useStageColor(): (target: StageTarget) => string {
+  return useStages().color
 }
 
 /** State comparison colour resolver bound to the active theme. */
