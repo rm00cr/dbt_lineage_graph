@@ -1,32 +1,27 @@
 /**
  * Guided tours: which tour runs, at which step, and which ones the user finished.
  *
- * Tours drive the app (open a model, switch tabs, trace a column, change the layout), so
- * starting one snapshots the explorer state and closing it puts that state back: a tour
- * never leaves the user somewhere they did not navigate to themselves.
+ * Tours run on the demo project (api/mock: folders, execution modes, background jobs and a
+ * comparison included), so every step has something to show whatever project is loaded.
+ * Starting a tour snapshots the whole explorer state and swaps the demo in; closing it puts
+ * the snapshot back as it was: a tour never leaves the user somewhere they did not navigate
+ * to themselves.
  *
  * Finished tours are kept in localStorage, so the Help menu can tick them off.
  */
 
 import { create } from 'zustand'
 
+import { mockGraph, mockJobs, mockMeta, mockPipelineInfo } from '../api/mock'
+import { DEFAULT_ZONE_MODE } from '../graph/layout'
+import { buildIndex } from '../graph/selectors'
 import { type ExplorerState, useExplorerStore } from '../store/useExplorerStore'
 import { TOURS, type TourStep, tourById } from './tours'
 
 const STORAGE_KEY = 'lineage-explorer.tours'
 
-type Snapshot = Pick<
-  ExplorerState,
-  | 'activeId'
-  | 'overlayTab'
-  | 'columnTrace'
-  | 'layoutMode'
-  | 'zoneMode'
-  | 'focusMode'
-  | 'selectedIds'
-  | 'selectorInput'
-  | 'compareDialogOpen'
->
+/** the data part of the explorer state (the actions never change) */
+type Snapshot = Partial<ExplorerState>
 
 interface TourState {
   tourId: string | null
@@ -65,48 +60,54 @@ function saveCompleted(completed: Set<string>) {
 }
 
 function takeSnapshot(): Snapshot {
-  const s = useExplorerStore.getState()
-  return {
-    activeId: s.activeId,
-    overlayTab: s.overlayTab,
-    columnTrace: s.columnTrace,
-    layoutMode: s.layoutMode,
-    zoneMode: s.zoneMode,
-    focusMode: s.focusMode,
-    selectedIds: s.selectedIds,
-    selectorInput: s.selectorInput,
-    compareDialogOpen: s.compareDialogOpen,
-  }
+  const state = useExplorerStore.getState()
+  return Object.fromEntries(Object.entries(state).filter(([, value]) => typeof value !== 'function')) as Snapshot
 }
 
-/** undo what the tour changed; only touches what differs, so nothing re-lays out for nothing */
-function restore(snap: Snapshot) {
-  const s = useExplorerStore.getState()
-  if (s.compareDialogOpen !== snap.compareDialogOpen) s.setCompareDialogOpen(snap.compareDialogOpen)
-  if (s.layoutMode !== snap.layoutMode) s.setLayoutMode(snap.layoutMode)
-  if (s.zoneMode !== snap.zoneMode) s.setZoneMode(snap.zoneMode)
-  if (s.focusMode !== snap.focusMode) s.setFocusMode(snap.focusMode)
-
-  if (s.selectedIds !== snap.selectedIds) {
-    if (snap.selectedIds.size > 0) s.select([...snap.selectedIds])
-    else s.clearSelection()
-  }
-  // clearSelection also clears the selector field and the trace: restore those after it
-  const now = useExplorerStore.getState()
-  if (now.selectorInput !== snap.selectorInput) now.setSelectorInput(snap.selectorInput)
-
-  const trace = snap.columnTrace
-  if (!trace && now.columnTrace) now.clearColumnTrace()
-  else if (trace && (now.columnTrace?.modelId !== trace.modelId || now.columnTrace.column !== trace.column)) {
-    void now.traceColumn(trace.modelId, trace.column, trace.direction)
-  }
-
-  if (!snap.activeId) {
-    if (now.activeId) now.closeOverlay()
-  } else if (now.activeId !== snap.activeId) {
-    void now.openModel(snap.activeId, { center: false, tab: snap.overlayTab })
-  } else if (now.overlayTab !== snap.overlayTab) {
-    now.setOverlayTab(snap.overlayTab)
+/** The explorer as the tours expect it: the demo project, nothing selected or open. */
+export function demoState(now = Date.now()): Snapshot {
+  return {
+    status: 'ready',
+    errorMessage: null,
+    usingMock: true, // details, column lineage and search answer from the mock, polling pauses
+    demo: true,
+    graph: mockGraph,
+    index: buildIndex(mockGraph.nodes, mockGraph.edges),
+    meta: mockMeta,
+    pipelineInfo: mockPipelineInfo,
+    modeSwitching: null,
+    modeError: null,
+    jobs: mockJobs(now),
+    jobsLoaded: true,
+    jobNotices: [],
+    unseenFailures: [],
+    tasksOpen: false,
+    pipelinesOpen: false,
+    exportOpen: false,
+    filtersOpen: false,
+    filters: { pipelines: [], stages: [], includeSources: true },
+    layoutMode: 'dag',
+    zoneMode: DEFAULT_ZONE_MODE,
+    collapsedFolders: new Set(),
+    focusMode: 'dim',
+    showMiniMap: true,
+    selectionDrag: false,
+    selectedIds: new Set(),
+    highlightedIds: new Set(),
+    highlightedEdgeIds: new Set(),
+    selectorInput: '',
+    activeId: null,
+    overlayTab: 'overview',
+    detail: null,
+    detailLoading: false,
+    detailError: null,
+    detailCache: new Map(),
+    columnTrace: null,
+    compare: null,
+    exporting: false,
+    compareDialogOpen: false,
+    compareLoading: false,
+    compareError: null,
   }
 }
 
@@ -122,6 +123,7 @@ export const useTourStore = create<TourState>((set, get) => ({
     if (!tour) return
     if (get().tourId) get().close()
     snapshot = takeSnapshot()
+    useExplorerStore.setState(demoState())
     const steps = tour.steps.filter((step) => !step.when || step.when())
     set({ tourId, steps, index: 0, menuOpen: false })
   },
@@ -137,7 +139,7 @@ export const useTourStore = create<TourState>((set, get) => ({
   close: (finished = false) => {
     const { tourId, completed } = get()
     if (!tourId) return
-    if (snapshot) restore(snapshot)
+    if (snapshot) useExplorerStore.setState(snapshot)
     snapshot = null
     if (finished && !completed.has(tourId)) {
       const next = new Set(completed).add(tourId)

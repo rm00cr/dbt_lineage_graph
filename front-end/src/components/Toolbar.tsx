@@ -23,7 +23,7 @@ import {
   Workflow,
   X,
 } from 'lucide-react'
-import { useMemo, useState } from 'react'
+import { useMemo } from 'react'
 
 import { VIOLATION_LABELS, boundaryViolations } from '../graph/boundary'
 import { allFolderKeys } from '../graph/collapse'
@@ -124,7 +124,8 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const meta = useExplorerStore((s) => s.meta)
   const refresh = useExplorerStore((s) => s.refresh)
 
-  const [showFilters, setShowFilters] = useState(false)
+  const showFilters = useExplorerStore((s) => s.filtersOpen)
+  const setShowFilters = useExplorerStore((s) => s.setFiltersOpen)
   const { color: stageColor, label: stageLabel } = useStages()
   const { fitView } = useReactFlow()
 
@@ -257,7 +258,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
         <button
           data-tour="filters"
           className={`btn btn--icon ${showFilters ? 'btn--active' : ''}`}
-          onClick={() => setShowFilters((v) => !v)}
+          onClick={() => setShowFilters(!showFilters)}
           title="Filters"
         >
           <Filter size={14} />
@@ -324,7 +325,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
       </div>
 
       {showFilters && (
-        <div className="toolbar__row">
+        <div className="toolbar__row" data-tour="filter-row">
           <span className="toolbar__label">Pipeline</span>
           {pipelines.map((pipeline) => (
             <button

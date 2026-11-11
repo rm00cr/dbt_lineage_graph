@@ -12,7 +12,7 @@
  */
 
 import { AlertTriangle, Check, ChevronDown, Loader2, RefreshCw, Star } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef } from 'react'
 
 import { mockGraph } from '../api/mock'
 import type { GenerationJob, PipelineInfo, PipelineModeInfo } from '../api/types'
@@ -178,7 +178,8 @@ export function PipelinePicker() {
   const pipelineInfo = useExplorerStore((s) => s.pipelineInfo)
   const modeError = useExplorerStore((s) => s.modeError)
 
-  const [open, setOpen] = useState(false)
+  const open = useExplorerStore((s) => s.pipelinesOpen)
+  const setOpen = useExplorerStore((s) => s.setPipelinesOpen)
   const rootRef = useRef<HTMLDivElement>(null)
 
   // the graph only carries the pipelines in view, so take the full list from /meta - plus
@@ -202,9 +203,9 @@ export function PipelinePicker() {
       document.removeEventListener('pointerdown', onPointer)
       document.removeEventListener('keydown', onKey)
     }
-  }, [open])
+  }, [open, setOpen])
 
-  const apply = (next: string[]) => {
+  const apply =(next: string[]) => {
     // ticking every pipeline is the same as no filter; keep the URL clean
     void setFilters({ pipelines: next.length === all.length ? [] : next })
   }
@@ -223,7 +224,7 @@ export function PipelinePicker() {
       <button
         type="button"
         className={`stat-chip stat-chip--button ${filtered ? 'stat-chip--filtered' : ''} ${open ? 'stat-chip--open' : ''}`}
-        onClick={() => setOpen((v) => !v)}
+        onClick={() => setOpen(!open)}
         aria-haspopup="true"
         aria-expanded={open}
         title="Choose which pipelines are shown"

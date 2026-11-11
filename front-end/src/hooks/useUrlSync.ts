@@ -30,6 +30,8 @@ export function useUrlSync() {
   const traceColumn = useExplorerStore((s) => s.columnTrace?.column ?? null)
   const traceDirection = useExplorerStore((s) => s.columnTrace?.direction ?? null)
 
+  const demo = useExplorerStore((s) => s.demo)
+
   const restored = useRef(false)
 
   // restore once, as soon as the graph is there
@@ -75,9 +77,9 @@ export function useUrlSync() {
     })
   }, [status, graph])
 
-  // write back
+  // write back (not while a tour shows the demo project: its ids would end up in the link)
   useEffect(() => {
-    if (!restored.current) return
+    if (!restored.current || demo) return
     const url = new URL(window.location.href)
     const set = (key: string, value: string | null) =>
       value === null ? url.searchParams.delete(key) : url.searchParams.set(key, value)
@@ -93,5 +95,5 @@ export function useUrlSync() {
     set('coldir', traceModel && traceDirection !== 'both' ? traceDirection : null)
 
     window.history.replaceState(null, '', url)
-  }, [activeId, overlayTab, layoutMode, zoneMode, pipelines, focusMode, traceModel, traceColumn, traceDirection])
+  }, [demo, activeId, overlayTab, layoutMode, zoneMode, pipelines, focusMode, traceModel, traceColumn, traceDirection])
 }

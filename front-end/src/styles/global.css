@@ -3743,6 +3743,24 @@ mark {
   color: var(--accent);
 }
 
+/* the tour runs on the demo project (useTourStore): said here, where it never covers a target */
+.tour__demo {
+  margin-left: auto;
+  padding: 1px 7px;
+  border-radius: 99px;
+  border: 1px solid color-mix(in srgb, var(--accent) 45%, transparent);
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 10.5px;
+  font-weight: 600;
+  white-space: nowrap;
+  cursor: help;
+}
+
+.tour__demo + .tour__count {
+  margin-left: 0;
+}
+
 .tour__count {
   margin-left: auto;
   font-size: 11px;

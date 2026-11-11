@@ -11,7 +11,8 @@ import { ChevronLeft, ChevronRight } from 'lucide-react'
 import { X } from 'lucide-react'
 import { useEffect, useLayoutEffect, useRef, useState } from 'react'
 
-import { tourById } from '../tour/tours'
+import { useExplorerStore } from '../store/useExplorerStore'
+import { type TourStep, tourById } from '../tour/tours'
 import { useTourStore } from '../tour/useTourStore'
 
 const PAD = 6 // spotlight padding around the target
@@ -26,29 +27,66 @@ interface Rect {
   height: number
 }
 
-function resolveTarget(target: string | (() => string | null) | undefined): HTMLElement | null {
-  const selector = typeof target === 'function' ? target() : target
-  if (!selector) return null
-  let el: HTMLElement | null = null
-  try {
-    el = document.querySelector<HTMLElement>(selector)
-  } catch {
-    return null // invalid selector, e.g. from an unusual model id
+/** the visible elements a step points at; several selectors are spotlighted together */
+function resolveTargets(target: TourStep['target']): HTMLElement[] {
+  const resolved = typeof target === 'function' ? target() : target
+  if (!resolved) return []
+  const selectors = Array.isArray(resolved) ? resolved : [resolved]
+  const found: HTMLElement[] = []
+  for (const selector of selectors) {
+    let el: HTMLElement | null = null
+    try {
+      el = document.querySelector<HTMLElement>(selector)
+    } catch {
+      continue // invalid selector, e.g. from an unusual model id
+    }
+    if (!el) continue
+    const r = el.getBoundingClientRect()
+    if (r.width > 0 && r.height > 0) found.push(el)
   }
-  if (!el) return null
-  const r = el.getBoundingClientRect()
-  return r.width > 0 && r.height > 0 ? el : null
+  return found
 }
 
-function measure(el: HTMLElement | null): Rect | null {
-  if (!el) return null
-  const r = el.getBoundingClientRect()
+interface Box {
+  top: number
+  left: number
+  right: number
+  bottom: number
+}
+
+/** the smallest box around all of them */
+export function unionRect(boxes: Box[]): Box | null {
+  if (boxes.length === 0) return null
+  return {
+    top: Math.min(...boxes.map((b) => b.top)),
+    left: Math.min(...boxes.map((b) => b.left)),
+    right: Math.max(...boxes.map((b) => b.right)),
+    bottom: Math.max(...boxes.map((b) => b.bottom)),
+  }
+}
+
+function measure(els: HTMLElement[]): Rect | null {
+  const r = unionRect(els.map((el) => el.getBoundingClientRect()))
+  if (!r) return null
   // clip to the viewport: a target larger than the screen (the canvas) still gets a visible ring
   const top = Math.max(r.top - PAD, 2)
   const left = Math.max(r.left - PAD, 2)
   const bottom = Math.min(r.bottom + PAD, window.innerHeight - 2)
   const right = Math.min(r.right + PAD, window.innerWidth - 2)
   return { top, left, width: right - left, height: bottom - top }
+}
+
+/**
+ * Steps' `enter`s run one after the other: a slow one (opening a model, tracing a column)
+ * cannot finish after the user moved on and overwrite the state the current step set up.
+ */
+let enterChain: Promise<unknown> = Promise.resolve()
+
+export function runEnter(step: TourStep, isCurrent: () => boolean): Promise<unknown> {
+  enterChain = enterChain
+    .then(() => (isCurrent() && step.enter ? step.enter() : undefined))
+    .catch(() => undefined)
+  return enterChain
 }
 
 const sameRect = (a: Rect | null, b: Rect | null) =>
@@ -86,6 +124,7 @@ export function Tour() {
   const back = useTourStore((s) => s.back)
   const close = useTourStore((s) => s.close)
   const start = useTourStore((s) => s.start)
+  const demo = useExplorerStore((s) => s.demo)
 
   const [rect, setRect] = useState<Rect | null>(null)
   const [size, setSize] = useState({ w: CARD_WIDTH, h: 200 })
@@ -98,7 +137,12 @@ export function Tour() {
 
   // put the app in the state the step explains
   useEffect(() => {
-    if (step?.enter) void Promise.resolve(step.enter()).catch(() => undefined)
+    if (!step?.enter) return
+    let current = true
+    void runEnter(step, () => current)
+    return () => {
+      current = false
+    }
   }, [step])
 
   // follow the target
@@ -107,12 +151,12 @@ export function Tour() {
     let scrolled = false
     let frame = 0
     const update = () => {
-      const el = resolveTarget(step.target)
-      if (el && !scrolled) {
-        el.scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
+      const els = resolveTargets(step.target)
+      if (els.length > 0 && !scrolled) {
+        els[0].scrollIntoView?.({ block: 'nearest', inline: 'nearest' })
         scrolled = true
       }
-      const nextRect = measure(el)
+      const nextRect = measure(els)
       setRect((prev) => (sameRect(prev, nextRect) ? prev : nextRect))
       frame = window.requestAnimationFrame(update)
     }
@@ -159,7 +203,15 @@ export function Tour() {
   const Icon = tour.icon
 
   return (
-    <div className="tour" role="dialog" aria-modal="true" aria-labelledby="tour-title">
+    <div
+      className="tour"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="tour-title"
+      // menus close on a click outside them: one a step opened stays open under the tour
+      onPointerDown={(event) => event.stopPropagation()}
+      onMouseDown={(event) => event.stopPropagation()}
+    >
       {/* the app underneath is inert while touring; a stray click does not end the tour */}
       <div className={`tour__backdrop${rect ? '' : ' tour__backdrop--dim'}`} />
       {rect && <div className="tour__spotlight" style={rect} />}
@@ -169,6 +221,11 @@ export function Tour() {
           <span className="tour__name">
             <Icon size={12} /> {tour.title}
           </span>
+          {demo && (
+            <span className="tour__demo" title="The tour runs on a demo project. Your project comes back when it ends.">
+              Demo project
+            </span>
+          )}
           <span className="tour__count">
             {index + 1} / {steps.length}
           </span>

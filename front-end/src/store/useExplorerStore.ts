@@ -70,6 +70,8 @@ export interface ExplorerState {
   status: Status
   errorMessage: string | null
   usingMock: boolean
+  /** a guided tour runs on the demo project (api/mock): no API calls, no URL updates */
+  demo: boolean
 
   graph: GraphResponse | null
   meta: MetaResponse | null
@@ -87,6 +89,10 @@ export interface ExplorerState {
   /** failed jobs the user has not looked at yet (red dot on the task indicator) */
   unseenFailures: string[]
   tasksOpen: boolean
+  /** top-bar menus and the toolbar filter row; here so a tour step can open them */
+  pipelinesOpen: boolean
+  exportOpen: boolean
+  filtersOpen: boolean
   index: AdjacencyIndex
 
   filters: Filters
@@ -138,6 +144,9 @@ export interface ExplorerState {
   /** poll /api/jobs - every 2 s while a job runs, else every 15 s. Returns the stop function. */
   startJobPolling: () => () => void
   setTasksOpen: (open: boolean) => void
+  setPipelinesOpen: (open: boolean) => void
+  setExportOpen: (open: boolean) => void
+  setFiltersOpen: (open: boolean) => void
   dismissNotice: (id: string) => void
   setLayoutMode: (mode: LayoutMode) => void
   setZoneMode: (mode: ZoneMode) => void
@@ -261,6 +270,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   status: 'loading',
   errorMessage: null,
   usingMock: false,
+  demo: false,
 
   graph: null,
   meta: null,
@@ -272,6 +282,9 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   jobNotices: [],
   unseenFailures: [],
   tasksOpen: false,
+  pipelinesOpen: false,
+  exportOpen: false,
+  filtersOpen: false,
   index: EMPTY_INDEX,
 
   filters: { pipelines: pipelinesFromUrl(), stages: [], includeSources: true },
@@ -316,6 +329,14 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
       return
     }
 
+    // guided tour: the demo project, never the API
+    if (get().demo) {
+      const graph = filterGraph(mockGraph, filters)
+      set({ graph, index: buildIndex(graph.nodes, graph.edges), status: 'ready' })
+      set((state) => computeHighlight(state))
+      return
+    }
+
     set({ status: 'loading', errorMessage: null })
     try {
       const [graph, meta, pipelineInfo] = await Promise.all([
@@ -327,6 +348,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
         api.meta().catch(() => null),
         api.pipelines().catch(() => [] as PipelineInfo[]),
       ])
+      if (get().demo) return // a tour switched to the demo project meanwhile
 
       set({
         graph,
@@ -338,6 +360,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
         errorMessage: null,
       })
     } catch (error) {
+      if (get().demo) return
       // AP-2/AP-3 can keep working offline against the mock graph.
       const message = error instanceof ApiError ? error.message : String(error)
       const graph = filterGraph(mockGraph, filters)
@@ -428,6 +451,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
     } catch {
       return // backend away: try again on the next tick
     }
+    if (get().usingMock) return // a tour switched to the demo project meanwhile
     const { jobs: before, jobsLoaded, jobNotices } = get()
     const previous = new Map(before.map((j) => [j.id, j]))
     const known = new Set(jobNotices.map((n) => n.id))
@@ -479,6 +503,9 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   },
 
   setTasksOpen: (open) => set(open ? { tasksOpen: true, unseenFailures: [] } : { tasksOpen: false }),
+  setPipelinesOpen: (open) => set({ pipelinesOpen: open }),
+  setExportOpen: (open) => set({ exportOpen: open }),
+  setFiltersOpen: (open) => set({ filtersOpen: open }),
 
   dismissNotice: (id) => set((state) => ({ jobNotices: state.jobNotices.filter((n) => n.id !== id) })),
 

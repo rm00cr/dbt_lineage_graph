@@ -35,6 +35,7 @@ function prime(setPipelineModes = vi.fn().mockResolvedValue(undefined), info: Pi
     modeSwitching: null,
     modeError: null,
     jobs: [],
+    pipelinesOpen: false, // the menu's open state lives in the store: start closed
     setPipelineModes,
   })
   return setPipelineModes

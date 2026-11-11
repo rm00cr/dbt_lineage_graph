@@ -28,9 +28,12 @@ interface Loaded {
 /** compiled SQL is what the vars of a mode change; raw SQL as a fallback */
 const sqlOf = (detail: ModelDetail) => detail.compiled_code ?? detail.raw_code ?? ''
 
+/** stable fallback: a fresh `[]` from a store selector re-renders forever (white screen) */
+const NO_MODES: string[] = []
+
 export function ModeCode({ detail, onWideChange }: { detail: ModelDetail; onWideChange: (wide: boolean) => void }) {
   const modes = useExplorerStore((s) => s.index.byId.get(detail.id)?.modes ?? null)
-  const differs = useExplorerStore((s) => s.index.byId.get(detail.id)?.sql_differs ?? [])
+  const differs = useExplorerStore((s) => s.index.byId.get(detail.id)?.sql_differs ?? NO_MODES)
   const [view, setView] = useState<View>('single')
   const [base, setBase] = useState<string>(modes?.[0] ?? '')
   const [other, setOther] = useState<string | null>(modes?.[1] ?? null)

@@ -33,6 +33,7 @@ function Explorer() {
   const graph = useExplorerStore((s) => s.graph)
   const meta = useExplorerStore((s) => s.meta)
   const usingMock = useExplorerStore((s) => s.usingMock)
+  const demo = useExplorerStore((s) => s.demo)
   const errorMessage = useExplorerStore((s) => s.errorMessage)
   const init = useExplorerStore((s) => s.init)
 
@@ -107,7 +108,8 @@ function Explorer() {
             <ModelOverlay onToast={showToast} />
             <TraceBar />
 
-            {usingMock && (
+            {/* during a tour (demo project) the tour card says so: a banner here would cover the toolbar */}
+            {usingMock && !demo && (
               <div className="banner" title={errorMessage ?? undefined}>
                 <TriangleAlert size={14} />
                 Mock data — API not reachable. Start the backend with <code>uv run lineage-api</code>.
