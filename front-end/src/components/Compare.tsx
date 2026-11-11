@@ -37,6 +37,7 @@ export function CompareButton() {
   return (
     <button
       type="button"
+      data-tour="compare"
       className={`btn btn--sm${comparing ? ' btn--active' : ''}`}
       onClick={() => open(true)}
       title="Compare the running state with another manifest.json / catalog.json"

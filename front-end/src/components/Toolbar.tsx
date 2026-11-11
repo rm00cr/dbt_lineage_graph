@@ -147,6 +147,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
   return (
     <div className="toolbar">
       <div className="toolbar__row">
+        <div className="toolbar__group" data-tour="layout">
         <button
           className={`btn ${layoutMode === 'dag' ? 'btn--active' : ''}`}
           onClick={() => setLayoutMode('dag')}
@@ -187,10 +188,12 @@ export function Toolbar({ onToast }: ToolbarProps) {
             onChange={setCollapsedFolders}
           />
         )}
+        </div>
 
         <span className="toolbar__divider" />
 
         <button
+          data-tour="focus"
           className={`btn ${focusMode !== 'off' ? 'btn--active' : ''}`}
           onClick={cycleFocusMode}
           title="Focus mode: dim or isolate everything outside the selected lineage (F)"
@@ -207,6 +210,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
         </button>
 
         <button
+          data-tour="area-select"
           className={`btn btn--icon ${selectionDrag ? 'btn--active' : ''}`}
           onClick={toggleSelectionDrag}
           title="Area select with left drag (otherwise Shift + drag)"
@@ -225,6 +229,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
         <span className="toolbar__divider" />
 
         <button
+          data-tour="filters"
           className={`btn btn--icon ${showFilters ? 'btn--active' : ''}`}
           onClick={() => setShowFilters((v) => !v)}
           title="Filters"
@@ -238,6 +243,7 @@ export function Toolbar({ onToast }: ToolbarProps) {
 
         {violations.length > 0 && (
           <button
+            data-tour="boundary"
             className="btn btn--danger"
             onClick={selectViolations}
             title={[
@@ -276,7 +282,12 @@ export function Toolbar({ onToast }: ToolbarProps) {
         >
           Apply
         </button>
-        <button className="btn btn--sm" onClick={() => void copySelector()} title="Copy dbt run command">
+        <button
+          data-tour="dbt-run"
+          className="btn btn--sm"
+          onClick={() => void copySelector()}
+          title="Copy dbt run command"
+        >
           <Copy size={13} /> dbt run
         </button>
         {selectedIds.size > 0 && (

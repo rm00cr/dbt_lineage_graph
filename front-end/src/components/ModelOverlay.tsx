@@ -9,6 +9,7 @@ import {
   ArrowUpRight,
   Check,
   Database,
+  CircleHelp,
   ExternalLink,
   FileCode2,
   GitCompare,
@@ -25,6 +26,7 @@ import { useEffect, useRef, useState } from 'react'
 import type { ModelDetail, NodeRef } from '../api/types'
 import { type OverlayTab, useExplorerStore } from '../store/useExplorerStore'
 import { PANEL_MIN_WIDTH, usePanelPrefs } from '../store/usePanelPrefs'
+import { useTourStore } from '../tour/useTourStore'
 import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../graph/diff'
 import { ModeCode } from './ModeCode'
 import { ChangesPanel } from './Compare'
@@ -50,6 +52,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
   const closeOverlay = useExplorerStore((s) => s.closeOverlay)
   const openModel = useExplorerStore((s) => s.openModel)
   const select = useExplorerStore((s) => s.select)
+  const startTour = useTourStore((s) => s.start)
 
   const tab = useExplorerStore((s) => s.overlayTab)
   const setTab = useExplorerStore((s) => s.setOverlayTab)
@@ -143,6 +146,15 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
         <div className="overlay__title-row">
           <h2 className="overlay__title">{detail?.name ?? activeId.split('.').pop()}</h2>
           <button
+            className="btn btn--icon btn--ghost"
+            onClick={() => startTour('model')}
+            title="Tour this panel"
+            aria-label="Tour this panel"
+          >
+            <CircleHelp size={15} />
+          </button>
+          <button
+            data-tour="overlay-size"
             className="btn btn--icon btn--ghost"
             onClick={toggleMaximized}
             title={maximized ? 'Restore panel size' : 'Maximize panel'}

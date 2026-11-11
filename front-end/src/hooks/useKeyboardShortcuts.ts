@@ -5,6 +5,7 @@ import { useEffect } from 'react'
 
 import { useExplorerStore } from '../store/useExplorerStore'
 import { usePanelPrefs } from '../store/usePanelPrefs'
+import { useTourStore } from '../tour/useTourStore'
 
 export function useKeyboardShortcuts() {
   const { fitView } = useReactFlow()
@@ -26,6 +27,10 @@ export function useKeyboardShortcuts() {
       const store = useExplorerStore.getState()
 
       switch (event.key.toLowerCase()) {
+        case '?':
+          event.preventDefault()
+          useTourStore.getState().setMenuOpen(true)
+          break
         case 'f':
           event.preventDefault()
           store.cycleFocusMode()

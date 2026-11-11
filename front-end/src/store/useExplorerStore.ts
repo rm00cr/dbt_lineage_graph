@@ -66,7 +66,7 @@ export interface CompareState {
   changes: Map<string, NodeChange>
 }
 
-interface ExplorerState {
+export interface ExplorerState {
   status: Status
   errorMessage: string | null
   usingMock: boolean

@@ -63,11 +63,33 @@ export function GraphCanvas() {
   const clearSelection = useExplorerStore((s) => s.clearSelection)
   const closeOverlay = useExplorerStore((s) => s.closeOverlay)
 
-  const { setCenter, fitView, fitBounds, getNodesBounds, getZoom } = useReactFlow()
+  const { setCenter, fitView, fitBounds, getNodesBounds, getZoom, getViewport, setViewport } =
+    useReactFlow()
   const canvasRef = useRef<HTMLDivElement>(null)
   const theme = useTheme((s) => s.resolved)
   const { color: stageColor, label: stageLabel } = useStages()
   const changeColor = useChangeColor()
+
+  // React Flow's scroll-to-zoom reads only deltaY, so a horizontal wheel (tilt wheel,
+  // thumb wheel, sideways trackpad swipe) does nothing. Pan sideways instead, and leave
+  // vertical scrolling and Ctrl+wheel to React Flow's zoom.
+  useEffect(() => {
+    const el = canvasRef.current
+    if (!el) return
+    const onWheel = (event: WheelEvent) => {
+      if (event.ctrlKey || event.metaKey) return
+      if (Math.abs(event.deltaX) <= Math.abs(event.deltaY)) return
+      const target = event.target as Element | null
+      if (!target?.closest('.react-flow__renderer') || target.closest('.nowheel')) return
+      event.preventDefault() // no browser back/forward swipe
+      event.stopPropagation() // keep it from React Flow's zoom handler
+      const unit = event.deltaMode === 1 ? 16 : event.deltaMode === 2 ? el.clientWidth : 1
+      const { x, y, zoom } = getViewport()
+      void setViewport({ x: x - event.deltaX * unit, y, zoom })
+    }
+    el.addEventListener('wheel', onWheel, { capture: true, passive: false })
+    return () => el.removeEventListener('wheel', onWheel, { capture: true })
+  }, [getViewport, setViewport])
 
   const [dragged, setDragged] = useState<Map<string, XYPosition>>(new Map())
   /** how far each pipeline band was dragged (zones layout); moves its boxes and nodes along */
