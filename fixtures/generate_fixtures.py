@@ -1112,7 +1112,10 @@ def build_project(pipeline: str, tag: str = "") -> tuple[dict[str, Any], dict[st
         name = f"{model['name']}{tag}"
         uid = model_id(project, name)
         schema = schema_for(pipeline, model["folder"])
-        folder_path = f"{model['folder']}/{name}.sql"
+        # sub-folder = the model's dbt group (as in real projects: models/01_source/claims/x.sql),
+        # so the lineage explorer draws one box per group inside each stage
+        sub = GROUP_BY_MODEL.get(model["name"])
+        folder_path = f"{model['folder']}/{sub}/{name}.sql" if sub else f"{model['folder']}/{name}.sql"
         sql = model["sql"]
 
         dep_ids: list[str] = []

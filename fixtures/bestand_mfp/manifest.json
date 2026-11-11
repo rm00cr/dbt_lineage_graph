@@ -18,8 +18,8 @@
       "alias": "src_mfp_contracts",
       "database": "pnc-analytics-prd",
       "schema": "mfp_source",
-      "path": "01_source/src_mfp_contracts.sql",
-      "original_file_path": "models/01_source/src_mfp_contracts.sql",
+      "path": "01_source/contract/src_mfp_contracts.sql",
+      "original_file_path": "models/01_source/contract/src_mfp_contracts.sql",
       "description": "Cleaned contract versions: renamed columns, typed, technical records removed.",
       "tags": [
         "mfp",
@@ -111,7 +111,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "00000000000000000000000000000000000000000000000043fb33f4b1916692"
+        "checksum": "00000000000000000000000000000000000000000000000050056b554a77c779"
       }
     },
     "model.dbt_pnc.src_mfp_partners": {
@@ -122,8 +122,8 @@
       "alias": "src_mfp_partners",
       "database": "pnc-analytics-prd",
       "schema": "mfp_source",
-      "path": "01_source/src_mfp_partners.sql",
-      "original_file_path": "models/01_source/src_mfp_partners.sql",
+      "path": "01_source/partner/src_mfp_partners.sql",
+      "original_file_path": "models/01_source/partner/src_mfp_partners.sql",
       "description": "Cleaned partner master data incl. derived age band.",
       "tags": [
         "mfp",
@@ -215,7 +215,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "0000000000000000000000000000000000000000000000001b9619a7f9717cc4"
+        "checksum": "0000000000000000000000000000000000000000000000003822d3d0283ff204"
       }
     },
     "model.dbt_pnc.src_mfp_coverages": {
@@ -226,8 +226,8 @@
       "alias": "src_mfp_coverages",
       "database": "pnc-analytics-prd",
       "schema": "mfp_source",
-      "path": "01_source/src_mfp_coverages.sql",
-      "original_file_path": "models/01_source/src_mfp_coverages.sql",
+      "path": "01_source/contract/src_mfp_coverages.sql",
+      "original_file_path": "models/01_source/contract/src_mfp_coverages.sql",
       "description": "Cleaned coverage lines per contract.",
       "tags": [
         "mfp",
@@ -319,7 +319,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "0000000000000000000000000000000000000000000000003f3418f267761ef9"
+        "checksum": "0000000000000000000000000000000000000000000000001b65e42100b7881a"
       }
     },
     "model.dbt_pnc.src_mfp_tariffs": {
@@ -330,8 +330,8 @@
       "alias": "src_mfp_tariffs",
       "database": "pnc-analytics-prd",
       "schema": "mfp_source",
-      "path": "01_source/src_mfp_tariffs.sql",
-      "original_file_path": "models/01_source/src_mfp_tariffs.sql",
+      "path": "01_source/premium/src_mfp_tariffs.sql",
+      "original_file_path": "models/01_source/premium/src_mfp_tariffs.sql",
       "description": "Tariff reference data, deduplicated on (tariff_code, risk_code, valid_from).",
       "tags": [
         "mfp",
@@ -407,7 +407,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "0000000000000000000000000000000000000000000000002a3f7256e003692f"
+        "checksum": "000000000000000000000000000000000000000000000000484bdc3aa9b5292e"
       }
     },
     "model.dbt_pnc.int_mfp_contracts": {
@@ -418,8 +418,8 @@
       "alias": "int_mfp_contracts",
       "database": "pnc-analytics-prd",
       "schema": "mfp_intermediate",
-      "path": "02_intermediate/int_mfp_contracts.sql",
-      "original_file_path": "models/02_intermediate/int_mfp_contracts.sql",
+      "path": "02_intermediate/contract/int_mfp_contracts.sql",
+      "original_file_path": "models/02_intermediate/contract/int_mfp_contracts.sql",
       "description": "Contract versions enriched with partner attributes. Core entity of the portfolio pipeline.",
       "tags": [
         "mfp",
@@ -536,7 +536,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "000000000000000000000000000000000000000000000000000c50aab1d66342"
+        "checksum": "0000000000000000000000000000000000000000000000005a1c1e5d409c30f1"
       }
     },
     "model.dbt_pnc.int_mfp_coverages": {
@@ -547,8 +547,8 @@
       "alias": "int_mfp_coverages",
       "database": "pnc-analytics-prd",
       "schema": "mfp_intermediate",
-      "path": "02_intermediate/int_mfp_coverages.sql",
-      "original_file_path": "models/02_intermediate/int_mfp_coverages.sql",
+      "path": "02_intermediate/contract/int_mfp_coverages.sql",
+      "original_file_path": "models/02_intermediate/contract/int_mfp_coverages.sql",
       "description": "Coverage lines joined to their tariff, incrementally loaded on valid_from.",
       "tags": [
         "mfp",
@@ -653,7 +653,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "000000000000000000000000000000000000000000000000054381519fcd04d6"
+        "checksum": "000000000000000000000000000000000000000000000000264c868c3e6381de"
       }
     },
     "model.dbt_pnc.int_mfp_contract_coverage": {
@@ -664,8 +664,8 @@
       "alias": "int_mfp_contract_coverage",
       "database": "pnc-analytics-prd",
       "schema": "mfp_intermediate",
-      "path": "02_intermediate/int_mfp_contract_coverage.sql",
-      "original_file_path": "models/02_intermediate/int_mfp_contract_coverage.sql",
+      "path": "02_intermediate/contract/int_mfp_contract_coverage.sql",
+      "original_file_path": "models/02_intermediate/contract/int_mfp_contract_coverage.sql",
       "description": "Contract x coverage grain: the central fact table of the portfolio pipeline.",
       "tags": [
         "mfp",
@@ -794,7 +794,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "000000000000000000000000000000000000000000000000719d60917471d443"
+        "checksum": "0000000000000000000000000000000000000000000000007e3f4f76c7a8a884"
       }
     },
     "model.dbt_pnc.int_mfp_premium_calc": {
@@ -805,8 +805,8 @@
       "alias": "int_mfp_premium_calc",
       "database": "pnc-analytics-prd",
       "schema": "mfp_intermediate",
-      "path": "02_intermediate/int_mfp_premium_calc.sql",
-      "original_file_path": "models/02_intermediate/int_mfp_premium_calc.sql",
+      "path": "02_intermediate/premium/int_mfp_premium_calc.sql",
+      "original_file_path": "models/02_intermediate/premium/int_mfp_premium_calc.sql",
       "description": "Technical premium per coverage (ephemeral: inlined into downstream models).",
       "tags": [
         "mfp",
@@ -899,7 +899,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "0000000000000000000000000000000000000000000000002f03279a8ace2f4f"
+        "checksum": "00000000000000000000000000000000000000000000000069ff7c81d3632946"
       }
     },
     "model.dbt_pnc.out_mfp_portfolio_daily": {
@@ -910,8 +910,8 @@
       "alias": "out_mfp_portfolio_daily",
       "database": "pnc-analytics-prd",
       "schema": "mfp_output",
-      "path": "03_output/out_mfp_portfolio_daily.sql",
-      "original_file_path": "models/03_output/out_mfp_portfolio_daily.sql",
+      "path": "03_output/contract/out_mfp_portfolio_daily.sql",
+      "original_file_path": "models/03_output/contract/out_mfp_portfolio_daily.sql",
       "description": "Daily portfolio snapshot per product, canton and risk. Feeds the portfolio dashboard.",
       "tags": [
         "mfp",
@@ -1018,7 +1018,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "00000000000000000000000000000000000000000000000045bb7d47c972df06"
+        "checksum": "0000000000000000000000000000000000000000000000003a46b5126aab00fb"
       }
     },
     "model.dbt_pnc.out_mfp_premium_report": {
@@ -1029,8 +1029,8 @@
       "alias": "out_mfp_premium_report",
       "database": "pnc-analytics-prd",
       "schema": "mfp_output",
-      "path": "03_output/out_mfp_premium_report.sql",
-      "original_file_path": "models/03_output/out_mfp_premium_report.sql",
+      "path": "03_output/premium/out_mfp_premium_report.sql",
+      "original_file_path": "models/03_output/premium/out_mfp_premium_report.sql",
       "description": "Monthly premium reconciliation: technical vs. written premium per product.",
       "tags": [
         "mfp",
@@ -1119,7 +1119,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "0000000000000000000000000000000000000000000000000a90a041ea65e6f9"
+        "checksum": "000000000000000000000000000000000000000000000000723f477eebdb6073"
       }
     },
     "model.dbt_pnc.out_mfp_customer_360": {
@@ -1130,8 +1130,8 @@
       "alias": "out_mfp_customer_360",
       "database": "pnc-analytics-prd",
       "schema": "mfp_output",
-      "path": "03_output/out_mfp_customer_360.sql",
-      "original_file_path": "models/03_output/out_mfp_customer_360.sql",
+      "path": "03_output/partner/out_mfp_customer_360.sql",
+      "original_file_path": "models/03_output/partner/out_mfp_customer_360.sql",
       "description": "One row per partner with portfolio aggregates for the CRM front-end.",
       "tags": [
         "mfp",
@@ -1238,7 +1238,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "0000000000000000000000000000000000000000000000003afb37be7f11b3f8"
+        "checksum": "0000000000000000000000000000000000000000000000007a6122bad073ecec"
       }
     },
     "model.dbt_pnc.out_mfp_contracts": {
@@ -1249,8 +1249,8 @@
       "alias": "out_mfp_contracts",
       "database": "pnc-analytics-prd",
       "schema": "mfp_output",
-      "path": "03_output/out_mfp_contracts.sql",
-      "original_file_path": "models/03_output/out_mfp_contracts.sql",
+      "path": "03_output/contract/out_mfp_contracts.sql",
+      "original_file_path": "models/03_output/contract/out_mfp_contracts.sql",
       "description": "Public contract dimension: the interface other pipelines read contract attributes from.",
       "tags": [
         "mfp",
@@ -1345,7 +1345,7 @@
       },
       "checksum": {
         "name": "sha256",
-        "checksum": "0000000000000000000000000000000000000000000000007e840e48fcf1546e"
+        "checksum": "0000000000000000000000000000000000000000000000007e48cc6b655cbaa7"
       }
     }
   },
