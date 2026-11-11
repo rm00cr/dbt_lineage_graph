@@ -243,12 +243,24 @@ class DbtRunner:
 
     def _execute(self, job: GenerationJob, plan: _Plan) -> str | None:
         """Run the dbt steps and put the artifacts in place. Returns an error message, None if fine."""
-        for step in plan.steps:
-            error = self._step(job, plan.cwd, step)
-            if error:
-                return error
-
         produced_manifest = plan.produced_dir / "manifest.json"
+        last = len(plan.steps) - 1
+        for index, step in enumerate(plan.steps):
+            before = _mtime(produced_manifest)
+            code, error = self._step(job, plan.cwd, step)
+            if not error:
+                continue
+            # `docs generate` writes manifest.json (compiled code) before it builds the catalog;
+            # a catalog that fails (e.g. no metadata access to one source dataset) must not
+            # throw the manifest away. dbt still writes the partial catalog.
+            fresh = _mtime(produced_manifest) not in (None, before)
+            if index == last and code == 1 and fresh and _catalog_only_failure(job.log):
+                job.log.append(
+                    f"warning: catalog incomplete{_last_error(job.log)} - manifest and partial catalog kept"
+                )
+                continue
+            return error
+
         if not produced_manifest.is_file():
             return f"dbt finished but wrote no manifest.json to {plan.produced_dir}"
         if plan.copy:
@@ -260,8 +272,10 @@ class DbtRunner:
         return None
 
     @staticmethod
-    def _step(job: GenerationJob, cwd: Path, args: list[str]) -> str | None:
-        """Run one dbt invocation, streaming its output into the job log."""
+    def _step(job: GenerationJob, cwd: Path, args: list[str]) -> tuple[int | None, str | None]:
+        """Run one dbt invocation, streaming its output into the job log.
+
+        Returns (exit code, error message); the code is None if dbt could not be started."""
         executable = shutil.which(args[0]) or args[0]
         job.log.append("$ " + " ".join(args))
         env = {**os.environ, "DBT_USE_COLORS": "false", "PYTHONIOENCODING": "utf-8"}
@@ -284,7 +298,7 @@ class DbtRunner:
                 "Is dbt installed? Set DBT_EXECUTABLE or `dbt.command` in pipelines.yaml."
             )
             job.log.append(message)
-            return message
+            return None, message
 
         assert process.stdout is not None
         for line in process.stdout:
@@ -292,7 +306,35 @@ class DbtRunner:
         code = process.wait()
         if code != 0:
             what = " ".join(_dbt_subcommand(args))
-            return f"dbt {what} exited with code {code}" + _last_error(job.log)
+            return code, f"dbt {what} exited with code {code}" + _last_error(job.log)
+        return code, None
+
+
+# dbt's messages when only the catalog of `docs generate` failed
+_CATALOG_ERRORS = ("encountered an error while generating catalog", "failure while writing the catalog")
+# anything else that means the manifest itself cannot be trusted
+_OTHER_ERRORS = (
+    "compilation error",
+    "parsing error",
+    "runtime error",
+    "dependency error",
+    "encountered an error:",
+)
+
+
+def _catalog_only_failure(lines: deque[str]) -> bool:
+    """True if the last dbt invocation in ``lines`` failed only while building the catalog."""
+    start = max((i for i, line in enumerate(lines) if line.startswith("$ ")), default=-1) + 1
+    output = [line.lower() for line in list(lines)[start:]]
+    catalog = [line for line in output if any(m in line for m in _CATALOG_ERRORS)]
+    other = [line for line in output if any(m in line for m in _OTHER_ERRORS) and "catalog" not in line]
+    return bool(catalog) and not other
+
+
+def _mtime(path: Path) -> int | None:
+    try:
+        return path.stat().st_mtime_ns
+    except FileNotFoundError:
         return None
 
 

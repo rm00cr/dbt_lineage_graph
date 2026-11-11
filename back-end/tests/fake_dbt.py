@@ -8,6 +8,9 @@ copied from FAKE_DBT_SOURCE (a folder with a real pair), with `metadata.vars` = 
     FAKE_DBT_GATE=<path>    after the first log line, wait until that file exists
     FAKE_DBT_DROP=<id>      leave this node out of the manifest
     FAKE_DBT_FAIL_RUN=1     a `run` (prepare) step fails
+    FAKE_DBT_CATALOG_FAIL=1 write the artifacts, then fail like dbt does when only the catalog
+                            query is denied (exit 1); with FAKE_DBT_FAIL: the catalog
+                            message only, nothing written
 """
 
 from __future__ import annotations
@@ -45,6 +48,9 @@ def main() -> int:
         while not Path(gate).exists() and time.monotonic() < deadline:
             time.sleep(0.02)
     if os.getenv("FAKE_DBT_FAIL"):
+        if os.getenv("FAKE_DBT_CATALOG_FAIL"):  # catalog message, but nothing written
+            print("Encountered an error while generating catalog: Database Error", flush=True)
+            return 1
         print("Database Error: could not connect to BigQuery", flush=True)
         return 1
 
@@ -61,6 +67,15 @@ def main() -> int:
     target.mkdir(parents=True, exist_ok=True)
     (target / "manifest.json").write_text(json.dumps(manifest), encoding="utf-8")
     (target / "catalog.json").write_bytes((source / "catalog.json").read_bytes())
+    if os.getenv("FAKE_DBT_CATALOG_FAIL"):
+        print(
+            "Encountered an error while generating catalog: Database Error\n"
+            "  Access Denied: Table raw:pnc.__TABLES__: User does not have permission to query table",
+            flush=True,
+        )
+        print("dbt encountered 1 failure while writing the catalog", flush=True)
+        print(f"Catalog written to {target / 'catalog.json'}", flush=True)
+        return 1
     print("Catalog written", flush=True)
     return 0
 

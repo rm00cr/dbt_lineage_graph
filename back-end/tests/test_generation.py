@@ -97,6 +97,46 @@ def test_runner_failure_keeps_the_log(tmp_path: Path, monkeypatch: pytest.Monkey
     assert not (tmp_path / "artifacts/full/manifest.json").exists()
 
 
+def test_runner_accepts_catalog_only_failure(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:
+    # dbt wrote manifest + partial catalog, then exited 1 because one catalog query was denied
+    monkeypatch.setenv("FAKE_DBT_CATALOG_FAIL", "1")
+    (pair,) = config(tmp_path, MODED)
+    job = wait_job(DbtRunner(command=FAKE_DBT).start(pair, pair.mode("full"), "user"))
+    assert job.status == "done", job.log_tail()
+    assert job.error is None
+    assert (tmp_path / "artifacts/full/manifest.json").is_file()
+    assert (tmp_path / "artifacts/full/catalog.json").is_file()
+    warnings = [line for line in job.log if line.startswith("warning: catalog incomplete")]
+    assert len(warnings) == 1 and "partial catalog kept" in warnings[0]
+
+
+def test_runner_catalog_failure_without_manifest_fails(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setenv("FAKE_DBT_CATALOG_FAIL", "1")
+    monkeypatch.setenv("FAKE_DBT_FAIL", "1")  # catalog message, but no artifacts written
+    (pair,) = config(tmp_path, MODED)
+    job = wait_job(DbtRunner(command=FAKE_DBT).start(pair, pair.mode("full"), "user"))
+    assert job.status == "failed"
+    assert job.error and "exited with code 1" in job.error
+    assert not (tmp_path / "artifacts/full/manifest.json").exists()
+
+
+def test_runner_catalog_failure_ignores_stale_manifest(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    # a manifest left over from an earlier run in the working folder does not count
+    (pair,) = config(tmp_path, MODED)
+    stale = tmp_path / "artifacts/full/.dbt_target_full/manifest.json"
+    stale.parent.mkdir(parents=True)
+    stale.write_text("{}", encoding="utf-8")
+    monkeypatch.setenv("FAKE_DBT_CATALOG_FAIL", "1")
+    monkeypatch.setenv("FAKE_DBT_FAIL", "1")
+    job = wait_job(DbtRunner(command=FAKE_DBT).start(pair, pair.mode("full"), "user"))
+    assert job.status == "failed"
+    assert not (tmp_path / "artifacts/full/manifest.json").exists()
+
+
 def test_runner_missing_executable(tmp_path: Path) -> None:
     (pair,) = config(tmp_path, MODED)
     job = wait_job(DbtRunner(command=[str(tmp_path / "no-dbt-here")]).start(pair, pair.mode("full"), "user"))
