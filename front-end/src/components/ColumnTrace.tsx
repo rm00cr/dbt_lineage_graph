@@ -18,7 +18,7 @@ const DIRECTIONS: { value: TraceDirection; label: string; title: string }[] = [
   { value: 'down', label: 'Impact', title: 'what depends on this column?' },
 ]
 
-const KINDS: ColumnEdgeKind[] = ['passthrough', 'rename', 'transform', 'aggregate']
+const KINDS: ColumnEdgeKind[] = ['passthrough', 'rename', 'unnest', 'transform', 'aggregate']
 
 function useModelName() {
   const index = useExplorerStore((s) => s.index)

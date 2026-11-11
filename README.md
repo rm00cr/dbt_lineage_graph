@@ -109,7 +109,7 @@ cd front-end && npm test
 - 2.3 Column-level lineage: sqlglot parses each model's compiled SQL against the catalog
   schema (`back-end/app/column_lineage.py`). In the Schema tab, the ↑/↓ button on a column
   traces it: the traced columns appear as rows inside the nodes, column edges are coloured by
-  kind (passthrough / rename / transform / aggregate) and the overlay lists every hop with its
+  kind (passthrough / rename / unnest / transform / aggregate) and the overlay lists every hop with its
   SQL expression. `GET /api/lineage/status` reports which models parsed.
 
 **Look and feel** — light and dark themes, defaulting to the operating system setting and

@@ -223,7 +223,7 @@ class HealthResponse(BaseModel):
 
 # ----------------------------------------------------------------- column lineage (2.3)
 
-ColumnEdgeKind = Literal["passthrough", "rename", "transform", "aggregate"]
+ColumnEdgeKind = Literal["passthrough", "rename", "unnest", "transform", "aggregate"]
 ModelLineageStatus = Literal["ok", "partial", "failed", "skipped"]
 
 

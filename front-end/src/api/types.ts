@@ -201,7 +201,7 @@ export interface PipelineInfo {
 
 // ------------------------------------------------------------------ column lineage (2.3)
 
-export type ColumnEdgeKind = 'passthrough' | 'rename' | 'transform' | 'aggregate'
+export type ColumnEdgeKind = 'passthrough' | 'rename' | 'unnest' | 'transform' | 'aggregate'
 export type TraceDirection = 'up' | 'down' | 'both'
 export type ModelLineageStatus = 'ok' | 'partial' | 'failed' | 'skipped'
 

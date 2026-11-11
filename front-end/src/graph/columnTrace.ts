@@ -32,6 +32,7 @@ export interface TraceView {
 export const EDGE_KIND_LABELS: Record<ColumnEdgeKind, string> = {
   passthrough: 'passthrough',
   rename: 'rename',
+  unnest: 'unnest',
   transform: 'transform',
   aggregate: 'aggregate',
 }

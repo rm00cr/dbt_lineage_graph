@@ -2284,6 +2284,12 @@ mark {
   stroke-dasharray: 6 4;
 }
 
+/* an array element taken as is: same colour as passthrough, dotted */
+.cedge--unnest .react-flow__edge-path {
+  stroke-dasharray: 1.5 3.5;
+  stroke-linecap: round;
+}
+
 .cedge--transform .react-flow__edge-path {
   stroke: var(--warn);
 }
@@ -2398,6 +2404,10 @@ mark {
 
 .cedge-swatch--rename {
   border-top-style: dashed;
+}
+
+.cedge-swatch--unnest {
+  border-top-style: dotted;
 }
 
 .cedge-swatch--transform {

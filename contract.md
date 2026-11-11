@@ -297,7 +297,7 @@ because `/api/model/{id:path}` already swallows slashes. 404 for an unknown mode
     { "id": "model…int_claims_loss_ratio.paid_chf->model…out_pnc_combined_ratio.incurred_chf",
       "source_model": "model.schaden_claims.int_claims_loss_ratio", "source_column": "paid_chf",
       "target_model": "model.schaden_claims.out_pnc_combined_ratio", "target_column": "incurred_chf",
-      "kind": "aggregate",                    // passthrough | rename | transform | aggregate
+      "kind": "aggregate",                    // passthrough | rename | unnest | transform | aggregate
       "expression": "sum(`l`.`paid_chf` + `l`.`reserve_chf`)" }   // first non-trivial SQL on the path
   ],
   "warnings": []                              // e.g. "int_x: lineage partial - relations not found …"
