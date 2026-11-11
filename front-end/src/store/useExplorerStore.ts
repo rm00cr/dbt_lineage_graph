@@ -93,7 +93,8 @@ interface ExplorerState {
   layoutMode: LayoutMode
   /** which zones the 'lanes' layout draws: stage columns, folder boxes, dbt-group rows, or both */
   zoneMode: ZoneMode
-  /** zones layout: one grid per pipeline, placed left to right by pipeline dependency */
+  /** folder boxes (see graph/collapse.ts folderKey) drawn as a single summary node */
+  collapsedFolders: Set<string>
   focusMode: FocusMode
   showMiniMap: boolean
   selectionDrag: boolean
@@ -138,6 +139,8 @@ interface ExplorerState {
   dismissNotice: (id: string) => void
   setLayoutMode: (mode: LayoutMode) => void
   setZoneMode: (mode: ZoneMode) => void
+  toggleFolder: (key: string) => void
+  setCollapsedFolders: (keys: Iterable<string>) => void
   setFocusMode: (mode: FocusMode) => void
   cycleFocusMode: () => void
   toggleMiniMap: () => void
@@ -271,6 +274,7 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
   filters: { pipelines: pipelinesFromUrl(), stages: [], includeSources: true },
   layoutMode: 'dag',
   zoneMode: DEFAULT_ZONE_MODE,
+  collapsedFolders: new Set(),
   focusMode: 'dim',
   showMiniMap: true,
   selectionDrag: false,
@@ -476,6 +480,13 @@ export const useExplorerStore = create<ExplorerState>((set, get) => ({
 
   setLayoutMode: (mode) => set({ layoutMode: mode }),
   setZoneMode: (mode) => set({ zoneMode: mode }),
+  toggleFolder: (key) =>
+    set((state) => {
+      const next = new Set(state.collapsedFolders)
+      if (!next.delete(key)) next.add(key)
+      return { collapsedFolders: next }
+    }),
+  setCollapsedFolders: (keys) => set({ collapsedFolders: new Set(keys) }),
   setFocusMode: (mode) => set({ focusMode: mode }),
   cycleFocusMode: () =>
     set((state) => ({

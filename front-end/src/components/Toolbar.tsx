@@ -5,6 +5,8 @@
 
 import { useReactFlow } from '@xyflow/react'
 import {
+  ChevronsDownUp,
+  ChevronsUpDown,
   Columns3,
   Copy,
   Crosshair,
@@ -23,6 +25,7 @@ import {
 import { useMemo, useState } from 'react'
 
 import { VIOLATION_LABELS, boundaryViolations } from '../graph/boundary'
+import { allFolderKeys } from '../graph/collapse'
 import type { ZoneMode } from '../graph/layout'
 import { useExplorerStore } from '../store/useExplorerStore'
 import { CompareBar } from './Compare'
@@ -36,6 +39,32 @@ const ZONE_OPTIONS: { mode: ZoneMode; label: string; title: string }[] = [
   { mode: 'folders', label: 'Groups', title: 'Stage columns, one box per model folder (group) inside each' },
 ]
 
+/** Collapses every group box into one node, or opens them all again. */
+function FoldAllButton({
+  keys,
+  collapsed,
+  onChange,
+}: {
+  keys: string[]
+  collapsed: ReadonlySet<string>
+  onChange: (keys: Iterable<string>) => void
+}) {
+  const allCollapsed = keys.length > 0 && keys.every((k) => collapsed.has(k))
+  const Icon = allCollapsed ? ChevronsUpDown : ChevronsDownUp
+  const label = allCollapsed ? 'Expand all groups' : 'Collapse all groups'
+  return (
+    <button
+      className="btn btn--icon"
+      onClick={() => onChange(allCollapsed ? [] : keys)}
+      disabled={keys.length === 0}
+      title={`${label} (click a group header to toggle a single one)`}
+      aria-label={label}
+    >
+      <Icon size={14} />
+    </button>
+  )
+}
+
 interface ToolbarProps {
   onToast: (message: string) => void
 }
@@ -48,6 +77,10 @@ export function Toolbar({ onToast }: ToolbarProps) {
   const hasFolders = useExplorerStore((s) => s.graph?.nodes.some((n) => n.folder) ?? false)
   // without model sub-folders the 'folders' (Groups) default is drawn as plain stages
   const shownZoneMode = zoneMode === 'folders' && !hasFolders ? 'stages' : zoneMode
+  const collapsedFolders = useExplorerStore((s) => s.collapsedFolders)
+  const setCollapsedFolders = useExplorerStore((s) => s.setCollapsedFolders)
+  // the zones layout splits by pipeline whenever more than one is shown (layout.ts)
+  const multiPipeline = useExplorerStore((s) => new Set(s.graph?.nodes.map((n) => n.pipeline)).size > 1)
   const graph = useExplorerStore((s) => s.graph)
   const select = useExplorerStore((s) => s.select)
   const violations = useMemo(() => {
@@ -146,6 +179,13 @@ export function Toolbar({ onToast }: ToolbarProps) {
               )
             })}
           </div>
+        )}
+        {layoutMode === 'lanes' && zoneMode === 'folders' && hasFolders && graph && (
+          <FoldAllButton
+            keys={allFolderKeys(graph.nodes, multiPipeline)}
+            collapsed={collapsedFolders}
+            onChange={setCollapsedFolders}
+          />
         )}
 
         <span className="toolbar__divider" />
