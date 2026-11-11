@@ -46,6 +46,7 @@ from .schemas import (
     SearchHit,
     SearchResponse,
     StateInfo,
+    TestInfo,
 )
 from .search import score_name, score_substring
 from .stack import ModeStack, build_stack
@@ -54,7 +55,21 @@ BQ_CONSOLE = "https://console.cloud.google.com/bigquery"
 MAX_QUERY_DEEPLINK_CHARS = 7000
 # uploaded comparison states kept in memory (a real manifest can be big, keep this small)
 MAX_COMPARE_STATES = 3
-MATERIALIZATION_ORDER = ["source", "view", "table", "incremental", "ephemeral", "other"]
+MATERIALIZATION_ORDER = ["source", "view", "table", "incremental", "ephemeral", "test", "other"]
+
+
+def _test_infos(node: LineageNode) -> list[TestInfo]:
+    return [
+        TestInfo(
+            name=t.name,
+            kind=t.kind,  # type: ignore[arg-type]
+            test_name=t.test_name,
+            column=t.column,
+            severity=t.severity,
+            description=t.description,
+        )
+        for t in node.tests
+    ]
 
 
 class ArtifactError(ValueError):
@@ -437,6 +452,7 @@ class GraphService:
                 self._column_info(node, c.name, c.type, c.description, c.index, with_lineage=with_lineage)
                 for c in node.columns
             ],
+            tests=_test_infos(node),
             stats=NodeStats(row_count=node.row_count, size_bytes=node.size_bytes),
             bigquery=self._bigquery_ref(node),
             dbt_run_command=self._dbt_run_command(node),
@@ -794,6 +810,7 @@ class GraphService:
             tags=node.tags,
             column_count=len(node.columns),
             execution_mode=node.execution_mode,
+            tests=_test_infos(node),
         )
 
     def _node_ref(self, node_id: str, graph: LineageGraph | None = None) -> NodeRef:
@@ -835,6 +852,8 @@ class GraphService:
         )
 
     def _dbt_run_command(self, node: LineageNode) -> str | None:
+        if node.resource_type == "test":
+            return f"dbt test --select {node.name}"
         if node.resource_type != "model":
             return None
         return f"dbt run --select {node.name}"

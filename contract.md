@@ -105,6 +105,23 @@ cross-pipeline edges must be `out -> src`. The frontend flags the rest
 fixtures follow the convention
 (`out_mfp_* -> source bestand_mfp.out_mfp_* -> src_claims_mfp_*`).
 
+### 1.2d Tests (dq checks)
+
+Enabled dbt tests only; disabled ones are dropped.
+
+- **Generic (yaml) tests** (`not_null`, `unique`, ...) are not nodes. Each is listed in
+  `tests` on every node it reads (its `attached_node` plus its `depends_on`), with `kind:
+  "generic"`, `test_name`, `column` and a lower-cased `severity`.
+- **Singular tests** (`.sql` under `tests/`, e.g. the `dq_check_*` checks) are nodes of their
+  own: `resource_type` and `materialization` `test`, SQL as code, an edge from every node they
+  read, `dbt_run_command` `dbt test --select <name>`. Their stage and folder come from the path
+  like a model's (`tests/02_intermediate/claim/x.sql` -> `int` / `claim`). A test outside a
+  layer folder takes the latest stage of the nodes it reads, and the folder and group most of
+  those nodes in that stage have.
+- Tests never count as consumers when a source's group or folder is inferred (1.2a / 1.2b).
+
+The frontend hides singular-test nodes and the test lists until the **Tests** toggle is on.
+
 ### 1.3 Node ids
 
 The dbt `unique_id` with its project segment replaced by the pipeline name. All projects
@@ -152,15 +169,19 @@ Query params (all optional): `pipeline` (repeatable), `stage` (repeatable), `inc
       "id": "model.bestand_mfp.int_mfp_contracts",
       "name": "int_mfp_contracts",
       "stage": "int",                       // src | int | out | other
-      "materialization": "table",           // table | view | incremental | ephemeral | source
+      "materialization": "table",           // table | view | incremental | ephemeral | source | test
       "pipeline": "bestand_mfp",
-      "resource_type": "model",             // model | source
+      "resource_type": "model",             // model | source | test (singular test = .sql under tests/)
       "schema_name": "mfp_intermediate",
       "database": "pnc-analytics-prd",
       "description": "One row per contract …",
       "tags": ["mfp", "core"],
       "column_count": 11,
-      "execution_mode": "daily"             // from config.meta.execution_mode (3.5), may be null
+      "execution_mode": "daily",            // from config.meta.execution_mode (3.5), may be null
+      "tests": [                            // generic (yaml) tests checking this node; [] if none
+        { "name": "not_null_int_mfp_contracts_pol_nr", "kind": "generic",
+          "test_name": "not_null", "column": "pol_nr", "severity": "error", "description": null }
+      ]
     }
   ],
   "edges": [

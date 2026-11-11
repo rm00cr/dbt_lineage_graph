@@ -46,6 +46,7 @@ def test_graph_shape(client: TestClient) -> None:
         "tags": ["core", "mfp"],
         "column_count": 11,
         "execution_mode": "daily",
+        "tests": [],
         "change": None,
         "modes": None,
         "front": True,

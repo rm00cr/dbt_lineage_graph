@@ -9,8 +9,8 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 Stage = Literal["src", "int", "out", "other"]
-Materialization = Literal["table", "view", "incremental", "ephemeral", "source", "other"]
-ResourceType = Literal["model", "source"]
+Materialization = Literal["table", "view", "incremental", "ephemeral", "source", "test", "other"]
+ResourceType = Literal["model", "source", "test"]
 ChangeStatus = Literal["added", "removed", "modified", "unchanged"]
 
 
@@ -25,6 +25,17 @@ class NodeRef(BaseModel):
     resource_type: ResourceType
 
 
+class TestInfo(BaseModel):
+    """A dbt test (incl. dq checks) attached to a node it reads."""
+
+    name: str
+    kind: Literal["generic", "singular"]
+    test_name: str | None = Field(default=None, description="generic tests: not_null, unique, ...")
+    column: str | None = None
+    severity: str = "error"
+    description: str | None = None
+
+
 class GraphNode(NodeRef):
     """Node as rendered on the canvas — intentionally slim."""
 
@@ -36,6 +47,7 @@ class GraphNode(NodeRef):
     tags: list[str] = Field(default_factory=list)
     column_count: int = 0
     execution_mode: str | None = None
+    tests: list[TestInfo] = Field(default_factory=list)
     # only set in a state comparison (POST /api/diff), null on the normal graph
     change: ChangeStatus | None = None
     # stacked execution modes: the selected modes of this node's pipeline containing it,
@@ -113,6 +125,7 @@ class ModelDetail(BaseModel):
     dependencies: list[NodeRef] = Field(default_factory=list)
     dependents: list[NodeRef] = Field(default_factory=list)
     columns: list[ColumnInfo] = Field(default_factory=list)
+    tests: list[TestInfo] = Field(default_factory=list)
     stats: NodeStats | None = None
     bigquery: BigQueryRef | None = None
     dbt_run_command: str | None = None

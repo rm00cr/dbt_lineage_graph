@@ -329,3 +329,97 @@ def test_source_takes_the_folder_of_its_consumers(tmp_path: Path) -> None:
     assert graph.nodes["source.p.ds.tbl_b"].folder == "claim"
     assert graph.nodes["source.p.ds.tbl_a"].folder == "adam"
     assert graph.nodes["source.p.ds.tbl_orphan"].folder is None
+
+
+def test_generic_tests_are_listed_on_the_nodes_they_check_singular_tests_are_nodes() -> None:
+    from app.loader import LoadedArtifacts, build_graph
+
+    manifest = {
+        "metadata": {"project_name": "p"},
+        "nodes": {
+            "model.p.int_a": {"name": "int_a", "resource_type": "model",
+                              "original_file_path": "models/02_intermediate/int_a.sql",
+                              "depends_on": {"nodes": []}},
+            "model.p.dq_helper": {"name": "dq_helper", "resource_type": "model",
+                                  "original_file_path": "models/02_intermediate/dq_helper.sql",
+                                  "depends_on": {"nodes": ["model.p.int_a"]}},
+            # generic (yaml) test: attached_node names the model it checks; stays a list entry
+            "test.p.not_null_int_a_id.1": {
+                "name": "not_null_int_a_id", "resource_type": "test", "column_name": "id",
+                "test_metadata": {"name": "not_null", "kwargs": {}},
+                "attached_node": "model.p.int_a", "depends_on": {"nodes": ["model.p.int_a"]},
+                "config": {"enabled": True, "severity": "WARN"},
+            },
+            # singular dq check under tests/: a node of its own, reads two models
+            "test.p.dq_check_x": {
+                "name": "dq_check_x", "resource_type": "test", "test_metadata": None,
+                "original_file_path": "tests/02_intermediate/dq_check_x.sql",
+                "attached_node": None, "depends_on": {"nodes": ["model.p.int_a", "model.p.dq_helper"]},
+                "config": {"enabled": True, "severity": "error"}, "description": " counts rows ",
+                "raw_code": "select 1", "compiled_code": "select 1",
+            },
+            "test.p.dq_check_off": {
+                "name": "dq_check_off", "resource_type": "test", "test_metadata": None,
+                "original_file_path": "tests/02_intermediate/dq_check_off.sql",
+                "attached_node": None, "depends_on": {"nodes": ["model.p.int_a"]},
+                "config": {"enabled": False},
+            },
+        },
+        "sources": {},
+    }
+    graph = build_graph([LoadedArtifacts(manifest=manifest)])
+
+    # models + the one enabled singular test; disabled tests are dropped
+    assert set(graph.nodes) == {"model.p.int_a", "model.p.dq_helper", "test.p.dq_check_x"}
+    check = graph.nodes["test.p.dq_check_x"]
+    assert (check.resource_type, check.materialization, check.stage) == ("test", "test", "int")
+    assert check.raw_code == "select 1"
+    assert set(check.depends_on) == {"model.p.int_a", "model.p.dq_helper"}
+    assert "test.p.dq_check_x" in graph.nodes["model.p.int_a"].dependents
+
+    a = graph.nodes["model.p.int_a"].tests
+    assert [t.name for t in a] == ["not_null_int_a_id"]
+    assert (a[0].kind, a[0].test_name, a[0].column, a[0].severity) == ("generic", "not_null", "id", "warn")
+    assert graph.nodes["model.p.dq_helper"].tests == []
+
+
+def _dq_manifest(test: dict) -> dict:
+    """int_a reads raw.tbl (folder claim via src_a), plus one singular test."""
+    return {
+        "metadata": {"project_name": "p"},
+        "nodes": {
+            "model.p.src_a": {"name": "src_a", "resource_type": "model",
+                              "original_file_path": "models/01_source/claim/src_a.sql",
+                              "depends_on": {"nodes": ["source.p.raw.tbl"]}},
+            "model.p.int_a": {"name": "int_a", "resource_type": "model", "group": "claims",
+                              "original_file_path": "models/02_intermediate/claim/int_a.sql",
+                              "depends_on": {"nodes": ["model.p.src_a"]}},
+            "test.p.dq_check_x": {"name": "dq_check_x", "resource_type": "test", "test_metadata": None,
+                                  "attached_node": None, "config": {"enabled": True}, **test},
+        },
+        "sources": {
+            "source.p.raw.tbl": {"name": "tbl", "source_name": "raw", "identifier": "tbl", "resource_type": "source"},
+        },
+    }
+
+
+def test_singular_test_outside_a_layer_folder_takes_stage_and_folder_of_what_it_reads() -> None:
+    from app.loader import LoadedArtifacts, build_graph
+
+    manifest = _dq_manifest({"original_file_path": "tests/dq_check_x.sql",
+                             "depends_on": {"nodes": ["model.p.src_a", "model.p.int_a"]}})
+    check = build_graph([LoadedArtifacts(manifest=manifest)]).nodes["test.p.dq_check_x"]
+    # the latest stage it reads (int), and folder / group of the int model there
+    assert (check.stage, check.folder, check.group) == ("int", "claim", "claims")
+
+
+def test_a_dq_check_reading_a_source_does_not_move_the_source() -> None:
+    from app.loader import LoadedArtifacts, build_graph
+
+    # consumers of the source: src_a (folder "claim") and the check (folder "aaa"). Counting the
+    # check would make it a tie, which "aaa" wins alphabetically
+    manifest = _dq_manifest({"original_file_path": "tests/01_source/aaa/dq_check_x.sql",
+                             "depends_on": {"nodes": ["source.p.raw.tbl"]}})
+    graph = build_graph([LoadedArtifacts(manifest=manifest)])
+    assert graph.nodes["test.p.dq_check_x"].folder == "aaa"
+    assert graph.nodes["source.p.raw.tbl"].folder == "claim"

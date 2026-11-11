@@ -20,7 +20,7 @@ from typing import Any
 
 from .config import STAGE_ORDER, ArtifactPair, folder_of, resolve_stage
 
-MATERIALIZATIONS = {"table", "view", "incremental", "ephemeral", "source"}
+MATERIALIZATIONS = {"table", "view", "incremental", "ephemeral", "source", "test"}
 
 log = logging.getLogger(__name__)
 
@@ -31,6 +31,19 @@ class Column:
     type: str | None = None
     description: str | None = None
     index: int | None = None
+
+
+@dataclass
+class NodeTest:
+    """A generic (yaml) dbt test attached to the node it checks. Singular tests (.sql files
+    under tests/) are graph nodes instead, see `_ingest_singular_tests`."""
+
+    name: str
+    kind: str  # always "generic" here
+    test_name: str | None = None
+    column: str | None = None
+    severity: str = "error"
+    description: str | None = None
 
 
 @dataclass
@@ -61,6 +74,7 @@ class LineageNode:
     size_bytes: int | None = None
     depends_on: list[str] = field(default_factory=list)
     dependents: list[str] = field(default_factory=list)
+    tests: list[NodeTest] = field(default_factory=list)
 
 
 @dataclass
@@ -357,6 +371,82 @@ def _ingest(
             depends_on=[],
         )
 
+    # ------------------------------------------------------------------- tests
+    _ingest_singular_tests(graph, manifest, id_map, pipeline, project)
+    _ingest_generic_tests(graph, manifest, id_map)
+
+
+def _enabled_tests(manifest: dict[str, Any]):
+    for node_id, node in (manifest.get("nodes") or {}).items():
+        if node.get("resource_type") != "test":
+            continue
+        if (node.get("config") or {}).get("enabled", True) is False:
+            continue
+        yield node_id, node
+
+
+def _ingest_singular_tests(
+    graph: LineageGraph,
+    manifest: dict[str, Any],
+    id_map: dict[str, str],
+    pipeline: str,
+    project: str,
+) -> None:
+    """Singular tests (.sql under tests/, incl. the dq_check_* checks) are graph nodes of
+    their own: stage from their layer folder, SQL as code, edges from the models they read."""
+    for node_id, node in _enabled_tests(manifest):
+        if node.get("test_metadata"):
+            continue
+        config = node.get("config") or {}
+        path = node.get("original_file_path") or node.get("path")
+        tags = sorted({*(node.get("tags") or []), *(config.get("tags") or [])})
+        graph.nodes[id_map.get(node_id, node_id)] = LineageNode(
+            id=id_map.get(node_id, node_id),
+            name=node.get("name") or node_id.split(".")[-1],
+            stage=resolve_stage(
+                name=node.get("name") or "", resource_type="test",
+                original_file_path=path, tags=tags,
+            ),
+            materialization="test",
+            pipeline=_pipeline_of(node, pipeline),
+            resource_type="test",
+            project=node.get("package_name") or project,
+            group=node.get("group") or config.get("group") or None,
+            folder=folder_of(path),
+            schema_name=node.get("schema"),
+            database=node.get("database"),
+            alias=node.get("alias") or node.get("name"),
+            description=(node.get("description") or "").strip() or None,
+            tags=tags,
+            original_file_path=path,
+            raw_code=node.get("raw_code") or node.get("raw_sql"),
+            compiled_code=node.get("compiled_code") or node.get("compiled_sql"),
+            depends_on=[id_map.get(d, d) for d in (node.get("depends_on") or {}).get("nodes") or []],
+        )
+
+
+def _ingest_generic_tests(graph: LineageGraph, manifest: dict[str, Any], id_map: dict[str, str]) -> None:
+    """Attach every enabled generic (yaml) test to the nodes it reads: its `depends_on` nodes
+    plus its `attached_node`. Targets not in the graph (seeds, other packages) are skipped."""
+    for node_id, node in _enabled_tests(manifest):
+        test_metadata = node.get("test_metadata")
+        if not test_metadata:
+            continue
+        test = NodeTest(
+            name=node.get("name") or node_id.split(".")[-1],
+            kind="generic",
+            test_name=(test_metadata or {}).get("name") or None,
+            column=node.get("column_name") or None,
+            severity=str((node.get("config") or {}).get("severity") or "error").lower(),
+            description=(node.get("description") or "").strip() or None,
+        )
+
+        reads = [node.get("attached_node"), *((node.get("depends_on") or {}).get("nodes") or [])]
+        for read in dict.fromkeys(r for r in reads if r):
+            target = graph.nodes.get(id_map.get(read, ""))
+            if target is not None:
+                target.tests.append(test)
+
 
 PASSTHROUGH_VIEW_SUFFIX = "_v"
 
@@ -442,6 +532,18 @@ def _link(graph: LineageGraph) -> None:
     graph.edges = edges
     _infer_source_groups(graph)
     _infer_source_folders(graph)
+    _infer_test_placement(graph)
+
+
+def _consumers(graph: LineageGraph, node: LineageNode) -> list[LineageNode]:
+    """Direct dependents, without tests: a dq check reading a source must not move it."""
+    return [d for i in node.dependents if (d := graph.nodes[i]).resource_type != "test"]
+
+
+def _most_common(values: list[str | None]) -> str | None:
+    """Most frequent non-empty value, ties broken alphabetically; None if there is none."""
+    counts = Counter(v for v in values if v)
+    return min(counts, key=lambda v: (-counts[v], v)) if counts else None
 
 
 def _source_group(node: dict[str, Any]) -> str | None:
@@ -456,9 +558,7 @@ def _infer_source_groups(graph: LineageGraph) -> None:
     for node in graph.nodes.values():
         if node.resource_type != "source" or node.group:
             continue
-        counts = Counter(g for i in node.dependents if (g := graph.nodes[i].group))
-        if counts:
-            node.group = min(counts, key=lambda g: (-counts[g], g))
+        node.group = _most_common([c.group for c in _consumers(graph, node)])
 
 
 def _infer_source_folders(graph: LineageGraph) -> None:
@@ -468,6 +568,22 @@ def _infer_source_folders(graph: LineageGraph) -> None:
     for node in graph.nodes.values():
         if node.resource_type != "source" or node.folder:
             continue
-        counts = Counter(f for i in node.dependents if (f := graph.nodes[i].folder))
-        if counts:
-            node.folder = min(counts, key=lambda f: (-counts[f], f))
+        node.folder = _most_common([c.folder for c in _consumers(graph, node)])
+
+
+def _infer_test_placement(graph: LineageGraph) -> None:
+    """A singular test outside a layer folder (e.g. ``tests/dq_check_x.sql``) resolves to stage
+    "other". It takes the latest stage of the nodes it reads instead, and - when its path gives
+    none - the folder and group most of those nodes in that stage have, so the check is drawn
+    and collapsed with what it checks."""
+    for node in graph.nodes.values():
+        if node.resource_type != "test" or node.stage != "other":
+            continue
+        parents = [graph.nodes[i] for i in node.depends_on]
+        stages = [p.stage for p in parents if p.stage != "other"]
+        if not stages:
+            continue
+        node.stage = max(stages, key=STAGE_ORDER.index)
+        same_stage = [p for p in parents if p.stage == node.stage]
+        node.folder = node.folder or _most_common([p.folder for p in same_stage])
+        node.group = node.group or _most_common([p.group for p in same_stage])
