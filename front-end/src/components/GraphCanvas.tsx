@@ -311,15 +311,10 @@ export function GraphCanvas() {
         }))
       const pipelineById = new Map(graph.nodes.map((n) => [n.id, n.pipeline]))
       const pipelineOf = (id: string) => pipelineById.get(id) ?? pipelineFromId(id)
-      // where the trace changes pipeline, one label per model pair names both pipelines
-      const labelled = new Set<string>()
       const columnEdges = traceView.edges
         .filter((edge) => visibleIds.has(edge.source_model) && visibleIds.has(edge.target_model))
         .map((edge) => {
           const cross = crossesPipeline(edge, pipelineOf)
-          const pair = `${edge.source_model}->${edge.target_model}`
-          const label = cross && !labelled.has(pair) ? `${pipelineOf(edge.source_model)} → ${pipelineOf(edge.target_model)}` : undefined
-          if (label) labelled.add(pair)
           return {
             id: `col:${edge.id}`,
             source: edge.source_model,
@@ -328,30 +323,15 @@ export function GraphCanvas() {
             className: `cedge cedge--${edge.kind}${cross ? ' cedge--cross' : ''}`,
             zIndex: 1,
             markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: accentColor },
-            ...(label ? { label, labelBgPadding: [6, 3] as [number, number], labelBgBorderRadius: 99 } : {}),
           }
         })
       return [...modelEdges, ...columnEdges]
-    }
-
-    // like the column trace: an edge into another pipeline names both pipelines, once per
-    // pipeline pair; while a selection dims the rest, only its own lineage is labelled
-    const labelled = new Set<string>()
-    const pipelineLabel = (edge: GraphEdge, highlighted: boolean) => {
-      if (!edge.cross_pipeline || (dimming && !highlighted)) return undefined
-      const from = pipelineOf.get(edge.source) ?? pipelineFromId(edge.source)
-      const into = pipelineOf.get(edge.target) ?? pipelineFromId(edge.target)
-      const label = `${from} → ${into}`
-      if (from === into || labelled.has(label)) return undefined
-      labelled.add(label)
-      return label
     }
 
     return view.edges
       .filter((edge) => visibleIds.has(edge.source) && visibleIds.has(edge.target))
       .map((edge) => {
         const highlighted = standsFor(edge.id).some((e) => highlightedEdgeIds.has(e))
-        const label = pipelineLabel(edge, highlighted)
         const classes = [
           highlighted ? 'edge--highlight' : dimming ? 'edge--dim' : '',
           crossClass(edge),
@@ -370,10 +350,9 @@ export function GraphCanvas() {
             height: 16,
             color: arrowColor(edge, highlighted ? accentColor : edgeColor),
           },
-          ...(label ? { label, labelBgPadding: [6, 3] as [number, number], labelBgBorderRadius: 99 } : {}),
         }
       })
-  }, [graph, view, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor, traceView, isViolation, standsFor, changeColor, pipelineOf])
+  }, [graph, view, visibleIds, highlightedEdgeIds, focusMode, accentColor, edgeColor, traceView, isViolation, standsFor, changeColor])
 
   // ------------------------------------------------------------------ interaction
   const onNodesChange = useCallback(

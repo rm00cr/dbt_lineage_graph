@@ -1203,7 +1203,7 @@ input {
 /* panels move aside when the overlay slides in */
 .canvas--with-overlay .react-flow__minimap,
 .canvas--with-overlay .react-flow__controls {
-  transform: translateX(calc(-1 * min(560px, 46vw)));
+  transform: translateX(calc(-1 * var(--overlay-offset, min(560px, 46vw))));
 }
 
 .react-flow__minimap,
@@ -1753,6 +1753,8 @@ input {
   right: 0;
   bottom: 0;
   width: min(560px, 46vw);
+  /* a dragged width never outgrows a smaller window */
+  max-width: 100%;
   z-index: 30;
   display: flex;
   flex-direction: column;
@@ -2031,6 +2033,16 @@ input {
   padding: 0 14px 0 0;
 }
 
+/* word wrap (Alt+Z): long lines break inside the panel, the line number stays on top */
+.code__lines--wrap {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
+.code__lines--wrap .code__text {
+  flex: 1;
+  min-width: 0;
+}
+
 .code__line:hover {
   background: var(--row-hover);
 }
@@ -2299,22 +2311,9 @@ mark {
   stroke-width: 2.4;
 }
 
-/* a column edge that enters another pipeline: thicker, with a label naming both pipelines */
+/* a column edge that enters another pipeline: thicker */
 .cedge--cross .react-flow__edge-path {
   stroke-width: 2.8;
-}
-
-.cedge--cross .react-flow__edge-textbg,
-.edge--cross .react-flow__edge-textbg {
-  fill: var(--bg-panel-solid);
-  stroke: var(--accent-ring);
-}
-
-.cedge--cross .react-flow__edge-text,
-.edge--cross .react-flow__edge-text {
-  fill: var(--text);
-  font-family: var(--mono);
-  font-size: 11px;
 }
 
 /* pipeline identity chip (column trace): colour dot + name, the name in text ink */
@@ -2507,7 +2506,7 @@ mark {
 .trace-bar--with-overlay {
   left: 340px;
   transform: none;
-  max-width: calc(100% - min(560px, 46vw) - 340px - 64px);
+  max-width: calc(100% - var(--overlay-offset, min(560px, 46vw)) - 340px - 64px);
 }
 
 .trace-bar__legend {
@@ -3075,6 +3074,13 @@ mark {
   padding-right: 12px;
   white-space: pre;
 }
+.code-diff--wrap .code-diff__line {
+  min-width: 0;
+}
+.code-diff--wrap .code-diff__text {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+}
 .code-diff__line[data-kind='add'] {
   background: color-mix(in srgb, var(--diff-added) 15%, transparent);
 }
@@ -3336,6 +3342,43 @@ mark {
 .overlay--wide {
   width: min(1120px, 86vw);
 }
+
+/* draggable left edge, like a VS Code sash */
+.overlay__sash {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  left: -3px;
+  width: 6px;
+  z-index: 2;
+  cursor: ew-resize;
+  touch-action: none;
+}
+.overlay__sash::after {
+  content: '';
+  position: absolute;
+  inset: 0 2px;
+  background: transparent;
+  transition: background 0.12s ease 0.1s;
+}
+.overlay__sash:hover::after,
+.overlay__sash[data-dragging]::after {
+  background: var(--accent);
+}
+/* no text selection while dragging */
+.overlay:has(.overlay__sash[data-dragging]) {
+  user-select: none;
+}
+
+/* maximized: the panel covers the canvas, code gets the full height */
+.overlay--max {
+  width: 100%;
+  border-left: none;
+}
+.overlay--max .code__lines,
+.overlay--max .code-diff {
+  max-height: none;
+}
 .mode-code {
   display: flex;
   flex-direction: column;
@@ -3483,6 +3526,7 @@ mark {
 }
 .mode-code__legend {
   display: flex;
+  align-items: center;
   gap: 14px;
   font-size: 11.5px;
 }

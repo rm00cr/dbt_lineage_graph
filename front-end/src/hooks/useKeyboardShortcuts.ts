@@ -4,6 +4,7 @@ import { useReactFlow } from '@xyflow/react'
 import { useEffect } from 'react'
 
 import { useExplorerStore } from '../store/useExplorerStore'
+import { usePanelPrefs } from '../store/usePanelPrefs'
 
 export function useKeyboardShortcuts() {
   const { fitView } = useReactFlow()
@@ -12,6 +13,12 @@ export function useKeyboardShortcuts() {
     const onKeyDown = (event: KeyboardEvent) => {
       const target = event.target as HTMLElement | null
       if (target && (target.tagName === 'INPUT' || target.tagName === 'TEXTAREA' || target.isContentEditable)) {
+        return
+      }
+      // Alt+Z toggles word wrap of the code views, as in VS Code
+      if (event.altKey && !event.metaKey && !event.ctrlKey && event.code === 'KeyZ') {
+        event.preventDefault()
+        usePanelPrefs.getState().toggleWrap()
         return
       }
       if (event.metaKey || event.ctrlKey || event.altKey) return
