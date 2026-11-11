@@ -1673,6 +1673,18 @@ input {
   color: var(--text-muted);
 }
 
+/* the band ignores the mouse; its label is the handle that drags the whole pipeline */
+.pipeline-band__label {
+  pointer-events: auto;
+  cursor: grab;
+  user-select: none;
+  touch-action: none;
+}
+
+.pipeline-band__label:active {
+  cursor: grabbing;
+}
+
 .row-band__count {
   font-size: 11px;
   letter-spacing: 0.04em;
@@ -2286,12 +2298,14 @@ mark {
   stroke-width: 2.8;
 }
 
-.cedge--cross .react-flow__edge-textbg {
+.cedge--cross .react-flow__edge-textbg,
+.edge--cross .react-flow__edge-textbg {
   fill: var(--bg-panel-solid);
   stroke: var(--accent-ring);
 }
 
-.cedge--cross .react-flow__edge-text {
+.cedge--cross .react-flow__edge-text,
+.edge--cross .react-flow__edge-text {
   fill: var(--text);
   font-family: var(--mono);
   font-size: 11px;

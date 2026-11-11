@@ -26,6 +26,7 @@ import { type OverlayTab, useExplorerStore } from '../store/useExplorerStore'
 import { CHANGE_LABELS, CHANGE_SYMBOLS } from '../graph/diff'
 import { ModeCode } from './ModeCode'
 import { ChangesPanel } from './Compare'
+import { PipelineChip, usePipelines } from './ColumnTrace'
 import { SchemaTable } from './SchemaTable'
 import {
   MATERIALIZATION_ICONS,
@@ -214,6 +215,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
                   title="Upstream dependencies"
                   icon={<ArrowUpRight size={12} />}
                   nodes={detail.dependencies}
+                  pipeline={detail.pipeline}
                   emptyText="No upstream models — this is a root node."
                   onPick={pick}
                 />
@@ -221,6 +223,7 @@ export function ModelOverlay({ onToast }: ModelOverlayProps) {
                   title="Downstream dependents"
                   icon={<ArrowDownRight size={12} />}
                   nodes={detail.dependents}
+                  pipeline={detail.pipeline}
                   emptyText="Nothing depends on this model — it is a leaf."
                   onPick={pick}
                 />
@@ -297,16 +300,20 @@ function DependencySection({
   title,
   icon,
   nodes,
+  pipeline,
   emptyText,
   onPick,
 }: {
   title: string
   icon: React.ReactNode
   nodes: NodeRef[]
+  /** the open model's pipeline: models of another pipeline get a pipeline chip */
+  pipeline: string
   emptyText: string
   onPick: (id: string) => void
 }) {
   const { color: stageColor } = useStages()
+  const { colorOf } = usePipelines()
 
   return (
     <div className="section">
@@ -326,6 +333,7 @@ function DependencySection({
                   className="result__dot"
                   style={{ background: stageColor(node), color: stageColor(node) }}
                 />
+                {node.pipeline !== pipeline && <PipelineChip pipeline={node.pipeline} color={colorOf(node.pipeline)} />}
                 <span className="dep__name">{node.name}</span>
                 <span className="dep__badge">
                   <Icon size={11} /> {node.materialization}

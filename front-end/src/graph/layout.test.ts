@@ -146,6 +146,25 @@ describe('lanes layout', () => {
       }
     })
 
+    it('lines a pipeline up with its one upstream, and puts one reading several below them', () => {
+      // like the examples: base feeds claims and finance, and finance also reads claims
+      const fan = [
+        node('b_out', 'out', null, 'base'),
+        node('c_src', 'src', null, 'claims'),
+        node('c_out', 'out', null, 'claims'),
+        node('f_src', 'src', null, 'finance'),
+        node('f_src2', 'src', null, 'finance'),
+      ]
+      const fanEdges = [edge('b_out', 'c_src'), edge('c_src', 'c_out'), edge('b_out', 'f_src'), edge('c_out', 'f_src2')]
+      const result = layoutGraph(fan, fanEdges, 'lanes', undefined, { zones: 'stages' })
+      const base = band(result, 'base')
+      const claims = band(result, 'claims')
+      const finance = band(result, 'finance')
+      expect(claims.y).toBe(base.y)
+      expect(finance.x).toBeGreaterThan(claims.x + claims.width)
+      expect(finance.y).toBeGreaterThan(Math.max(base.y + base.height, claims.y + claims.height))
+    })
+
     it('draws no box around a single pipeline', () => {
       const { pipelines } = layoutGraph(grouped, groupedEdges, 'lanes')
       expect(pipelines).toEqual([])

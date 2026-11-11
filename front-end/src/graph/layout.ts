@@ -307,6 +307,17 @@ function pipelineColumns(nodes: GraphNode[], edges: GraphEdge[], order: string[]
   return column
 }
 
+/**
+ * Wanted top of a pipeline band, given the bands of the pipelines it reads from: level with
+ * a single upstream; below the lowest of several, so all their edges come in from the upper
+ * left instead of one upstream sitting level and the others reaching across it.
+ */
+function bandTop(upstreams: PipelineBand[]): number {
+  if (upstreams.length === 0) return 0
+  if (upstreams.length === 1) return upstreams[0].y
+  return Math.max(...upstreams.map((b) => b.y + b.height)) + PIPE_GAP
+}
+
 interface Block {
   positions: Map<string, { x: number; y: number }>
   lanes: LaneBox[]
@@ -541,6 +552,8 @@ function placeBlock(block: Block, dx: number, dy: number, into: LayoutResult): v
  * convention that only a pipeline's outputs feed other pipelines, the bands are placed like
  * a DAG: a consumer sits right of the pipelines it reads from (OUT -> SRC reads left to
  * right), and pipelines that do not depend on each other are stacked in the same column.
+ * Vertically, a pipeline lines up with the one pipeline it reads from, and one that reads from
+ * several starts below all of them (see `bandTop`).
  */
 function layoutZones(
   nodes: GraphNode[],
@@ -577,19 +590,24 @@ function layoutZones(
     blocks.set(p, buildBlock(members, inner, p))
   }
 
+  const { upstream } = pipelineGraph(nodes, edges)
+  const placed = new Map<string, PipelineBand>()
   const columnCount = Math.max(...columnOf.values()) + 1
   let x = 0
   for (let col = 0; col < columnCount; col++) {
     const inColumn = order.filter((p) => columnOf.get(p) === col)
     if (inColumn.length === 0) continue
     const bandWidth = Math.max(...inColumn.map((p) => blocks.get(p)!.width)) + PIPE_PADDING * 2
-    let y = 0
+    let free = 0 // top of the free space in this column
     for (const p of inColumn) {
       const block = blocks.get(p)!
       const bandHeight = PIPE_HEADER + block.height + PIPE_PADDING
+      const y = Math.max(free, bandTop([...upstream.get(p)!].flatMap((q) => placed.get(q) ?? [])))
       placeBlock(block, x + PIPE_PADDING, y + PIPE_HEADER, result)
-      result.pipelines.push({ pipeline: p, x, y, width: bandWidth, height: bandHeight, count: byPipeline.get(p)!.length })
-      y += bandHeight + PIPE_GAP
+      const band = { pipeline: p, x, y, width: bandWidth, height: bandHeight, count: byPipeline.get(p)!.length }
+      result.pipelines.push(band)
+      placed.set(p, band)
+      free = y + bandHeight + PIPE_GAP
     }
     x += bandWidth + PIPE_COLUMN_GAP
   }
